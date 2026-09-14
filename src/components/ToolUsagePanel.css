@@ -1,0 +1,110 @@
+/* Mirrors ThinkingPanel so the two collapsible rows read as siblings. */
+.tool-usage-panel {
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-high);
+  overflow: hidden;
+}
+
+.tool-usage-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-7);
+  background: none;
+  border: none;
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.tool-usage-toggle:hover {
+  color: var(--on-surface);
+}
+
+.tool-usage-toggle:active {
+  color: var(--on-surface);
+  background: var(--surface-container-highest);
+  scale: var(--press-scale-row);
+  transition-duration: var(--press-in);
+}
+
+.tool-usage-caret {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.tool-usage-caret svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tool-usage-caret.open {
+  transform: rotate(90deg);
+}
+
+.tool-usage-label {
+  flex-shrink: 0;
+}
+
+/* The tool names are a hint, not the point — they yield space first. */
+.tool-usage-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-usage-caret {
+    transition: none;
+  }
+}
+
+.tool-usage-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.tool-usage-collapse.expanded {
+  grid-template-rows: 1fr;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-usage-collapse {
+    transition: none;
+  }
+}
+
+.tool-usage-body {
+  overflow: hidden;
+  min-height: 0;
+  padding: 0 var(--space-7) 0 26px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* Bottom padding only once expanded, so the collapsed row can reach 0. */
+.tool-usage-collapse.expanded .tool-usage-body {
+  padding-bottom: var(--space-6);
+}
+
+/* Nested blocks lose their own outer margin — the panel owns the spacing. */
+.tool-usage-body .tool-call-block {
+  margin-bottom: var(--space-4);
+}
+
+.tool-usage-body .tool-call-block:last-child {
+  margin-bottom: 0;
+}

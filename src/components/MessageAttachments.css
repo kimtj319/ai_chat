@@ -1,0 +1,67 @@
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+/* A lone image keeps its own aspect: cropping the only picture in the message
+   to a square is what makes a screenshot unreadable in the transcript. */
+.message-attachment-single {
+  padding: 0;
+  border: none;
+  background: none;
+  display: block;
+  max-width: 320px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  line-height: 0;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.message-attachment-single img {
+  display: block;
+  max-width: 320px;
+  max-height: 240px;
+  width: auto;
+  height: auto;
+}
+
+/* Two or more become a uniform grid — an even row of thumbnails reads as
+   "four images", where mixed aspects read as a mess. */
+.message-attachment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-3);
+  max-width: 320px;
+}
+
+.message-attachment-grid button {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  aspect-ratio: 1;
+  line-height: 0;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.message-attachment-single:active,
+.message-attachment-grid button:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.message-attachment-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.message-attachment-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}

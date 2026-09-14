@@ -1,0 +1,174 @@
+/* One chip geometry for every state and both places it appears (the composer
+   strip and a sent message), so a file looks the same before and after send. */
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  max-width: 220px;
+  min-width: 0;
+  padding-right: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  border: 1px solid transparent;
+}
+
+.attachment-chip-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0 var(--space-2);
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-align: left;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.attachment-chip-body:active:not(:disabled) {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.attachment-chip-body:disabled {
+  /* Still readable while it uploads — this is not an action that failed. */
+  opacity: 1;
+  cursor: default;
+}
+
+.attachment-chip-media {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+}
+
+.attachment-chip-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attachment-chip-media svg {
+  width: 18px;
+  height: 18px;
+}
+
+.attachment-chip-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attachment-chip-name {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The token count is the point of the chip: "2.4MB" tells the user nothing
+   about the only cost that matters here, so bytes are the secondary detail. */
+.attachment-chip-meta {
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-chip-bytes {
+  opacity: 0.7;
+}
+
+.attachment-chip-action {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--on-surface-variant);
+  display: grid;
+  place-items: center;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.attachment-chip-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.attachment-chip-action:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.attachment-chip-action:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.attachment-chip[data-status="failed"] {
+  background: var(--danger-bg);
+}
+
+.attachment-chip[data-status="failed"] .attachment-chip-name,
+.attachment-chip[data-status="failed"] .attachment-chip-meta {
+  color: var(--danger);
+}
+
+.attachment-chip[data-over-budget="true"] {
+  border-color: var(--danger);
+}
+
+.attachment-chip-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--outline-variant);
+  border-top-color: var(--primary);
+  animation: attachment-chip-spin 0.8s linear infinite;
+}
+
+@keyframes attachment-chip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attachment-chip-spinner {
+    animation: none;
+  }
+}
+
+/* Sent-message variant: outlined on transparent. A surface fill would go
+   muddy against the tinted user bubble in dark mode. */
+.attachment-chip-static {
+  background: transparent;
+  border-color: var(--outline-variant);
+  padding: 0 var(--space-2) 0 0;
+  gap: var(--space-5);
+}
+
+.attachment-chip-static .attachment-chip-media {
+  background: transparent;
+  border-radius: var(--radius-xs);
+}
+
+.attachment-chip-static:hover {
+  background: var(--surface-container);
+}

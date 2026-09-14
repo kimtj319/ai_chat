@@ -1,0 +1,216 @@
+.tools-panel-status {
+  min-height: 18px;
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-4);
+}
+
+.tools-panel-saving {
+  color: var(--on-surface-variant);
+}
+
+.tools-panel-saved {
+  color: var(--success);
+}
+
+.tools-panel-error {
+  color: var(--danger);
+}
+
+.tools-category {
+  margin-bottom: var(--space-6);
+}
+
+/* Narrow-ish cards, several per row, reflowing by available width rather
+   than a fixed column count — this is what makes 19 tools scannable without
+   the old single-column wall of scrolling. */
+.tools-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.tool-card {
+  background: var(--surface-container);
+  border-radius: var(--radius-md);
+  padding: var(--space-6) var(--space-7);
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.tool-card-name {
+  font-weight: var(--weight-semibold);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.tool-card-switch {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+/* On the label, not the box: the label is the whole hit area, and scaling it
+   carries the 16px checkbox with it. */
+.tool-card-switch:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.tool-card-switch input {
+  accent-color: var(--primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.tool-card-short {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.tool-card-disclosure {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  transition: opacity var(--press-out) var(--press-ease);
+}
+
+.tool-card-disclosure:active {
+  opacity: var(--press-opacity);
+  transition-duration: var(--press-in);
+}
+
+.tool-card-chevron {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.tool-card-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tool-card-chevron.open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-card-chevron {
+    transition: none;
+  }
+}
+
+.tool-card-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+.tool-card-collapse.expanded {
+  grid-template-rows: 1fr;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-card-collapse {
+    transition: none;
+  }
+}
+
+.tool-card-detail {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.tool-card-collapse.expanded .tool-card-detail {
+  padding-top: var(--space-5);
+}
+
+.tool-card-long {
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--on-surface-variant);
+}
+
+.tool-schema-heading {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tool-schema-empty {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  margin: 0;
+}
+
+.tool-schema-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.tool-schema-field-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tool-schema-field-head code {
+  font-size: var(--text-2xs);
+  background: var(--surface-container-highest);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.tool-schema-type {
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+.tool-schema-required {
+  font-size: var(--text-2xs);
+  color: var(--on-danger);
+  background: var(--danger);
+  border-radius: 4px;
+  padding: 0 var(--space-2);
+}
+
+.tool-schema-description,
+.tool-schema-enum {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}

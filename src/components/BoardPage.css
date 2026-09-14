@@ -1,0 +1,443 @@
+/* .documents-page 와 같은 골격 — 사이드바 옆 본문을 차지하고, 창의 배경이
+   그대로 비쳐야 하므로 자기 바탕을 칠하지 않는다. */
+.board-page {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.board-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-10) var(--space-6);
+}
+
+.board-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.board-subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 뒤로가기는 목록일 때 대화로, 글을 펼쳤을 때 목록으로 간다. 자리가 늘
+   같으므로 어디서든 "한 칸 뒤" 를 누르는 감각이 유지된다. */
+.board-back {
+  flex-shrink: 0;
+}
+
+.board-body {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 var(--space-10) var(--space-11);
+}
+
+.board-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.board-banner-close {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: var(--text-md);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.board-banner-close:hover {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------- 열림 / 닫힘 탭 */
+
+/* 밑줄 탭이다. 알약 버튼으로 하면 그 옆의 태그 칩과 같은 모양이 되어,
+   무엇이 '지금 보고 있는 묶음' 이고 무엇이 '거르는 조건' 인지 섞인다. */
+.board-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.board-tab {
+  padding: var(--space-5) var(--space-2);
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--on-surface-variant);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.board-tab[data-selected] {
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
+  border-bottom-color: var(--primary);
+}
+
+.board-tab-count {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 var(--space-3);
+  margin-left: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-tag-clear {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------- 태그 */
+
+.board-tagbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.board-tag {
+  padding: 2px var(--space-4);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.board-tag:hover {
+  background: var(--surface-container);
+}
+
+.board-tag:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.board-tag[data-selected] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+/* 배지는 문서 페이지와 같은 모양이다 — 같은 앱에서 같은 뜻이면 같게 보인다. */
+.board-badge {
+  flex-shrink: 0;
+  padding: 2px var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.board-badge[data-tone="reply"] {
+  background: transparent;
+  border: 1px solid var(--outline-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-badge[data-status="open"] {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ------------------------------------------------------------- 목록 */
+
+.board-list {
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-row {
+  display: flex;
+  align-items: center;
+  /* 배지는 줄지 않으므로(flex-shrink:0), 줄바꿈이 없으면 좁은 화면에서 태그
+     서너 개에 제목이 먼저 뭉개진다. 제목에 최소 폭을 주고 넘치면 아래로 민다. */
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-5);
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+/* 닫힌 글은 목록에서 한 발 물러난다. 지워진 것은 아니므로 흐리게만 둔다. */
+.board-row[data-status="closed"] .board-row-title {
+  color: var(--on-surface-variant);
+}
+
+/* 제목이 곧 열기 버튼이다 — 행마다 '보기' 를 따로 두지 않는다. */
+.board-row-title {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-row-title:hover,
+.board-row-title:focus-visible {
+  text-decoration: underline;
+}
+
+.board-row-meta {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+/* 불러오는 중·안내·막다른 길이 같은 자리에 같은 모양으로 선다. */
+.board-loading {
+  margin: var(--space-9) 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.board-row-empty .btn {
+  margin-top: var(--space-5);
+}
+
+/* 한도에 가까워졌을 때만 나타나는 글자 수, 그리고 잘려 나갈 것에 대한 알림. */
+.board-field-count {
+  margin-left: var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-field-warn {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--warning);
+}
+
+.board-row-empty {
+  padding: var(--space-9);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+  list-style: none;
+}
+
+/* --------------------------------------------------------- 글 하나 */
+
+.board-detail {
+  padding-top: var(--space-6);
+}
+
+.board-detail-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.board-detail-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  /* 긴 제목이 배지를 밀어내지 않도록 줄바꿈을 허용한다. */
+  min-width: 0;
+  flex: 1 1 60%;
+}
+
+.board-detail-meta {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+/* 본문은 사용자가 적은 그대로 — 줄바꿈을 살린다. */
+.board-detail-body {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.board-detail-actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.board-replies-title {
+  margin: var(--space-9) 0 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.board-replies {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-reply {
+  padding: var(--space-5) 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.board-reply-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.board-reply-body {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.board-reply-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+}
+
+.board-reply-input {
+  width: 100%;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  resize: vertical;
+}
+
+.board-reply-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+/* ------------------------------------------------------- 새 글 쓰기 */
+
+.board-compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.board-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.board-field-label {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.board-input {
+  width: 100%;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.board-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.board-textarea {
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.board-compose-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 720px) {
+  .board-header,
+  .board-body {
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+
+  /* 좁은 화면에서는 제목과 상태만 남긴다. 누가 언제 썼는지는 글을 열면 나온다. */
+  .board-row-meta {
+    display: none;
+  }
+}

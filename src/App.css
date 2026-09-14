@@ -1,0 +1,100 @@
+.app-shell {
+  display: flex;
+  /* 주소창이 나타났다 사라지는 모바일에서 100vh 는 화면보다 크다. dvh 를
+     아는 브라우저는 그것을 쓰고, 모르면 100vh 로 물러선다. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  /* Positions the backdrop, which is the shell's first child and the ground
+     everything else stands on. */
+  position: relative;
+}
+
+
+/* ------------------------------------------------------------ 좁은 화면
+
+   예전에는 여기에 `min-width: 1024px` 이 있었다. index.html 은
+   `viewport width=device-width` 로 "기기 폭에 맞추겠다" 고 선언하는데 그 선언을
+   껍데기가 막고 있어서, 폰에서 문서가 1024px 이 되어 앱 전체가 옆으로 밀렸다.
+   두 선언이 서로를 부정하고 있었다.
+
+   좁아지면 사이드바는 붙박이 칸을 그만두고 떠 있는 서랍이 된다. 폭이 좁을수록
+   대화 본문이 귀한데, 68px 짜리 레일조차 폰에서는 큰 몫이기 때문이다. */
+
+.app-drawer-toggle {
+  position: fixed;
+  top: var(--space-5);
+  left: var(--space-5);
+  z-index: 3;
+}
+
+/* 서랍이 열렸을 때 뒤를 덮는다. 눌러서 닫는 가장 큰 표적이기도 하다. */
+.app-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  border: none;
+  padding: 0;
+  background: var(--scrim);
+  animation: app-scrim-in 0.16s ease-out;
+}
+
+@keyframes app-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-scrim {
+    animation: none;
+  }
+}
+
+/* 서랍 자리를 비워 둔다. 페이지마다 헤더 클래스가 달라 한 줄로 묶이지
+   않는다 — 새 페이지를 만들면 여기에 한 줄 보태야 한다. */
+.app-shell[data-narrow] .chat-header,
+.app-shell[data-narrow] .board-header,
+.app-shell[data-narrow] .documents-header,
+.app-shell[data-narrow] .library-header,
+.app-shell[data-narrow] .admin-header {
+  padding-left: calc(var(--space-5) + 40px + var(--space-5));
+}
+
+/* 폰 폭. 여백은 페이지마다 제 CSS 에 흩어져 있지만 줄이는 기준은 하나여야
+   하므로 여기서 한 번에 걷는다 — 페이지마다 미디어쿼리를 두면 기준점이
+   여섯 곳이 되고, 그중 하나만 다른 값이 되어도 화면이 서로 어긋나 보인다.
+   var(--space-10) 을 양쪽에 물면 390px 화면에서 본문이 절반 가까이 깎인다. */
+@media (max-width: 640px) {
+  .chat-header,
+  .board-header,
+  .board-body,
+  .documents-header,
+  .documents-body,
+  .library-header,
+  .library-body,
+  .admin-header,
+  .admin-body {
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
+  }
+
+  /* 헤더는 서랍 토글 자리를 계속 비워 둬야 한다 — 위 규칙이 그것을 덮어쓰지
+     않도록 다시 적는다. */
+  .app-shell[data-narrow] .chat-header,
+  .app-shell[data-narrow] .board-header,
+  .app-shell[data-narrow] .documents-header,
+  .app-shell[data-narrow] .library-header,
+  .app-shell[data-narrow] .admin-header {
+    padding-left: calc(var(--space-5) + 40px + var(--space-5));
+  }
+
+  /* 트리거 아래에 뜨는 것들은 제 최소 폭을 고집한다. 화면보다 넓어지면
+     한쪽이 잘려 나가므로 화면을 상한으로 둔다. */
+  .mcp-picker-popover,
+  .reasoning-popover,
+  .model-switcher-popover,
+  .sidebar-settings-popover {
+    max-width: calc(100vw - var(--space-6) * 2);
+    min-width: 0;
+  }
+}

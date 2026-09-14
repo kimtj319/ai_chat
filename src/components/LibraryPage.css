@@ -1,0 +1,383 @@
+/* The library takes the body next to the sidebar, so it is laid out like
+   .chat-view rather than like .admin-page: transparent, because the window's
+   one backdrop has to keep showing through here too. */
+.library-page {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.library-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-10) var(--space-6);
+}
+
+.library-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.library-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+}
+
+.library-subtitle {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.library-body {
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 var(--space-10) var(--space-11);
+}
+
+.library-notice,
+.library-error {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.library-notice {
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+}
+
+.library-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.library-section + .library-section {
+  margin-top: var(--space-11);
+}
+
+.library-section-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.library-section-hint {
+  margin: var(--space-2) 0 var(--space-8);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.library-empty {
+  margin: var(--space-9) 0;
+  text-align: center;
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+}
+
+.library-empty-inline {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.library-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.library-card,
+.library-shared-card {
+  background: var(--surface-container);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-8);
+}
+
+.library-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.library-card-name {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.library-badge {
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-size: var(--text-2xs);
+}
+
+.library-badge[data-origin="builtin"] {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.library-badge[data-tone="danger"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.library-card-description {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--on-surface-variant);
+}
+
+.library-shared-by {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+/* Host, transport, auth and tool count: the facts an adopter is deciding on,
+   so they sit on the card face rather than behind a disclosure. */
+.library-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-9);
+  margin: var(--space-5) 0 0;
+  font-size: var(--text-xs);
+}
+
+.library-meta div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.library-meta dt {
+  color: var(--on-surface-variant);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.library-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.library-health {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.library-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--outline-variant);
+  flex-shrink: 0;
+}
+
+.library-health[data-tone="ok"] .library-health-dot {
+  background: var(--success);
+}
+
+.library-health[data-tone="danger"] .library-health-dot {
+  background: var(--danger);
+}
+
+.library-health-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.library-warning {
+  margin: var(--space-5) 0 0;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--text-xs);
+}
+
+.library-tool-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: 0;
+}
+
+.library-tool-chips code {
+  display: inline-block;
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--surface-container-highest);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.library-tool-heading {
+  margin: var(--space-7) 0 var(--space-4);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.library-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.library-tool-list code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  overflow-wrap: anywhere;
+}
+
+.library-tool-list p {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--on-surface-variant);
+}
+
+.library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+}
+
+.library-action {
+  padding: var(--space-3) var(--space-7);
+  font-size: var(--text-xs);
+}
+
+.library-credential {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.library-credential input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-5);
+  color: var(--on-surface);
+  font-size: var(--text-xs);
+}
+
+.library-credential input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.library-opted-out {
+  margin-top: var(--space-8);
+}
+
+.library-opted-out-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.library-opted-out-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+}
+
+/* The checkbox is the whole point of this section, so it leads the row. */
+.library-shared-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-7);
+}
+
+.library-adopt {
+  display: inline-flex;
+  align-items: center;
+  padding-top: var(--space-1);
+  cursor: pointer;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.library-adopt:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.library-adopt input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.library-shared-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Registration form (McpServerForm, hosted in a Modal) ---- */
+
+.mcp-form-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+.mcp-form-server-error {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.mcp-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}

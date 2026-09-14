@@ -1,0 +1,129 @@
+/* 창 안에서 높이를 차지하고 안쪽만 스크롤한다. 문서가 길어도 모달 자체가
+   화면 밖으로 자라면 닫기 버튼이 사라진다. */
+.docview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-height: 0;
+  max-height: min(70vh, 640px);
+}
+
+.docview-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.docview-tab {
+  padding: var(--space-3) var(--space-6);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.docview-tab.selected {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.docview-note {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.docview-loading,
+.docview-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.docview-error {
+  color: var(--danger);
+}
+
+/* 원문은 손대지 않고 그대로 보여 준다 — 줄바꿈과 들여쓰기가 곧 그 문서다. */
+.docview-text {
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.docview-chunks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* 청크마다 테두리를 두는 것이 이 화면의 요점이다 — 어디서 끊겼는지가 보여야 한다. */
+.docview-chunk {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  /* 세로 flex 안에서 줄어들지 않는다.
+     `overflow: hidden` 은 모서리를 깎으려고 준 것인데, 그 부작용으로 flex
+     항목의 '자동 최소 크기'가 꺼진다. 그러면 항목들이 내용 높이 아래로도
+     수축할 수 있고, 210개가 한 상자에 들어가면 전부 높이 0이 되어 빈 줄만
+     쌓였다. 세 개일 때는 자리가 남아 드러나지 않던 종류의 버그다. */
+  flex-shrink: 0;
+}
+
+/* 앞 청크에서 이월된 머리 부분. 흐리게 두는 이유는, 겹침이 설계된 동작인데
+   죽 훑으면 같은 문장이 두 번 나온 것처럼 보이기 때문이다 — 색이 다르면
+   '중복'이 아니라 '이어짐'으로 읽힌다. */
+.docview-carry {
+  color: var(--on-surface-variant);
+  opacity: 0.65;
+}
+
+.docview-chunk-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-container);
+}
+
+.docview-chunk-no {
+  min-width: 2ch;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.docview-chunk-len {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.docview-chunk-body {
+  margin: 0;
+  padding: var(--space-5);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

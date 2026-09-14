@@ -1,0 +1,175 @@
+.message-row {
+  display: flex;
+  gap: var(--space-6);
+}
+
+/* Two-row layout: the bubble, then its footer underneath — the footer is a
+   sibling of the bubble, not a child, so it never stretches the bubble. */
+.message-row.user {
+  flex-direction: column;
+  align-items: flex-end;
+  /* Tighter than the row's default gap: this is the bubble-to-footer
+     spacing now, not the avatar-to-bubble spacing. */
+  gap: var(--space-2);
+}
+
+.message-row.user .message-footer {
+  justify-content: flex-end;
+}
+
+/* The assistant row keeps the avatar beside the bubble, so it stays a
+   grid: avatar in column 1, bubble and footer stacked in column 2. */
+.message-row.assistant {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--space-5);
+  align-items: start;
+}
+
+/* Explicit row 1 placement for the avatar and the live status line; the
+   bubble and the footer only pin their column, so they auto-flow into row 1
+   (no status, i.e. a finished message) or row 2 (status present). */
+.message-row.assistant .message-avatar {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.message-row.assistant .message-status {
+  grid-row: 1;
+  grid-column: 2;
+  /* Shrink to the text: the shimmer sweeps across the element box, so a
+     full-column-width box would leave the sweep off the words. */
+  justify-self: start;
+  /* Same 28px box (and 2px nudge) as the avatar, so the two read as one line. */
+  margin-top: var(--space-1);
+  line-height: 28px;
+}
+
+.message-row.assistant .message-footer {
+  grid-column: 2;
+  margin-top: var(--space-2);
+}
+
+/* 답변 옆에 서는 표식. 빈 그라데이션 원이었는데, 그러면 누가 말하는지를 색으로만
+   말한다 — 대화가 길어지면 그 색은 배경이 된다.
+
+   그래서 앱의 마크와 같은 글자를 넣는다: 콘솔 프롬프트. BrandMark 는 같은 모양을
+   선으로 그리는데(16px 파비콘에서도 읽혀야 해서), 여기는 28px 이라 글자가 더
+   또렷하다. 흰색은 두 테마 모두에서 옳다 — 이 글자는 페이지가 아니라 늘
+   그라데이션 위에 놓이기 때문이다. */
+.message-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+  border-radius: 50%;
+  background-image: var(--brand-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.message-avatar::before {
+  content: ">_";
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: #fff;
+  /* 밑줄이 글자칸 아래쪽에 붙어 있어 두 글자의 무게가 아래로 쏠린다. 광학적으로
+     가운데에 오도록 아주 조금 올린다. */
+  transform: translateY(-0.5px);
+}
+
+.message-bubble {
+  min-width: 0;
+}
+
+.message-row.user .message-bubble {
+  max-width: min(80%, 560px);
+  background: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+  border-radius: 20px;
+  padding: var(--space-5) var(--space-8);
+}
+
+.message-row.assistant .message-bubble {
+  grid-column: 2;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+
+.message-plain-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.message-note {
+  margin: var(--space-4) 0 0;
+  /* Several notices in one turn are joined with "\n"; keep those breaks. */
+  white-space: pre-line;
+  font-size: var(--text-xs);
+  color: var(--warning);
+  background: var(--warning-bg);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+}
+
+.message-error {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+}
+
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+/* One line: tokens, then the time to their right, separated the way the token
+   line separates its own two figures. Wraps rather than overflows on a narrow
+   window. */
+.message-usage {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.message-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.message-actions .btn-icon {
+  width: 28px;
+  height: 28px;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.message-actions .btn-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.message-actions .btn-icon:hover {
+  opacity: 1;
+}
+
+/* The separator belongs to the pairing, not to either figure, so it is drawn
+   only when a second figure is actually there. */
+.message-usage > span + span::before {
+  content: "·";
+  margin-right: var(--space-3);
+}

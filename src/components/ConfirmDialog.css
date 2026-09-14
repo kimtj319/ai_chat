@@ -1,0 +1,11 @@
+.confirm-message {
+  margin: 0 0 18px;
+  color: var(--on-surface-variant);
+  line-height: 1.6;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}

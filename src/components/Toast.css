@@ -1,0 +1,54 @@
+/* Sits above the dialog layer: a copy button inside a dialog still has to be
+   able to confirm itself. */
+.toast {
+  position: fixed;
+  left: 50%;
+  /* Clear of the composer, which owns the bottom of the chat view — a
+     confirmation that covers the box you are about to type in is worse than
+     no confirmation. */
+  bottom: calc(var(--space-11) * 3);
+  transform: translateX(-50%);
+  /* Above .modal-overlay (100), so a copy inside a dialog still confirms. */
+  z-index: 200;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  /* The two surface tokens swapped: dark pill on the light theme, light pill on
+     the dark one, without inventing a colour either theme has to maintain. */
+  background: var(--on-surface);
+  color: var(--surface);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  box-shadow: var(--shadow-lg);
+  /* It is a confirmation, not a control — clicks belong to the page under it. */
+  pointer-events: none;
+  animation: toast-in 0.14s ease-out;
+}
+
+/* 실패는 확인과 다르게 보여야 한다. 문장이 길어질 수 있으므로 알약 모양을
+   버리고, 화면 폭을 넘지 않게 가둔다. */
+.toast[data-tone="error"] {
+  max-width: min(560px, calc(100vw - var(--space-10) * 2));
+  border-radius: var(--radius-sm);
+  background: var(--danger);
+  color: var(--on-danger);
+  text-align: left;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}

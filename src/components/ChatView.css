@@ -1,0 +1,247 @@
+/* Transparent: the window's one backdrop (AppBackdrop) shows through here and
+   past the sidebar alike, which is what makes it read as a single background
+   rather than a panel with its own colour. */
+.chat-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-header {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: var(--space-8) 0 0;
+}
+
+/* The usage text stays aligned to the 830px transcript column, but the action
+   icons are pushed to the far right edge of the window — matching the
+   reference, where the header controls hug the viewport, not the column. */
+.chat-header-inner {
+  padding: 0 var(--space-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.chat-header-left {
+  max-width: 830px;
+  margin: 0 auto;
+  padding-left: var(--space-10);
+}
+
+.chat-header-right {
+  margin-left: auto;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.chat-header-usage {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+
+.chat-message-list {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.chat-message-list-inner {
+  max-width: 830px;
+  margin: 0 auto;
+  min-height: 100%;
+  padding: var(--space-10) var(--space-10) var(--space-11);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-9);
+}
+
+.chat-empty-state {
+  position: relative;
+  z-index: 1;
+  margin: auto;
+  text-align: center;
+  color: var(--on-surface-variant);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+/* On a blank conversation the greeting belongs WITH the composer rather than
+   floating in the middle of the space above it — the two are one thing to act
+   on. Bottom-aligned inside the list, so the list's own bottom padding is the
+   whole of the gap. */
+.chat-empty-state-greeting {
+  gap: var(--space-4);
+  margin-top: auto;
+  margin-bottom: var(--space-2);
+}
+
+.empty-greeting {
+  margin: 0;
+  font-size: var(--text-display);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  color: var(--on-surface);
+}
+
+.empty-subtitle {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--on-surface-variant);
+}
+
+.empty-model-note {
+  margin-top: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.empty-model-note strong {
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.chat-view-empty {
+  justify-content: center;
+}
+
+.composer-dock {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-10) var(--space-9);
+}
+
+/* Anchored to the dock's top edge rather than to the view's bottom, so a
+   composer grown to several lines carries the button up with it instead of
+   being overlapped by it. It cannot live inside the transcript: that scrolls,
+   and this has to stay put while it does. */
+.chat-jump-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--space-2));
+  transform: translateX(-50%);
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  box-shadow: var(--shadow-md);
+  transition: background-color 0.15s ease, scale var(--press-out) var(--press-ease);
+}
+
+.chat-jump-bottom:hover {
+  background: var(--surface-container-highest);
+}
+
+/* `scale` and not a transform: the translateX above is what centres the
+   button, and a transform here would drop it half a width to the right. */
+.chat-jump-bottom:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.chat-jump-bottom svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* What puts the composer under the greeting on a blank conversation, and what
+   lowers it to the floor on the first message.
+   It is a spacer BELOW the dock rather than a moved dock: the composer keeps
+   one position in the layout and one place in the tab order, and a single
+   height animates instead of the composer being torn out of one container and
+   dropped into another. The message list above takes what is left, so the
+   greeting stays centred in whatever room remains. */
+.composer-spacer {
+  flex-shrink: 0;
+  height: 34vh;
+  transition: height 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chat-view.has-messages .composer-spacer {
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-spacer {
+    transition: none;
+  }
+}
+
+/* Drop target feedback for the whole view. pointer-events stay off so the
+   overlay cannot generate its own dragenter/dragleave pairs — that is what
+   makes a drop overlay flicker as the cursor moves. */
+.chat-drop-overlay {
+  position: absolute;
+  inset: var(--space-6);
+  z-index: 30;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--primary);
+  border-radius: var(--radius-lg);
+  background: var(--scrim);
+}
+
+/* The card carries its own surface: the scrim above is a dark wash in both
+   themes, and the copy has to stay readable on it. */
+.chat-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--on-surface-variant);
+  text-align: center;
+  padding: var(--space-9) var(--space-10);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-high);
+  box-shadow: var(--shadow-md);
+}
+
+.chat-drop-card svg {
+  width: 28px;
+  height: 28px;
+  color: var(--primary);
+}
+
+.chat-drop-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.chat-drop-subtitle {
+  margin: 0;
+  font-size: var(--text-sm);
+}

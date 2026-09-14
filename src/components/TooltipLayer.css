@@ -1,0 +1,20 @@
+/* Positioned from the trigger's own rectangle, so it needs no layout box and
+   the rows it belongs to are untouched. */
+.icon-tooltip {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 300;
+  max-width: 260px;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+  /* The two surface tokens swapped, the same recipe the toast uses. */
+  background: var(--on-surface);
+  color: var(--surface);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: var(--shadow-lg);
+  /* It is a label, not a target: hovering it must not keep it alive. */
+  pointer-events: none;
+}

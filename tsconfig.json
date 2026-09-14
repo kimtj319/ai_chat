@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
+  },
+  "include": ["src"],
+  /* 이 검사만 빠진다. src 아래의 CSS 파일들을 직접 읽어 확인하는 것이라
+     node 의 fs 가 필요한데, 여기는 브라우저용 타입 체크라 node 타입이 없다.
+     나머지 프런트 검사(routes, overlayStack)는 순수 함수뿐이라 그대로
+     체크를 받는다 — 검사라고 일괄로 빼지 않는 이유다. 실행은 npm test 가
+     tsx 로 한다. */
+  "exclude": ["src/styles/selectors.test.ts"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

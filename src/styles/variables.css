@@ -1,0 +1,475 @@
+/*
+ * Token layer: primitive palette -> semantic roles (Material 3 spirit).
+ * Components must consume semantic tokens (--surface, --on-surface, --primary, ...)
+ * only; no raw hex belongs in component CSS.
+ */
+
+:root {
+  /* ---- Primitives: neutrals ---- */
+  --p-neutral-0: #1c1d1f;
+  --p-neutral-10: #0d0d0d;
+  --p-neutral-20: #282a2c;
+  --p-neutral-22: #1e1f20;
+  --p-neutral-25: #333537;
+  --p-neutral-87: #ececec;
+  --p-neutral-92: #f0f4f9;
+  --p-neutral-94: #e9eef6;
+  --p-neutral-98: #f8fafd;
+  --p-neutral-100: #ffffff;
+  --p-neutral-variant-30: #444746;
+  --p-neutral-variant-60: #c4c7c5;
+
+  /* ---- Primitives: Gemini-reference surfaces (sidebar/app-canvas split) ----
+     The dark ramp sits a step above where it started (canvas #0e0e0f, surface
+     #131314, sidebar #1b1c1d). Text on a near-black ground blooms, and that
+     bloom is what reads as soft: ChatGPT answers on #212121, Claude on #262624,
+     Gemini on #1b1b1b, none of them on black. Measured across the move, body
+     contrast is unchanged (15.03:1 -> 15.04:1) because the text lifted with the
+     ground; only the halation went. ---- */
+  --p-sidebar-dark: #232427;
+  --p-app-canvas-dark: #17181a;
+  --p-nav-selected-dark: #333438;
+  /* Light counterpart. One step below the sidebar's own tone, because the
+     selected pill now sits on a tinted sidebar rather than on white:
+     measured 1.28:1 against #f0f4f9, matching the dark pair's 1.25:1. */
+  --p-nav-selected-light: #d0dae7;
+
+  /* ---- Primitives: muted text ----
+     Secondary lines (the token/duration footer, sidebar titles, hints) are the
+     smallest type in the app at 12.5px, so they were also the first to go soft.
+     Raised to 7.99:1 light and 9.29:1 dark, from 6.05:1 and 7.31:1; the dark
+     value is ChatGPT's secondary grey. ---- */
+  --p-muted-light: #4d5156;
+  --p-muted-dark: #b7bcc2;
+
+  /* ---- Primitives: ambient background glow (light only; dark uses rgba inline) ---- */
+  --p-glow-1: #c9dcf5;
+  --p-glow-2: #e8f0fb;
+
+  /* ---- Primitives: brand blue ---- */
+  --p-blue-10: #041e49;
+  --p-blue-20: #062e6f;
+  --p-blue-30: #004a77;
+  --p-blue-40: #0b57d0;
+  --p-blue-80: #a8c7fa;
+  --p-blue-90: #d3e3fd;
+  --p-blue-95: #c2e7ff;
+
+  /* ---- Primitives: status hues ---- */
+  --p-red-40: #b3261e;
+  --p-red-80: #f2b8b5;
+  --p-red-bg-light: #fceeee;
+  --p-red-bg-dark: #3a1113;
+  --p-red-on-dark: #601410;
+  --p-amber-30: #7a4e00;
+  --p-amber-80: #fdd663;
+  --p-amber-bg-light: #fef3d8;
+  --p-amber-bg-dark: #3a2e00;
+  --p-green-30: #146c2e;
+  --p-green-80: #6dd58c;
+
+  /* ---- Primitives: brand gradient (theme-invariant) ---- */
+  --p-gradient-1: #4285f4;
+  --p-gradient-2: #9b72cb;
+  --p-gradient-3: #d96570;
+
+  /* ---- Primitives: tinted surfaces ---- */
+  --p-user-bubble-light: #e8f0fe;
+  --p-user-bubble-dark: #2b3a55;
+
+  /* ---- Primitives: syntax highlighting ---- */
+  --p-syntax-comment-light: #6a737d;
+  --p-syntax-keyword-light: #cf222e;
+  --p-syntax-string-light: #032f62;
+  --p-syntax-number-light: #005cc5;
+  --p-syntax-entity-light: #6f42c1;
+  --p-syntax-tag-light: #116329;
+  --p-syntax-variable-light: #953800;
+  --p-syntax-deletion-light: #82071e;
+  --p-syntax-deletion-bg-light: #ffebe9;
+  --p-syntax-addition-light: #116329;
+  --p-syntax-addition-bg-light: #dafbe1;
+
+  --p-syntax-comment-dark: #8b949e;
+  --p-syntax-keyword-dark: #ff7b72;
+  --p-syntax-string-dark: #a5d6ff;
+  --p-syntax-number-dark: #79c0ff;
+  --p-syntax-entity-dark: #d2a8ff;
+  --p-syntax-tag-dark: #7ee787;
+  --p-syntax-variable-dark: #ffa657;
+  --p-syntax-deletion-dark: #ffdcd7;
+  --p-syntax-deletion-bg-dark: #67060c;
+  --p-syntax-addition-dark: #aff5b4;
+  --p-syntax-addition-bg-dark: #033a16;
+
+  /* ---- Shape ---- */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+  /* The floating glass plate. Exactly half the collapsed sidebar's width, and
+     that is the whole trick: hold the radius constant and animate only the
+     width, and the corner arcs keep their shape while the straight runs
+     between them shorten — at 68px the two arcs meet and the plate IS a
+     capsule. Animating the radius instead makes the silhouette morph. */
+  --radius-glass: 34px;
+  --radius-full: 9999px;
+
+  /* ---- Motion: press feedback ----
+     90ms down, because past roughly 120ms a press stops reading as the cause
+     of what follows and starts reading as lag; the release is given twice
+     that, since a settle is allowed to be slower than the answer to a click.
+     Two scale steps because the edge travel a scale produces is proportional
+     to the element's width: 0.96 moves a 36px icon button's edge 0.7px and a
+     280px sidebar row's edge 5.6px, which is a nudge on one and a squeeze on
+     the other. Controls with no box of their own (underlined links, bare text
+     disclosures) take neither — scaling type off its baseline smears it, so
+     they dim instead. The ease is the one the sidebar and the composer
+     already move on. ---- */
+  --press-in: 90ms;
+  --press-out: 180ms;
+  --press-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --press-scale: 0.96;
+  --press-scale-row: 0.985;
+  --press-opacity: 0.6;
+
+  /* ---- Spacing: the repeated gap/padding/margin rhythm across components.
+     One-off pixel tunings that don't belong to this rhythm stay literal. ---- */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 20px;
+  --space-10: 24px;
+  --space-11: 32px;
+
+  /* ---- Typography ---- */
+  /*
+   * The platform's own UI face first, and nothing ahead of it.
+   *
+   * Measured in the deployed app: every name that used to lead this list —
+   * "Google Sans", "Product Sans", Roboto — is absent on an ordinary machine
+   * (Gemini serves Google Sans as a webfont from its own domain; we cannot),
+   * so the first name that actually resolved was "Helvetica Neue". A canvas
+   * measurement of "가나다 abcdefg 0123" at 450/15px gave 137.59px for the body
+   * and 137.59px for Helvetica Neue against 126.81px for every other candidate
+   * — the body was rendering in Helvetica Neue, which has no screen hinting and
+   * no 450 weight to snap to, and that is why the text read as soft in both
+   * themes. ChatGPT and Claude both resolve to the platform face this way.
+   *
+   * The Latin faces below carry no Hangul, so Korean falls through to the first
+   * name here that has it: Apple SD Gothic Neo on macOS, Malgun Gothic on
+   * Windows, Noto Sans KR elsewhere.
+   */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto,
+    "Apple SD Gothic Neo", "Pretendard Variable", Pretendard, "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Font-size scale. --text-base is the body baseline (~15px); everything
+     else is named relative to it rather than to its old pixel value, so a
+     "meta" label and a "small UI" label both read as clearly bigger than
+     before even though their old pixel values differed slightly. */
+  --text-2xs: 11px;
+  --text-xs: 12.5px;
+  --text-sm: 14px;
+  --text-base: 15px;
+  --text-md: 16.5px;
+  --text-display: 38px;
+
+  /* Font-weight scale. --weight-body lifts ordinary paragraph/UI text off
+     the browser default (400) without making it read as emphasized. */
+  --weight-regular: 400;
+  --weight-body: 450;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- Semantic roles: light (default) ---- */
+  --surface: var(--p-neutral-100);
+  --surface-container: var(--p-neutral-92);
+  --surface-container-high: var(--p-neutral-98);
+  --surface-container-highest: var(--p-neutral-94);
+  --on-surface: var(--p-neutral-10);
+  --on-surface-variant: var(--p-muted-light);
+  --outline-variant: var(--p-neutral-variant-60);
+
+  /* Gemini-reference layout surfaces */
+  /* Light: the sidebar steps one tone off the white canvas so the two
+     panes read as separate surfaces, the same way the dark theme splits
+     them (sidebar #1b1c1d vs canvas #0e0e0f). */
+  --sidebar-surface: var(--p-neutral-92);
+  --app-canvas: var(--p-neutral-100);
+  --composer-surface: var(--p-neutral-100);
+  --nav-selected-bg: var(--p-nav-selected-light);
+  --ambient-glow: radial-gradient(
+    ellipse 900px 560px at 50% 100%,
+    var(--p-glow-1) 0%,
+    var(--p-glow-2) 42%,
+    rgba(255, 255, 255, 0) 72%
+  );
+
+  --primary: var(--p-blue-40);
+  --on-primary: var(--p-neutral-100);
+  --primary-container: var(--p-blue-90);
+  --on-primary-container: var(--p-blue-10);
+
+  --danger: var(--p-red-40);
+  --danger-bg: var(--p-red-bg-light);
+  --on-danger: var(--p-neutral-100);
+  --success: var(--p-green-30);
+  --warning: var(--p-amber-30);
+  --warning-bg: var(--p-amber-bg-light);
+
+  --user-bubble-bg: var(--p-user-bubble-light);
+  --user-bubble-text: var(--on-surface);
+
+  --gradient-start: var(--p-gradient-1);
+  --gradient-mid: var(--p-gradient-2);
+  --gradient-end: var(--p-gradient-3);
+  --brand-gradient: linear-gradient(90deg, var(--gradient-start), var(--gradient-mid), var(--gradient-end));
+
+  --syntax-comment: var(--p-syntax-comment-light);
+  --syntax-keyword: var(--p-syntax-keyword-light);
+  --syntax-string: var(--p-syntax-string-light);
+  --syntax-number: var(--p-syntax-number-light);
+  --syntax-entity: var(--p-syntax-entity-light);
+  --syntax-tag: var(--p-syntax-tag-light);
+  --syntax-variable: var(--p-syntax-variable-light);
+  --syntax-deletion: var(--p-syntax-deletion-light);
+  --syntax-deletion-bg: var(--p-syntax-deletion-bg-light);
+  --syntax-addition: var(--p-syntax-addition-light);
+  --syntax-addition-bg: var(--p-syntax-addition-bg-light);
+
+  --scrim: rgba(31, 31, 31, 0.32);
+  --shadow-md: 0 2px 6px rgba(31, 31, 31, 0.12), 0 6px 16px rgba(31, 31, 31, 0.1);
+  --shadow-lg: 0 8px 24px rgba(31, 31, 31, 0.18), 0 2px 8px rgba(31, 31, 31, 0.08);
+
+  /* ---- Glass: the floating sidebar plate ----
+     A tint over a blur of whatever is behind it. The tint is a gradient rather
+     than one flat alpha, so the plate has a lit edge and a shaded one the way
+     real glass does. The --backdrop tokens are the drifting colour fields the
+     window paints behind EVERYTHING (see AppBackdrop): blurring a flat ground
+     just yields a flat panel, so there has to be something back there to
+     refract — and it has to continue past the plate's edges. */
+  --glass-blur: 22px;
+  --glass-tint: linear-gradient(158deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.3) 46%, rgba(255, 255, 255, 0.46));
+  --glass-border: rgba(255, 255, 255, 0.78);
+  /* A white rim alone vanishes against a white page, so the plate also gets a
+     hairline of the page's own ink to cut its silhouette. */
+  --glass-edge: rgba(31, 31, 31, 0.09);
+  --glass-inner-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 14px 44px rgba(31, 31, 31, 0.16), 0 2px 8px rgba(31, 31, 31, 0.08);
+  --backdrop-1: rgba(66, 133, 244, 0.34);
+  --backdrop-2: rgba(155, 114, 203, 0.3);
+  --backdrop-3: rgba(217, 101, 112, 0.22);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: var(--p-neutral-0);
+    --surface-container: var(--p-neutral-22);
+    --surface-container-high: var(--p-neutral-20);
+    --surface-container-highest: var(--p-neutral-25);
+    --on-surface: var(--p-neutral-87);
+    --on-surface-variant: var(--p-muted-dark);
+    --outline-variant: var(--p-neutral-variant-30);
+
+    /* Gemini-reference layout surfaces */
+    --sidebar-surface: var(--p-sidebar-dark);
+    --app-canvas: var(--p-app-canvas-dark);
+    --composer-surface: var(--p-neutral-22);
+    --nav-selected-bg: var(--p-nav-selected-dark);
+    --ambient-glow: radial-gradient(
+      ellipse 900px 560px at 50% 100%,
+      rgba(88, 124, 196, 0.16) 0%,
+      rgba(88, 124, 196, 0.06) 45%,
+      rgba(14, 14, 15, 0) 75%
+    );
+
+    --primary: var(--p-blue-80);
+    --on-primary: var(--p-blue-20);
+    --primary-container: var(--p-blue-30);
+    --on-primary-container: var(--p-blue-95);
+
+    --danger: var(--p-red-80);
+    --danger-bg: var(--p-red-bg-dark);
+    --on-danger: var(--p-red-on-dark);
+    --success: var(--p-green-80);
+    --warning: var(--p-amber-80);
+    --warning-bg: var(--p-amber-bg-dark);
+
+    --user-bubble-bg: var(--p-user-bubble-dark);
+    --user-bubble-text: var(--on-surface);
+
+    --syntax-comment: var(--p-syntax-comment-dark);
+    --syntax-keyword: var(--p-syntax-keyword-dark);
+    --syntax-string: var(--p-syntax-string-dark);
+    --syntax-number: var(--p-syntax-number-dark);
+    --syntax-entity: var(--p-syntax-entity-dark);
+    --syntax-tag: var(--p-syntax-tag-dark);
+    --syntax-variable: var(--p-syntax-variable-dark);
+    --syntax-deletion: var(--p-syntax-deletion-dark);
+    --syntax-deletion-bg: var(--p-syntax-deletion-bg-dark);
+    --syntax-addition: var(--p-syntax-addition-dark);
+    --syntax-addition-bg: var(--p-syntax-addition-bg-dark);
+
+    --scrim: rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+    /* ---- Glass: the floating sidebar plate (see the light block) ---- */
+    --glass-blur: 24px;
+    --glass-tint: linear-gradient(158deg, rgba(78, 80, 88, 0.62), rgba(32, 33, 36, 0.34) 46%, rgba(52, 53, 59, 0.5));
+    --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-edge: rgba(0, 0, 0, 0.3);
+    --glass-inner-highlight: rgba(255, 255, 255, 0.16);
+    --glass-shadow: 0 18px 48px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.4);
+    --backdrop-1: rgba(66, 133, 244, 0.38);
+    --backdrop-2: rgba(155, 114, 203, 0.34);
+    --backdrop-3: rgba(217, 101, 112, 0.26);
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface: var(--p-neutral-0);
+  --surface-container: var(--p-neutral-22);
+  --surface-container-high: var(--p-neutral-20);
+  --surface-container-highest: var(--p-neutral-25);
+  --on-surface: var(--p-neutral-87);
+  --on-surface-variant: var(--p-muted-dark);
+  --outline-variant: var(--p-neutral-variant-30);
+
+  /* Gemini-reference layout surfaces */
+  --sidebar-surface: var(--p-sidebar-dark);
+  --app-canvas: var(--p-app-canvas-dark);
+  --composer-surface: var(--p-neutral-22);
+  --nav-selected-bg: var(--p-nav-selected-dark);
+  --ambient-glow: radial-gradient(
+    ellipse 900px 560px at 50% 100%,
+    rgba(88, 124, 196, 0.16) 0%,
+    rgba(88, 124, 196, 0.06) 45%,
+    rgba(14, 14, 15, 0) 75%
+  );
+
+  --primary: var(--p-blue-80);
+  --on-primary: var(--p-blue-20);
+  --primary-container: var(--p-blue-30);
+  --on-primary-container: var(--p-blue-95);
+
+  --danger: var(--p-red-80);
+  --danger-bg: var(--p-red-bg-dark);
+  --on-danger: var(--p-red-on-dark);
+  --success: var(--p-green-80);
+  --warning: var(--p-amber-80);
+  --warning-bg: var(--p-amber-bg-dark);
+
+  --user-bubble-bg: var(--p-user-bubble-dark);
+  --user-bubble-text: var(--on-surface);
+
+  --syntax-comment: var(--p-syntax-comment-dark);
+  --syntax-keyword: var(--p-syntax-keyword-dark);
+  --syntax-string: var(--p-syntax-string-dark);
+  --syntax-number: var(--p-syntax-number-dark);
+  --syntax-entity: var(--p-syntax-entity-dark);
+  --syntax-tag: var(--p-syntax-tag-dark);
+  --syntax-variable: var(--p-syntax-variable-dark);
+  --syntax-deletion: var(--p-syntax-deletion-dark);
+  --syntax-deletion-bg: var(--p-syntax-deletion-bg-dark);
+  --syntax-addition: var(--p-syntax-addition-dark);
+  --syntax-addition-bg: var(--p-syntax-addition-bg-dark);
+
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  /* ---- Glass: the floating sidebar plate (see the light block) ---- */
+  --glass-blur: 24px;
+  --glass-tint: linear-gradient(158deg, rgba(78, 80, 88, 0.62), rgba(32, 33, 36, 0.34) 46%, rgba(52, 53, 59, 0.5));
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-edge: rgba(0, 0, 0, 0.3);
+  --glass-inner-highlight: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 18px 48px rgba(0, 0, 0, 0.6), 0 2px 10px rgba(0, 0, 0, 0.4);
+  --backdrop-1: rgba(66, 133, 244, 0.38);
+  --backdrop-2: rgba(155, 114, 203, 0.34);
+  --backdrop-3: rgba(217, 101, 112, 0.26);
+}
+
+:root[data-theme="light"] {
+  --surface: var(--p-neutral-100);
+  --surface-container: var(--p-neutral-92);
+  --surface-container-high: var(--p-neutral-98);
+  --surface-container-highest: var(--p-neutral-94);
+  --on-surface: var(--p-neutral-10);
+  --on-surface-variant: var(--p-muted-light);
+  --outline-variant: var(--p-neutral-variant-60);
+
+  /* Gemini-reference layout surfaces */
+  /* Light: the sidebar steps one tone off the white canvas so the two
+     panes read as separate surfaces, the same way the dark theme splits
+     them (sidebar #1b1c1d vs canvas #0e0e0f). */
+  --sidebar-surface: var(--p-neutral-92);
+  --app-canvas: var(--p-neutral-100);
+  --composer-surface: var(--p-neutral-100);
+  --nav-selected-bg: var(--p-nav-selected-light);
+  --ambient-glow: radial-gradient(
+    ellipse 900px 560px at 50% 100%,
+    var(--p-glow-1) 0%,
+    var(--p-glow-2) 42%,
+    rgba(255, 255, 255, 0) 72%
+  );
+
+  --primary: var(--p-blue-40);
+  --on-primary: var(--p-neutral-100);
+  --primary-container: var(--p-blue-90);
+  --on-primary-container: var(--p-blue-10);
+
+  --danger: var(--p-red-40);
+  --danger-bg: var(--p-red-bg-light);
+  --on-danger: var(--p-neutral-100);
+  --success: var(--p-green-30);
+  --warning: var(--p-amber-30);
+  --warning-bg: var(--p-amber-bg-light);
+
+  --user-bubble-bg: var(--p-user-bubble-light);
+  --user-bubble-text: var(--on-surface);
+
+  --syntax-comment: var(--p-syntax-comment-light);
+  --syntax-keyword: var(--p-syntax-keyword-light);
+  --syntax-string: var(--p-syntax-string-light);
+  --syntax-number: var(--p-syntax-number-light);
+  --syntax-entity: var(--p-syntax-entity-light);
+  --syntax-tag: var(--p-syntax-tag-light);
+  --syntax-variable: var(--p-syntax-variable-light);
+  --syntax-deletion: var(--p-syntax-deletion-light);
+  --syntax-deletion-bg: var(--p-syntax-deletion-bg-light);
+  --syntax-addition: var(--p-syntax-addition-light);
+  --syntax-addition-bg: var(--p-syntax-addition-bg-light);
+
+  --scrim: rgba(31, 31, 31, 0.32);
+  --shadow-md: 0 2px 6px rgba(31, 31, 31, 0.12), 0 6px 16px rgba(31, 31, 31, 0.1);
+  --shadow-lg: 0 8px 24px rgba(31, 31, 31, 0.18), 0 2px 8px rgba(31, 31, 31, 0.08);
+
+  /* ---- Glass: the floating sidebar plate ----
+     A tint over a blur of whatever is behind it. The tint is a gradient rather
+     than one flat alpha, so the plate has a lit edge and a shaded one the way
+     real glass does. The --backdrop tokens are the drifting colour fields the
+     window paints behind EVERYTHING (see AppBackdrop): blurring a flat ground
+     just yields a flat panel, so there has to be something back there to
+     refract — and it has to continue past the plate's edges. */
+  --glass-blur: 22px;
+  --glass-tint: linear-gradient(158deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.3) 46%, rgba(255, 255, 255, 0.46));
+  --glass-border: rgba(255, 255, 255, 0.78);
+  /* A white rim alone vanishes against a white page, so the plate also gets a
+     hairline of the page's own ink to cut its silhouette. */
+  --glass-edge: rgba(31, 31, 31, 0.09);
+  --glass-inner-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: 0 14px 44px rgba(31, 31, 31, 0.16), 0 2px 8px rgba(31, 31, 31, 0.08);
+  --backdrop-1: rgba(66, 133, 244, 0.34);
+  --backdrop-2: rgba(155, 114, 203, 0.3);
+  --backdrop-3: rgba(217, 101, 112, 0.22);
+}

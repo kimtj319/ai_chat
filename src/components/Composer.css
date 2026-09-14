@@ -1,0 +1,183 @@
+.composer {
+  max-width: 830px;
+  margin: 0 auto;
+  background: var(--composer-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  /* Symmetric now that a control leads the row: the 24px left inset was there
+     to give a bare textarea a margin, and it left the plus button sitting
+     further in than the send button on the other side. */
+  padding: 9px var(--space-5);
+  transition: box-shadow 0.2s ease;
+}
+
+.composer:focus-within {
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-container);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer {
+    transition: none;
+  }
+}
+
+.composer-input-row {
+  display: flex;
+  /* The trailing controls stay pinned to the bottom edge, so they hold still
+     while the textarea grows upward. (An earlier `center` here made them
+     float to the vertical middle of a tall textarea — wrong.) */
+  align-items: flex-end;
+  gap: var(--space-6);
+}
+
+.composer-textarea {
+  flex: 1;
+  /* Height is driven by the auto-resize effect in Composer.tsx; a manual
+     resize grip would fight it and lets the user cover the transcript. */
+  resize: none;
+  overflow-y: hidden;
+  min-height: 40px;
+  max-height: 220px;
+  border: none;
+  background: transparent;
+  color: var(--on-surface);
+  /* Symmetric padding keeps a single line optically centred against the
+     40px trailing buttons sitting on the same bottom edge. */
+  padding: 9px 0;
+  line-height: 1.45;
+  font-size: var(--text-base);
+}
+
+.composer-textarea::placeholder {
+  color: var(--on-surface-variant);
+}
+
+.composer-textarea:focus-visible {
+  outline: none;
+}
+
+/* Bottom-anchored like the trailing cluster, so it holds still while the
+   textarea grows upward. */
+.composer-leading {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding-bottom: var(--space-1);
+}
+
+.composer-trailing {
+  display: flex;
+  /* Centre the chip and the arrow against each other, not against the
+     textarea — they are one bottom-anchored cluster. */
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.composer-send {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* Grid centring beats inline-flex here: the button inherits a line-height
+     from .btn, and an inline SVG sits on that text baseline, which pushed the
+     arrow visibly above the circle's centre. */
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.composer-send svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* The attachment strip sits above the input row. Two 48px rows plus one gap
+   is the hard ceiling: like the textarea above, the composer must never grow
+   far enough to push the transcript off the screen — past that it scrolls. */
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  max-height: 102px;
+  overflow-y: auto;
+  padding: var(--space-2) 0 var(--space-3);
+}
+
+.composer-attachment-total {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+.composer-attachment-total[data-tone="warning"] {
+  color: var(--warning);
+}
+
+.composer-attachment-total[data-tone="danger"] {
+  color: var(--danger);
+  font-weight: var(--weight-medium);
+}
+
+/* One place for every attachment message. A refusal that names a workaround
+   is a --warning and stays; an outright failure is a --danger and clears
+   itself after six seconds. */
+.composer-attachment-error {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.composer-attachment-error[data-tone="danger"] {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.composer-attach svg {
+  width: 20px;
+  height: 20px;
+}
+
+.composer-send-waiting {
+  /* aria-disabled, so paint the disabled look ourselves. */
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.composer-send-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  animation: composer-send-spin 0.8s linear infinite;
+}
+
+@keyframes composer-send-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-send-spinner {
+    animation: none;
+  }
+}
+
+/* Mode banner: what pressing Enter will actually do, shown before anything is
+   typed rather than discovered afterwards. */
+.composer-mode-notice {
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--text-xs);
+}

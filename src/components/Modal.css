@@ -1,0 +1,97 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-10);
+}
+
+.modal {
+  background: var(--surface-container-high);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 480px;
+  max-height: min(720px, 90vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Opt-in wide layout — only a modal that explicitly passes size="wide" picks
+   this up (e.g. the tools panel's card grid). Every other dialog keeps the
+   480px default above. */
+.modal-wide {
+  max-width: min(1100px, 92vw);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-9) var(--space-10);
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--on-surface);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--on-surface-variant);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.modal-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.modal-close:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.modal-close:active {
+  background: var(--surface-container-highest);
+  filter: brightness(0.97);
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.modal-body {
+  padding: var(--space-2) var(--space-10) var(--space-10);
+  overflow-y: auto;
+}
+
+
+/* 좁은 화면에서는 바깥 여백을 줄인다. 480px 짜리 대화상자가 390px 화면에서
+   양쪽 var(--space-10) 을 그대로 물면 실제 내용 폭이 절반 가까이 깎인다. */
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: var(--space-6);
+    /* 위쪽에 붙인다: 키보드가 올라오면 가운데 정렬은 대화상자를 위로 밀어
+       제목을 화면 밖으로 내보낸다. */
+    align-items: flex-start;
+    padding-top: var(--space-10);
+  }
+
+  .modal {
+    max-height: calc(100dvh - var(--space-10) - var(--space-6));
+  }
+}

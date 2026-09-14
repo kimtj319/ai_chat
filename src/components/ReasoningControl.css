@@ -1,0 +1,161 @@
+.reasoning-control {
+  position: relative;
+}
+
+.reasoning-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 var(--space-6);
+  background: var(--surface-container-highest);
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-regular);
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, scale var(--press-out) var(--press-ease);
+}
+
+.reasoning-trigger:hover {
+  color: var(--on-surface);
+}
+
+.reasoning-trigger:active {
+  color: var(--on-surface);
+  background: var(--surface-container-high);
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.reasoning-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+
+.reasoning-popover {
+  position: absolute;
+  bottom: calc(100% + var(--space-5));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* Wide enough for all four level chips on one row — at 260px they wrapped
+     3+1 and squeezed the budget label into three lines. */
+  width: max-content;
+  min-width: 300px;
+  /* The same pane of glass as the sidebar, in a smaller pane: same tint, same
+     blur, same lit rim and ink hairline. The radius is the panel's rather than
+     the plate's — 34px on something this size would leave the rows' own pills
+     fighting the corner they sit in. */
+  background: var(--glass-tint);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px var(--glass-edge), var(--glass-shadow), inset 0 1px 0 var(--glass-inner-highlight);
+  padding: var(--space-7);
+}
+
+.reasoning-group-label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.reasoning-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Deliberately the same shape as .sidebar-nav-item: one row per choice, full
+   width, pill, transparent until hovered or chosen. */
+.reasoning-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-6);
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-full);
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease, scale var(--press-out) var(--press-ease);
+}
+
+.reasoning-option-label {
+  font-size: var(--text-sm);
+}
+
+.reasoning-option-hint {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  color: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.reasoning-option:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.reasoning-option:active {
+  background: var(--nav-selected-bg);
+  color: var(--on-surface);
+  scale: var(--press-scale-row);
+  transition-duration: var(--press-in);
+}
+
+.reasoning-option.active {
+  background: var(--nav-selected-bg);
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
+}
+
+
+
+/* Stands where the level rows would be, so it keeps their left padding; sized
+   like a row's hint, which is the quietest text in the popover. */
+.reasoning-fixed-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.reasoning-budget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.reasoning-budget-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.reasoning-budget-head label {
+  white-space: nowrap;
+}
+
+.reasoning-budget input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
+.reasoning-budget-value {
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-medium);
+}

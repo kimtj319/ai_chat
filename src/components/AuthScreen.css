@@ -1,0 +1,131 @@
+.auth-screen {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-10);
+  background: var(--app-canvas);
+  overflow: hidden;
+}
+
+/* Same ambient wash the chat canvas uses, so the login screen reads as the
+   same product rather than a bolted-on page. */
+.auth-glow {
+  position: absolute;
+  inset: 0;
+  background: var(--ambient-glow);
+  pointer-events: none;
+}
+
+.auth-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface-container-high);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-11) var(--space-10) var(--space-10);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-9);
+}
+
+.auth-brand-wordmark {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--on-surface);
+}
+
+.auth-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--on-surface);
+}
+
+.auth-subtitle {
+  margin: 0 0 var(--space-9);
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The shared .field already carries the bottom margin; the error/hint lines
+   sit inside it so they stay attached to their own input. */
+.auth-field-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+.auth-form-error {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.auth-notice {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.auth-submit {
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-5) var(--space-8);
+}
+
+.auth-switch {
+  margin: var(--space-9) 0 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: inherit;
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  transition: opacity var(--press-out) var(--press-ease);
+}
+
+.auth-link:active {
+  opacity: var(--press-opacity);
+  transition-duration: var(--press-in);
+}
+
+/* ---- First-paint splash, while GET /api/auth/me is still in flight ---- */
+
+.auth-splash {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  background: var(--app-canvas);
+  color: var(--on-surface-variant);
+  font-size: var(--text-sm);
+}

@@ -1,0 +1,281 @@
+* {
+  box-sizing: border-box;
+}
+
+/* Baseline for hand-written inline SVG icons: without this, a bare <svg
+   viewBox="..."> with no width/height falls back to the browser's replaced-
+   element default (~300x150) instead of scaling to its viewBox. */
+svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Transparent until the area is actually being scrolled (see
+   useScrollbarFade). Styling this pseudo-element at all opts out of Chrome's
+   own fading overlay scrollbar, so the fade has to be put back by hand; only
+   the colour changes, so the gutter never moves. */
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-full);
+  transition: background-color 0.3s ease;
+}
+
+[data-scrolling="true"]::-webkit-scrollbar-thumb {
+  background: var(--outline-variant);
+}
+
+a {
+  color: var(--primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Press feedback across the app is the independent `scale` property rather
+   than transform: scale(): .chat-jump-bottom and every caret already own a
+   `transform`, and a shorthand here would silently drop their translate or
+   rotate. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
+  transition: background-color 0.15s ease, color 0.15s ease, scale var(--press-out) var(--press-ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-container-highest);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--surface-container-highest);
+  filter: brightness(0.97);
+  scale: var(--press-scale);
+  /* The colour rides the press duration too, so one press lands as one event:
+     at 0.15s the background was still arriving after the scale had settled. */
+  transition-duration: var(--press-in);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-primary:active:not(:disabled) {
+  /* Repeated from .btn-primary, not inherited: `.btn:active:not(:disabled)`
+     above carries the same specificity and sets a grey background, so without
+     this the blue send and confirm buttons turned grey for as long as they
+     were held. Invisible until the press animation drew the eye to it. */
+  background: var(--primary);
+  filter: brightness(0.94);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--on-surface-variant);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-container);
+  color: var(--on-surface);
+}
+
+.btn-secondary:active:not(:disabled) {
+  background: var(--surface-container-highest);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-danger:active:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(0.92);
+}
+
+.btn-icon {
+  padding: var(--space-4);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-surface-variant);
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.btn-icon:active:not(:disabled) {
+  background: var(--surface-container-highest);
+  filter: brightness(0.97);
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.btn-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+
+.field label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.field .field-hint {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-weight: var(--weight-regular);
+}
+
+.field input[type="text"],
+.field input[type="password"],
+.field input[type="email"],
+.field input[type="number"],
+.field textarea,
+.field select {
+  background: var(--surface-container);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+  color: var(--on-surface);
+  width: 100%;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Shimmering gradient "thinking" indicator, shared by MessageItem and ThinkingPanel. */
+.thinking-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--on-surface-variant) 0%,
+    var(--gradient-start) 35%,
+    var(--gradient-mid) 50%,
+    var(--gradient-end) 65%,
+    var(--on-surface-variant) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: thinking-shimmer-sweep 2.2s linear infinite;
+}
+
+@keyframes thinking-shimmer-sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Every press rule in the app takes its scale and its timing from these
+     four, so blanking them here switches the whole set off at once and no
+     component file needs a block of its own. The colour and opacity half of
+     each press state stays: that is state, not motion. */
+  :root {
+    --press-in: 0s;
+    --press-out: 0s;
+    --press-scale: 1;
+    --press-scale-row: 1;
+  }
+
+  .thinking-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: var(--on-surface-variant);
+  }
+}

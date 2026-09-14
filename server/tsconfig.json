@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "../dist-server",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node", "express"]
+  },
+  "include": ["**/*.ts"],
+  "// exclude": "테스트는 배포 산출물에 들어갈 이유가 없다. tsx 가 소스에서 바로 돌린다(npm test).",
+  "exclude": ["**/*.test.ts"]
+}

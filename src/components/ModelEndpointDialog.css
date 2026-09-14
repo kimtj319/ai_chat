@@ -1,0 +1,99 @@
+/* Persistent, not dismissible: this API makes the server fetch an arbitrary
+   address on request and the app has no authentication of its own. */
+.endpoint-warning {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.endpoint-list {
+  list-style: none;
+  margin: 0 0 var(--space-9);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+
+.endpoint-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.endpoint-row-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.endpoint-row-host,
+.endpoint-row-models,
+.endpoint-row-note {
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+  /* Addresses and model ids are both long and both unbreakable. */
+  overflow-wrap: anywhere;
+}
+
+.endpoint-row-note {
+  color: var(--warning);
+}
+
+.endpoint-row-status {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--success);
+}
+
+.endpoint-row-status[data-reachable="false"] {
+  color: var(--danger);
+}
+
+.endpoint-empty {
+  padding: var(--space-5) var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.endpoint-form {
+  border-top: 1px solid var(--outline-variant);
+  padding-top: var(--space-9);
+}
+
+.endpoint-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.endpoint-status {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.endpoint-status[data-tone="ok"] {
+  color: var(--success);
+}
+
+.endpoint-status[data-tone="danger"] {
+  color: var(--danger);
+}

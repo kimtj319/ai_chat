@@ -1,0 +1,107 @@
+.tool-call-block {
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-high);
+  padding: var(--space-5) var(--space-7);
+  font-size: var(--text-sm);
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.tool-call-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--on-surface-variant);
+  flex-shrink: 0;
+}
+
+.tool-call-block-pending .tool-call-status-dot {
+  background: var(--warning);
+  animation: tool-call-pulse 1s infinite ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call-block-pending .tool-call-status-dot {
+    animation: none;
+  }
+}
+
+.tool-call-block-ok .tool-call-status-dot {
+  background: var(--success);
+}
+
+.tool-call-block-fail .tool-call-status-dot {
+  background: var(--danger);
+}
+
+@keyframes tool-call-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.tool-call-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+  font-family: var(--font-mono);
+}
+
+.tool-call-status-label {
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+}
+
+.tool-call-duration {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+}
+
+.tool-call-details {
+  margin-top: var(--space-3);
+}
+
+.tool-call-details summary {
+  cursor: pointer;
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+  transition: opacity var(--press-out) var(--press-ease);
+}
+
+.tool-call-details summary:active {
+  opacity: var(--press-opacity);
+  transition-duration: var(--press-in);
+}
+
+.tool-call-json {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.tool-call-error {
+  margin: var(--space-3) 0 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
