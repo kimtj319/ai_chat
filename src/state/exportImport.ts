@@ -17,9 +17,7 @@ export function downloadJson(filename: string, data: unknown): void {
  *
  * Deliberately NOT the conversation object. That carries the app's
  * configuration for the chat — id, system prompt, sampling settings, the
- * enabled tool list — none of which is history, and all of which the sidebar's
- * "내보내기" still writes in full for the round trip that can restore it. What
- * a reader wants out of this button is the exchange itself, with just enough
+ * enabled tool list — none of which is history. What a reader wants out of this button is the exchange itself, with just enough
  * heading to know which conversation and which model produced it.
  */
 export function conversationHistoryFile(

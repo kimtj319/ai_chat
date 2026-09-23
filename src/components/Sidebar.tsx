@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { pushOverlay } from "../ui/overlayStack";
-import { getConversation, getProhibitions } from "../api/client";
+import { getProhibitions } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useModels } from "../hooks/useModels";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
-import { downloadJson, parseImportedConversations } from "../state/exportImport";
+import { parseImportedConversations } from "../state/exportImport";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { CapabilityIcon } from "./CapabilityIcon";
@@ -85,16 +85,6 @@ function DocumentIcon() {
       <path d="M14 3v5h5" />
       <path d="M9 13h6" />
       <path d="M9 17h4" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v12" />
-      <path d="M7 10l5 5 5-5" />
-      <path d="M4 19.5h16" />
     </svg>
   );
 }
@@ -296,16 +286,6 @@ export function Sidebar({
     if (!id || editValue.trim().length === 0) return;
     try {
       await renameConversation(id, editValue.trim());
-    } catch (error) {
-      reportError(error);
-    }
-  }
-
-  async function handleExportAll() {
-    try {
-      const full = await Promise.all(conversations.map((c) => getConversation(c.id)));
-      downloadJson(`qwen3-conversations-${Date.now()}.json`, full);
-      showToast(`대화 ${full.length}개를 내보냈습니다.`);
     } catch (error) {
       reportError(error);
     }
@@ -532,16 +512,6 @@ export function Sidebar({
           <button
             type="button"
             className="btn-icon sidebar-rail-item"
-            data-tooltip="내보내기"
-            aria-label="내보내기"
-            disabled={conversations.length === 0}
-            onClick={() => void handleExportAll()}
-          >
-            <DownloadIcon />
-          </button>
-          <button
-            type="button"
-            className="btn-icon sidebar-rail-item"
             data-tooltip="가져오기"
             aria-label="가져오기"
             onClick={handleImportClick}
@@ -663,10 +633,6 @@ export function Sidebar({
         >
           <DocumentIcon />
           <span>문서</span>
-        </button>
-        <button type="button" className="sidebar-nav-item" onClick={() => void handleExportAll()} disabled={conversations.length === 0}>
-          <DownloadIcon />
-          <span>내보내기</span>
         </button>
         <button type="button" className="sidebar-nav-item" onClick={handleImportClick}>
           <UploadIcon />

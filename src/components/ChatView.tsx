@@ -10,6 +10,9 @@ import { conversationTokenTotals } from "../state/conversationOps";
 import { shouldShowAnswerNowButton } from "../state/answerNow";
 import { capabilityOf, kindOf } from "../state/modelCapability";
 import { conversationHistoryFile, downloadJson } from "../state/exportImport";
+import { exportConversationPdf } from "../state/pdfExport";
+import { pushOverlay } from "../ui/overlayStack";
+import { showErrorToast, showToast } from "./Toast";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
 import { AnswerNowButton } from "./AnswerNowButton";
@@ -127,6 +130,28 @@ export function ChatView({
     chatStream;
   const { status, recheck } = useHealthCheck();
   const listRef = useRef<HTMLDivElement>(null);
+  const listInnerRef = useRef<HTMLDivElement>(null);
+
+  // 다운로드 형식 선택(JSON / PDF). 바깥을 누르거나 Esc 면 닫힌다.
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const downloadRef = useRef<HTMLDivElement>(null);
+  useEffect(() => (downloadOpen ? pushOverlay() : undefined), [downloadOpen]);
+  useEffect(() => {
+    if (!downloadOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (downloadRef.current && !downloadRef.current.contains(event.target as Node)) setDownloadOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setDownloadOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [downloadOpen]);
 
   // The attachment draft belongs to the open conversation, so it is owned
   // here rather than in Composer — neither component remounts on a
@@ -279,27 +304,63 @@ export function ChatView({
           <div className="chat-header-right">
             {/* Disabled until there is something to save, so pressing it on a
                 fresh conversation cannot write an empty file. */}
-            <button
-              type="button"
-              className="btn-icon"
-              data-tooltip="대화 기록 저장"
-              aria-label="대화 기록 저장"
-              disabled={!hasMessages}
-              onClick={() =>
-                downloadJson(
-                  `${activeConversation.title}.json`,
-                  conversationHistoryFile(
-                    // "" on the record means "use the server default", which tells a
-                    // reader of the file nothing. Name the model that actually
-                    // answered — the same one the header shows.
-                    { ...activeConversation, model: activeConversation.model || models[0] || "" },
-                    activeConversation.messages.map(toExportableMessage),
-                  ),
-                )
-              }
-            >
-              <DownloadIcon />
-            </button>
+            <div className="chat-download" ref={downloadRef}>
+              <button
+                type="button"
+                className="btn-icon"
+                data-tooltip={pdfBusy ? "PDF 만드는 중…" : "대화 기록 저장"}
+                aria-label="대화 기록 저장"
+                aria-haspopup="menu"
+                aria-expanded={downloadOpen}
+                disabled={!hasMessages || pdfBusy}
+                onClick={() => setDownloadOpen((open) => !open)}
+              >
+                <DownloadIcon />
+              </button>
+              {downloadOpen && (
+                <div className="chat-download-menu" role="menu" aria-label="저장 형식">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="chat-download-option"
+                    onClick={() => {
+                      setDownloadOpen(false);
+                      downloadJson(
+                        `${activeConversation.title}.json`,
+                        conversationHistoryFile(
+                          // "" on the record means "use the server default", which tells a
+                          // reader of the file nothing. Name the model that actually
+                          // answered — the same one the header shows.
+                          { ...activeConversation, model: activeConversation.model || models[0] || "" },
+                          activeConversation.messages.map(toExportableMessage),
+                        ),
+                      );
+                    }}
+                  >
+                    <span className="chat-download-format">JSON</span>
+                    <span className="chat-download-hint">대화 기록 데이터</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="chat-download-option"
+                    onClick={() => {
+                      setDownloadOpen(false);
+                      const inner = listInnerRef.current;
+                      if (!inner) return;
+                      setPdfBusy(true);
+                      exportConversationPdf(inner, `${activeConversation.title}.pdf`)
+                        .then(() => showToast("PDF 로 저장했습니다."))
+                        .catch(showErrorToast)
+                        .finally(() => setPdfBusy(false));
+                    }}
+                  >
+                    <span className="chat-download-format">PDF</span>
+                    <span className="chat-download-hint">화면과 같은 모습</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               className="btn-icon"
@@ -336,7 +397,7 @@ export function ChatView({
       <StatusBanner status={status} onRetry={recheck} />
 
       <div className="chat-message-list" ref={listRef}>
-        <div className="chat-message-list-inner">
+        <div className="chat-message-list-inner" ref={listInnerRef}>
           {!hasMessages ? (
             <div className="chat-empty-state chat-empty-state-greeting">
               <h1 className="empty-greeting">안녕하세요</h1>

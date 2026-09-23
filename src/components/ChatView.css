@@ -13,7 +13,9 @@
 
 .chat-header {
   position: relative;
-  z-index: 1;
+  /* 본문 목록(z-index 1)보다 위. 같으면 뒤에 오는 목록이 이겨서, 헤더에서
+     아래로 펼쳐지는 저장 형식 메뉴를 말풍선이 덮고 클릭까지 가로챈다. */
+  z-index: 2;
   flex-shrink: 0;
   padding: var(--space-8) 0 0;
 }
@@ -244,4 +246,64 @@
 .chat-drop-subtitle {
   margin: 0;
   font-size: var(--text-sm);
+}
+
+/* ---- 다운로드 형식 선택 (JSON / PDF) ---- */
+
+.chat-download {
+  position: relative;
+}
+
+.chat-download-menu {
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  z-index: 30;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-container-high);
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-download-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 112px;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  text-align: left;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.chat-download-option:hover {
+  background: var(--surface-container-highest);
+}
+
+.chat-download-option:active {
+  scale: var(--press-scale-row);
+  transition-duration: var(--press-in);
+}
+
+.chat-download-option:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.chat-download-format {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.chat-download-hint {
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
 }
