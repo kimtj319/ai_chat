@@ -32,7 +32,7 @@ import {
   saveDocumentMeta,
   saveDocumentText,
 } from "../storage/documentStore.js";
-import { RagEngineError, countChunks, indexDocument, ragConfigured, removeDocument } from "../rag/engineIndex.js";
+import { RagEngineError, countChunks, indexDocument, ragConfigured, reindexScope, removeDocument } from "../rag/engineIndex.js";
 import { describeReport, preprocess } from "../rag/preprocess.js";
 import { partName, splitForIndexing } from "../rag/split.js";
 import type { RagDocument, RagDocumentScope, SharedRagDocument } from "../types.js";
@@ -313,6 +313,32 @@ documentsRouter.patch("/documents/:id", express.json({ limit: "8kb" }), async (r
     const scope = readScope((req.body as { scope?: unknown } | undefined)?.scope);
     if (scope === null || scope === undefined) {
       return fail(res, 400, "invalid_input", "공개 범위는 private 또는 shared 여야 합니다.");
+    }
+
+    // 색인이 이미 끝난 문서는 청크를 그대로 두고 권한만 바꾼다 — 문서가
+    // 조금도 안 바뀌었는데 매번 처음부터(특히 LLM 청킹을) 다시 하는 것은
+    // 낭비이고, 큰 문서일수록 그 낭비가 응답 없는 수십 초로 불어난다.
+    // 실패했던 문서만 원문부터 다시 자르는 아래 경로로 간다 — 그 문서는
+    // 지금 청크가 마지막 성공분과 같다는 보장이 없기 때문이다.
+    const existingChunks = doc.status === "ready" ? await readDocumentChunks(req.ownerId, doc.id) : null;
+    // 저장된 청크 수가 색인 때 기록한 수와 같을 때만 빠른 경로를 탄다. 권한이 걸린
+    // 자리라서다: 빠른 경로는 같은 DOCID 를 덮어쓸 뿐 지우지 않으므로, 수가 모자라면
+    // 남은 옛 청크가 **이전 권한 그대로** 검색에 걸린다 — 공개→비공개 전환에서
+    // 그것은 비공개 문서가 모두에게 보인다는 뜻이다. 어긋나면 옛 청크를 기록된 수만큼
+    // 지우고 다시 넣는 아래의 전체 경로로 간다.
+    if (existingChunks && existingChunks.length > 0 && existingChunks.length === doc.chunks) {
+      const chunkTexts = existingChunks.map((c) => (typeof c === "string" ? c : c.text));
+      try {
+        await indexLock(req.ownerId, () =>
+          reindexScope({ docId: doc.id, ownerId: req.ownerId, title: doc.name, scope, chunkTexts }),
+        );
+      } catch (err) {
+        const message = err instanceof RagEngineError ? err.message : err instanceof Error ? err.message : String(err);
+        return res.status(502).json({ error: message, code: "index_failed", document: doc });
+      }
+      const updated: RagDocument = { ...doc, scope, updatedAt: new Date().toISOString() };
+      await saveDocumentMeta(req.ownerId, updated);
+      return res.json({ document: updated });
     }
 
     const text = await readDocumentText(req.ownerId, doc.id);

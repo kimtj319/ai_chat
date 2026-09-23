@@ -1,5 +1,6 @@
 import type { Conversation, MessageAttachment, StoredMessage } from "../types.js";
 import { composeSystemPrompt } from "./systemPrompt.js";
+import { activeText, capActive, readProhibitions } from "../storage/prohibitionsStore.js";
 import { readAttachmentBytes } from "../storage/attachmentStore.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
 import { STUB_PREVIEW_CHARS } from "../attachments/budget.js";
@@ -85,7 +86,7 @@ export async function buildHistoryMessages(
   const result: VllmMessage[] = [];
   // The default prompt always applies; the conversation's own instructions are
   // appended to it rather than replacing it.
-  const system = composeSystemPrompt(conversation.systemPrompt);
+  const system = composeSystemPrompt(conversation.systemPrompt, await prohibitionsFor(ownerId));
   if (system) {
     result.push({ role: "system", content: system });
   }
@@ -94,6 +95,19 @@ export async function buildHistoryMessages(
     result.push(...(await messageToVllm(message, ownerId, conversation.id)));
   }
   return result;
+}
+
+/**
+ * 그 사용자의 "하지 말 것" 목록 중 반영되는 부분. 파일을 못 읽으면 없는 것으로
+ * 친다 — 목록 하나 때문에 대화가 멈추면 안 된다.
+ */
+async function prohibitionsFor(ownerId: string): Promise<string> {
+  try {
+    return capActive(activeText(await readProhibitions(ownerId))).text;
+  } catch (err) {
+    console.warn("[prohibitions] could not read the list:", err instanceof Error ? err.message : err);
+    return "";
+  }
 }
 
 async function messageToVllm(

@@ -318,7 +318,7 @@ export async function mcpToolsForOwner(ownerId: string): Promise<OwnerMcpTools> 
   let servers: McpServerRecord[];
   try {
     const [all, prefs] = await Promise.all([listServers(), readOwnerPrefs(ownerId)]);
-    servers = effectiveServers(all, prefs).sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+    servers = effectiveServers(all, prefs, ownerId).sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   } catch (err) {
     // The registry being unreadable must never take a turn down with it.
     console.warn("[mcp] could not read the registry for this turn; continuing without MCP tools:", err);

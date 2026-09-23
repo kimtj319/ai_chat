@@ -33,6 +33,16 @@ export function requestLog(req: Request, res: Response, next: NextFunction): voi
       else if (level === "warn") console.warn(line);
       else console.log(line);
     });
+    // 응답을 다 보내기 전에 연결이 끊기면 `finish` 는 오지 않는다. 예전에는 그런
+    // 요청이 로그에 한 줄도 남지 않았다 — 서버는 작업을 끝까지 해내는데 사용자는
+    // 실패를 봤고, 나중에 로그를 뒤져도 요청이 있었다는 사실조차 없었다(9/23
+    // 문서 공개 전환 사건). 끊긴 요청은 그 자체로 쫓아야 할 사건이라 warn 이다.
+    res.on("close", () => {
+      if (res.writableFinished) return;
+      if (!levelEnabled("warn")) return;
+      const ms = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      console.warn(`[http] ${req.method} ${safePath(req.originalUrl)} aborted ${ms.toFixed(0)}ms (응답 전에 연결이 끊김)`);
+    });
     next();
   });
 }

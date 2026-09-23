@@ -8,12 +8,13 @@ import {
 import type { VllmMessage } from "./historyBuilder.js";
 import { buildTurnHistory } from "./historySummary.js";
 import { appendNoToolsOverride } from "./systemPrompt.js";
-import { fitToContextBudget, contextOverflowReserve } from "./contextBudget.js";
+import { fitToContextBudget, contextOverflowReserve, type BudgetFitResult } from "./contextBudget.js";
 import {
   describeDeadline,
-  NORMAL_MODE_DEADLINE_MS,
+  NORMAL_MODE_SAFETY_TIMEOUT_MS,
   startTurnDeadline,
   streamWrapUpAnswer,
+  type WrapUpReason,
 } from "./reasoningDeadline.js";
 import { reasoningParamsFor } from "./reasoningProfiles.js";
 import { compactResearchContext, type CompactionResult } from "./contextCompaction.js";
@@ -118,17 +119,50 @@ export async function* runConversationTurn(
   conversation: Conversation,
   ownerId: string,
   clientSignal: AbortSignal,
+  /**
+   * Fires when the person clicks "지금 답변하기" (answer now) on this turn.
+   * Mode-agnostic — unlike the safety net below, it applies whether this turn
+   * is "normal" or "external" — and separate from `clientSignal` on purpose:
+   * aborting THAT tears the whole SSE response down (Stop), while this one
+   * only cuts the current model call short so the turn can move to a wrap-up
+   * answer instead (routes/conversations.ts tracks the two independently).
+   */
+  answerNowSignal: AbortSignal,
 ): AsyncGenerator<ChatEvent, TurnResult, void> {
-  // "normal" puts a ceiling on how long the model may think; "external" lets it
-  // run to its own end. Everything below works off the turn's signal, which
-  // carries BOTH the client giving up and that ceiling — shadowing the
-  // parameter is deliberate, so no call site can accidentally keep using a
-  // signal that ignores the deadline. `deadline.expired()` tells the two apart
-  // afterwards, and the wrap-up call uses `clientSignal` directly.
+  // "normal" has a safety-net ceiling on how long the model may think;
+  // "external" waits to its own end. Either way, "지금 답변하기" can also stop
+  // the turn early. Everything below works off the turn's signal, which
+  // carries all three — shadowing the parameter is deliberate, so no call site
+  // can accidentally keep using a signal that ignores them. `deadline.
+  // stopReason()` tells them apart afterwards, and the wrap-up call uses
+  // `clientSignal` directly.
   const reasoningMode = normalizeReasoningMode(conversation.settings.reasoningMode);
-  const deadline = startTurnDeadline(clientSignal, reasoningMode === "normal" ? NORMAL_MODE_DEADLINE_MS : null);
+  const deadline = startTurnDeadline(
+    clientSignal,
+    reasoningMode === "normal" ? NORMAL_MODE_SAFETY_TIMEOUT_MS : null,
+    answerNowSignal,
+  );
   const signal = deadline.signal;
-  let deadlineHit = false;
+  // Why the round loop stopped early, if it did: "deadline" is the safety net,
+  // "answer-now" is the person's own click. Neither is "Cancelled by client." —
+  // both still want an answer, just from what the turn already has.
+  let stopKind: "deadline" | "answer-now" | null = null;
+  // Kicked off now rather than where it is actually used (further down, once
+  // snapshotTools is built): it depends on nothing computed in this function —
+  // not the model, not the history, not the conversation's own tool list — and
+  // it never touches the network itself (mcp/discovery.ts's own cache; see the
+  // comment where this is awaited). Awaiting it only where it is used meant a
+  // turn paid for it AFTER resolveModel and buildTurnHistory had already run
+  // one after another, even though all three could have overlapped. It never
+  // rejects (mcpToolsForOwner's own contract), so holding the promise this
+  // long adds no new failure mode.
+  const mcpToolsPromise = mcpToolsForOwner(ownerId);
+  // 그래도 아무도 기다리지 않는 채로 거절되는 일은 막아 둔다. 레지스트리 읽기는
+  // 안에서 잡지만 그 뒤의 동기 코드(definitionsFor 등)까지 보장되지는 않고, 아래의
+  // resolveModel·buildTurnHistory 가 먼저 던지면 이 promise 는 await 되지 않은 채
+  // 남는다 — 그때 거절되면 unhandledRejection 이 된다. 결과는 바꾸지 않는다: 아래
+  // await 는 여전히 같은 값을 받거나 같은 오류로 던진다.
+  mcpToolsPromise.catch(() => {});
   // The conversation's chosen model decides which vLLM endpoint serves it;
   // an unknown/blank selection falls back to the first available model.
   const { model, endpoint, maxModelLen } = await resolveModel(conversation.model);
@@ -210,8 +244,16 @@ export async function* runConversationTurn(
   // conversation: the composer's picker writes these names into that list, and
   // without this filter its toggles would do nothing and every adopted tool's
   // schema would ride in every prompt whether or not anyone wanted it.
+  //
+  // Awaited here rather than fetched here — it was already kicked off above,
+  // before resolveModel and buildTurnHistory, and has been running alongside
+  // them since. On an ordinary turn this await resolves immediately because
+  // the promise settled minutes ago (mcp/discovery.ts's cache); the only turn
+  // that ever actually waits here is the very first one after a server was
+  // just added, which used to wait behind resolveModel and buildTurnHistory
+  // too and now waits behind whichever of the three is actually slowest.
   const enabledNames = new Set(conversation.enabledTools ?? []);
-  const mcpTools = await mcpToolsForOwner(ownerId);
+  const mcpTools = await mcpToolsPromise;
   snapshotTools.push(...mcpTools.tools.filter((t) => enabledNames.has(t.name)));
   /**
    * The same objects the array was built from. Resolving a call through this
@@ -293,9 +335,15 @@ export async function* runConversationTurn(
   if (history.notice) yield* noticeEvent(history.notice);
 
   for (let round = 1; !aborted; round++) {
-    // Stop may have arrived while the previous round's tools were running. Check
-    // before the budget step, which costs a /tokenize round-trip of its own.
+    // Stop, the safety net, or "지금 답변하기" may have arrived while the
+    // previous round's tools were running. Check before the budget step, which
+    // costs a /tokenize round-trip of its own.
     if (signal.aborted) {
+      const reason = deadline.stopReason();
+      if (reason) {
+        stopKind = reason;
+        break;
+      }
       aborted = true;
       errorNote = "Cancelled by client.";
       break;
@@ -370,6 +418,11 @@ export async function* runConversationTurn(
         }
       } catch (err) {
         if (isAbortError(err)) {
+          const reason = deadline.stopReason();
+          if (reason) {
+            stopKind = reason;
+            break;
+          }
           aborted = true;
           errorNote = "Cancelled by client.";
           break;
@@ -384,21 +437,39 @@ export async function* runConversationTurn(
     const { seed, temperature, topP, maxTokens, presencePenalty, frequencyPenalty } = conversation.settings;
     // Measure the prompt against the real window before every request: the 400
     // that loses the whole turn is otherwise only discovered by hitting it.
-    const fit = await fitToContextBudget({
-      endpoint,
-      model,
-      messages: workingMessages,
-      // Always the full schema set, stopped or not: they are on the wire either
-      // way now, so measuring without them would under-count the request by the
-      // ~500-900 tokens they occupy.
-      ...(tools ? { tools } : {}),
-      ...(preCount ? { preCount } : {}),
-      protectedMessages,
-      desiredMaxTokens: maxTokens,
-      contextWindow: maxModelLen,
-      extraReserve,
-      signal,
-    });
+    // Wrapped for the same reason the compaction step above is: this makes its
+    // own /tokenize round-trip, and the safety net or an "answer now" click can
+    // land mid-call just as easily as during the main model request.
+    let fit: BudgetFitResult;
+    try {
+      fit = await fitToContextBudget({
+        endpoint,
+        model,
+        messages: workingMessages,
+        // Always the full schema set, stopped or not: they are on the wire either
+        // way now, so measuring without them would under-count the request by the
+        // ~500-900 tokens they occupy.
+        ...(tools ? { tools } : {}),
+        ...(preCount ? { preCount } : {}),
+        protectedMessages,
+        desiredMaxTokens: maxTokens,
+        contextWindow: maxModelLen,
+        extraReserve,
+        signal,
+      });
+    } catch (err) {
+      if (isAbortError(err)) {
+        const reason = deadline.stopReason();
+        if (reason) {
+          stopKind = reason;
+          break;
+        }
+        aborted = true;
+        errorNote = "Cancelled by client.";
+        break;
+      }
+      throw err;
+    }
     workingMessages = fit.messages;
     if (fit.toolsStopped) toolsStopped = true;
     for (const message of fit.notices) yield* noticeEvent(message);
@@ -494,10 +565,12 @@ export async function* runConversationTurn(
       }
     } catch (err) {
       if (isAbortError(err)) {
-        // The deadline stopping the model is not the user stopping it: the turn
-        // carries on below and writes an answer from what it has.
-        if (deadline.expired()) {
-          deadlineHit = true;
+        // The safety net or an "answer now" click stopping the model is not the
+        // user stopping it: the turn carries on below and writes an answer from
+        // what it has.
+        const reason = deadline.stopReason();
+        if (reason) {
+          stopKind = reason;
           break;
         }
         aborted = true;
@@ -641,21 +714,28 @@ export async function* runConversationTurn(
 
   deadline.dispose();
 
-  if (deadlineHit) {
+  if (stopKind) {
+    const wrapUpReason: WrapUpReason =
+      stopKind === "deadline" ? { kind: "deadline", deadlineMs: NORMAL_MODE_SAFETY_TIMEOUT_MS } : { kind: "answer-now" };
     yield* noticeEvent(
-      `추론이 ${describeDeadline(NORMAL_MODE_DEADLINE_MS)}를 넘어, 그때까지의 추론만으로 답변을 정리했습니다.`,
+      stopKind === "deadline"
+        ? `추론이 ${describeDeadline(NORMAL_MODE_SAFETY_TIMEOUT_MS)}를 넘어, 그때까지 모은 정보로 답변을 정리했습니다.`
+        : "'지금 답변하기' 요청에 따라, 그때까지 모은 정보로 답변을 정리했습니다.",
     );
     try {
-      for await (const delta of streamWrapUpAnswer({
-        model,
-        endpoint,
+      for await (const delta of wrapUpWithFallback(
+        {
+          model,
+          endpoint,
+          reasoning,
+          temperature: conversation.settings.temperature,
+          topP: conversation.settings.topP,
+          reason: wrapUpReason,
+          clientSignal,
+        },
+        messagesForWrapUp(workingMessages),
         baseMessages,
-        reasoning,
-        temperature: conversation.settings.temperature,
-        topP: conversation.settings.topP,
-        reason: { kind: "deadline", deadlineMs: NORMAL_MODE_DEADLINE_MS },
-        clientSignal,
-      })) {
+      )) {
         content += delta;
         yield { type: "content", delta };
       }
@@ -677,18 +757,21 @@ export async function* runConversationTurn(
   // characters, with no error and no notice to mark them as anything but a real
   // answer. The model had done the work; it just never wrote it down, so ask it
   // to. The promotion below stays as the last resort if this produces nothing.
-  if (!deadlineHit && !aborted && content.trim().length === 0 && reasoning.trim().length > 0) {
+  if (!stopKind && !aborted && content.trim().length === 0 && reasoning.trim().length > 0) {
     try {
-      for await (const delta of streamWrapUpAnswer({
-        model,
-        endpoint,
+      for await (const delta of wrapUpWithFallback(
+        {
+          model,
+          endpoint,
+          reasoning,
+          temperature: conversation.settings.temperature,
+          topP: conversation.settings.topP,
+          reason: { kind: "empty-answer" },
+          clientSignal,
+        },
+        messagesForWrapUp(workingMessages),
         baseMessages,
-        reasoning,
-        temperature: conversation.settings.temperature,
-        topP: conversation.settings.topP,
-        reason: { kind: "empty-answer" },
-        clientSignal,
-      })) {
+      )) {
         content += delta;
         yield { type: "content", delta };
       }
@@ -732,4 +815,54 @@ export async function* runConversationTurn(
     notice: notices.length > 0 ? notices.join("\n") : undefined,
     contentPromotedFromReasoning,
   };
+}
+
+/**
+ * 마무리 답변(지금 답변하기·안전 상한·빈 답변 복구)에 넘길 이력.
+ *
+ * 예전에는 도구 루프가 시작되기 **전**의 이력(baseMessages)을 넘겼다. 그래서
+ * 마무리 답변은 이번 턴의 도구 결과를 한 번도 보지 못했고, 도구를 다섯 번 부른
+ * 뒤에 "지금 답변하기" 를 누르면 "요청하신 도구 호출을 아직 수행하지 않았습니다"
+ * 라고 답했다(2026-09-23 운영 서버 실측). 사용자가 원한 것은 "그 시점까지 모은 정보로
+ * 답하라" 이고, 모은 정보의 대부분이 바로 그 도구 결과다.
+ *
+ * 끝에 결과가 붙지 않은 tool_calls 가 남아 있으면 뗀다. 도구 호출과 결과는 실행이
+ * 끝난 뒤 한꺼번에 쌓이므로 보통은 짝이 맞지만, 짝 없는 tool_calls 는 서버가 400 으로
+ * 거절하므로 한 줄로 막아 둔다.
+ */
+function messagesForWrapUp(messages: VllmMessage[]): VllmMessage[] {
+  const out = messages.slice();
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i]!;
+    if (m.role !== "assistant" || !m.tool_calls || m.tool_calls.length === 0) continue;
+    const answered = new Set(out.slice(i + 1).filter((x) => x.role === "tool").map((x) => x.tool_call_id));
+    if (m.tool_calls.every((tc) => answered.has(tc.id))) break;
+    out.splice(i); // 짝 없는 호출부터 끝까지 버린다
+    break;
+  }
+  return out;
+}
+
+/**
+ * 모은 결과까지 넣어 마무리 답변을 시도하고, **첫 글자가 나오기 전에** 실패하면
+ * 도구 결과 없이 한 번 더 시도한다. 결과를 넣으면 컨텍스트가 넘칠 수 있는데, 그때
+ * 아무 답도 없는 것보다 추론만으로라도 답하는 편이 낫다. 이미 글자가 나간 뒤의
+ * 실패는 되돌릴 수 없으므로 그대로 던진다. 사용자가 끊은 것도 그대로 던진다.
+ */
+async function* wrapUpWithFallback(
+  args: Omit<Parameters<typeof streamWrapUpAnswer>[0], "baseMessages">,
+  withResults: VllmMessage[],
+  withoutResults: VllmMessage[],
+): AsyncGenerator<string, void, void> {
+  let yielded = false;
+  try {
+    for await (const delta of streamWrapUpAnswer({ ...args, baseMessages: withResults })) {
+      yielded = true;
+      yield delta;
+    }
+  } catch (err) {
+    if (yielded || isAbortError(err)) throw err;
+    console.warn("[chat] 도구 결과를 넣은 마무리 답변이 실패해, 결과 없이 다시 시도합니다:", err);
+    yield* streamWrapUpAnswer({ ...args, baseMessages: withoutResults });
+  }
 }

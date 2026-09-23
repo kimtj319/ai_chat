@@ -110,6 +110,16 @@
   color: var(--on-surface-variant);
 }
 
+/* 라이브러리는 있지만 전부 꺼져 있을 때: 안내문 아래 라이브러리로 가는 버튼을
+   함께 담는 컨테이너로도 쓰인다. */
+.mcp-picker-empty p {
+  margin: 0 0 var(--space-4);
+}
+
+.mcp-picker-empty .mcp-picker-link {
+  padding: 0;
+}
+
 .mcp-picker-server {
   display: flex;
   flex-direction: column;

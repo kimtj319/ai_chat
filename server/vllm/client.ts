@@ -244,7 +244,7 @@ const TOKENIZE_TIMEOUT_MS = 20_000;
  * "2 per character" rule reached 2.43 on English and put a 60k-token English
  * conversation at ~200k, compacting and trimming it for nothing.
  */
-function estimatePromptTokens(messages: unknown[], tools?: ChatToolDef[]): number {
+export function estimatePromptTokens(messages: unknown[], tools?: ChatToolDef[]): number {
   // Images are counted from their recorded cost, never as prose. Base64 is
   // ~1.33 characters per byte of image and reads to the rule below as dense
   // punctuation-free word text: measured 2026-09-11, a 1920x1080 image

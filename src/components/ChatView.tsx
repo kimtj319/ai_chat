@@ -7,10 +7,12 @@ import type { useChatStream } from "../hooks/useChatStream";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useHealthCheck } from "../hooks/useHealthCheck";
 import { conversationTokenTotals } from "../state/conversationOps";
+import { shouldShowAnswerNowButton } from "../state/answerNow";
 import { capabilityOf, kindOf } from "../state/modelCapability";
 import { conversationHistoryFile, downloadJson } from "../state/exportImport";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
+import { AnswerNowButton } from "./AnswerNowButton";
 import { ConversationSettingsPanel } from "./ConversationSettingsPanel";
 import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
@@ -121,7 +123,8 @@ export function ChatView({
   // A conversation with an empty `model` uses whatever the server defaults to,
   // which is the first entry of the catalog — show that name rather than blank.
   const { models, catalog, current } = useModels();
-  const { isStreaming, sendMessage, stopGeneration } = chatStream;
+  const { isStreaming, sendMessage, stopGeneration, turnStartedAt, answerNowAfterMs, answerNowState, answerStreaming, requestAnswerNow } =
+    chatStream;
   const { status, recheck } = useHealthCheck();
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -191,6 +194,29 @@ export function ChatView({
     if (!el || !followBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
   }, [activeConversation?.messages, activeConversation?.id]);
+
+  // "지금 답변하기" 가 뜰 시각을 알기 위한 재렌더 심장박동. 이미 눌렀으면
+  // (answerNowState === "requested") 더 잴 것이 없으니 멈춘다 — 그 뒤로는
+  // isStreaming 하나로 배너의 "정리하는 중" 상태가 결정된다.
+  const [answerNowNow, setAnswerNowNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isStreaming || turnStartedAt === null || answerNowState === "requested") return;
+    const id = window.setInterval(() => setAnswerNowNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [isStreaming, turnStartedAt, answerNowState]);
+
+  const showAnswerNowIdle = shouldShowAnswerNowButton({
+    isStreaming,
+    turnStartedAt,
+    answerNowAfterMs,
+    clicked: answerNowState === "requested",
+    answerStreaming,
+    now: answerNowNow,
+  });
+  // 누른 뒤에는(pending) "정리하는 중…" 으로 바뀌어 떠 있다가, 마무리 답변이
+  // 흘러나오기 시작하면 사라진다 — 답이 보이는데 "정리하는 중" 을 계속 띄울
+  // 이유가 없다.
+  const answerNowPending = isStreaming && answerNowState === "requested" && !answerStreaming;
 
   if (!activeConversation) {
     return (
@@ -346,6 +372,11 @@ export function ChatView({
             <ArrowDownIcon />
           </button>
         )}
+        <AnswerNowButton
+          show={showAnswerNowIdle || answerNowPending}
+          pending={answerNowPending}
+          onClick={requestAnswerNow}
+        />
         <Composer
           conversation={activeConversation}
           kind={kind}

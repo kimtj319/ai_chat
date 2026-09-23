@@ -83,14 +83,26 @@ export function appendNoToolsOverride(messages: VllmMessage[]): VllmMessage[] {
 
 /**
  * Compose the system message actually sent to the model: the default prompt
- * first, then the conversation's own instructions appended under a heading so
- * the model can tell the two apart. Returns null when there is nothing to send
- * (only possible if the default is ever blanked out).
+ * first, then the user's standing prohibitions, then the conversation's own
+ * instructions — each under its own heading so the model can tell them apart.
+ * Returns null when there is nothing to send (only possible if the default is
+ * ever blanked out).
+ *
+ * Prohibitions sit before the per-conversation instructions on purpose: they
+ * are the user's rules for every conversation, and something this particular
+ * conversation asks for (a persona, a format) should still win over them where
+ * the two conflict, the same way it wins over the defaults.
  */
-export function composeSystemPrompt(userPrompt: string | undefined): string | null {
-  const base = DEFAULT_SYSTEM_PROMPT.trim();
+export function composeSystemPrompt(userPrompt: string | undefined, prohibitions?: string): string | null {
+  const parts = [DEFAULT_SYSTEM_PROMPT.trim()];
+  const rules = (prohibitions ?? "").trim();
+  if (rules) {
+    parts.push(`## Things this user has asked you not to do\nThe user set these for every conversation. Follow them unless the instructions for this conversation below say otherwise.\n\n${rules}`);
+  }
   const extra = (userPrompt ?? "").trim();
-  if (!base) return extra || null;
-  if (!extra) return base;
-  return `${base}\n\n## Additional instructions for this conversation\nThese come from the user and take precedence over the general guidance above where they conflict.\n\n${extra}`;
+  if (extra) {
+    parts.push(`## Additional instructions for this conversation\nThese come from the user and take precedence over the general guidance above where they conflict.\n\n${extra}`);
+  }
+  const text = parts.filter(Boolean).join("\n\n");
+  return text || null;
 }

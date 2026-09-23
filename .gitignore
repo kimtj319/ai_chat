@@ -1,4 +1,7 @@
-node_modules/
+# 슬래시 없이 적는다: `node_modules/` 는 디렉터리에만 맞아서, 작업 트리마다 걸어 둔
+# 심볼릭 링크는 막지 못했다 — 그 링크가 커밋되어 병합되자 git 이 진짜 디렉터리를
+# 지우고 자기 자신을 가리키는 링크로 바꿔 놓았다(2026-09-23).
+node_modules
 dist/
 dist-ssr/
 dist-server/

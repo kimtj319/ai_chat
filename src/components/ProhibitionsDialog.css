@@ -1,0 +1,120 @@
+.proh-intro {
+  margin: 0 0 var(--space-7);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--on-surface-variant);
+}
+
+.proh-intro code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+.proh-note {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.proh-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.proh-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.proh-meter {
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+}
+
+.proh-meter-warn,
+.proh-meter-over {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.proh-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+.proh-editor {
+  width: 100%;
+  min-height: 280px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+}
+
+.proh-editor:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.proh-proposal {
+  margin-top: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+
+.proh-proposal-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.proh-proposal-body {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--on-surface);
+}
+
+.proh-error,
+.proh-status {
+  margin: var(--space-5) 0 0;
+  font-size: var(--text-xs);
+}
+
+.proh-error {
+  color: var(--danger);
+}
+
+.proh-status {
+  color: var(--on-surface-variant);
+}
+
+.proh-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}

@@ -3,30 +3,37 @@ import { config, type VllmEndpoint } from "../config.js";
 import type { VllmMessage } from "./historyBuilder.js";
 
 /**
- * The "normal" reasoning mode: a ceiling on how long the model may think.
+ * Two ways a turn is asked to stop thinking and write its answer instead.
  *
  * A model asked something genuinely hard can think for a very long time — this
  * app measured one turn that produced nothing at all for twenty minutes. In
  * "external" mode that is allowed; the answer is whatever the model eventually
- * reaches. In "normal" mode the turn is stopped at the deadline and the model
- * is asked, in a second call, to write the answer from the reasoning it had
- * already produced. The user gets an answer built from real work rather than an
- * empty turn, and the work done up to the cut is not thrown away.
+ * reaches, however long it takes. In "normal" mode there is a safety-net
+ * ceiling (below) so a forgotten tab does not run forever.
+ *
+ * Either mode also accepts a THIRD trigger, mode-agnostic: the person can
+ * click "지금 답변하기" (answer now) once a turn has run long enough that the
+ * client offers it. That is not a deadline — nobody configured a ceiling, the
+ * person watching the turn asked for it — but it stops the turn the same way:
+ * the model is asked, in a second call, to write the answer from the
+ * reasoning it had already produced, so the work done up to that point is not
+ * thrown away.
  *
  * The wrap-up call is deliberately unlike the one it replaces: no tools (it
  * must not start another round of research) and no thinking (it would hit the
- * same wall the deadline just cut through).
+ * same wall the trigger just cut through).
  */
 
 /**
- * Three minutes, unless NORMAL_MODE_DEADLINE_MS says otherwise (config.ts).
+ * Thirty minutes, unless NORMAL_MODE_DEADLINE_MS says otherwise (config.ts).
  *
- * The override exists because the behaviour is otherwise untestable without
- * waiting three minutes on a model that may or may not be slow that run — the
- * turn this was written for finished in 35s once and ran past 20 minutes
- * another time. Operators can also use it to tune the ceiling.
+ * This is a backstop, not the primary way a "normal"-mode turn ends early —
+ * that is now the person's own "지금 답변하기" click. The override exists
+ * because the backstop itself is otherwise untestable without actually waiting
+ * out the ceiling; operators can also use it to tune how long an unattended
+ * turn is allowed to run.
  */
-export const NORMAL_MODE_DEADLINE_MS = config.normalModeDeadlineMs;
+export const NORMAL_MODE_SAFETY_TIMEOUT_MS = config.normalModeDeadlineMs;
 
 /** Enough for the conclusions; the beginning of a long think is rarely the part that matters. */
 const MAX_REASONING_CHARS = 12_000;
@@ -44,42 +51,60 @@ export function describeDeadline(ms: number): string {
 }
 
 export interface TurnDeadline {
-  /** Aborts when the client gives up OR the deadline passes. Use for the model calls. */
+  /** Aborts when the client gives up, the safety net expires, OR answer-now fires. Use for the model calls. */
   readonly signal: AbortSignal;
-  /** True when this turn's own deadline is what stopped it. */
-  expired(): boolean;
+  /**
+   * Why `signal` is aborted, from THIS turn's own point of view — `null` means
+   * either it never fired, or the client itself gave up (see the note below).
+   */
+  stopReason(): "deadline" | "answer-now" | null;
   dispose(): void;
 }
 
 /**
- * One signal that carries both reasons a turn can stop, so callers pass a
- * single signal down and ask afterwards which of the two fired.
+ * One signal that carries every reason a turn can stop, so callers pass a
+ * single signal down and ask afterwards which one fired.
  */
-export function startTurnDeadline(clientSignal: AbortSignal, afterMs: number | null): TurnDeadline {
+export function startTurnDeadline(
+  clientSignal: AbortSignal,
+  afterMs: number | null,
+  answerNowSignal: AbortSignal,
+): TurnDeadline {
   const controller = new AbortController();
-  let expired = false;
+  let reason: "deadline" | "answer-now" | null = null;
 
   const onClientAbort = () => controller.abort();
   if (clientSignal.aborted) controller.abort();
   else clientSignal.addEventListener("abort", onClientAbort, { once: true });
 
+  // Guarded so a click that arrives after the safety net already fired (or vice
+  // versa) cannot relabel a reason the loop may already have acted on.
+  const onAnswerNow = () => {
+    if (reason === null) reason = "answer-now";
+    controller.abort();
+  };
+  if (answerNowSignal.aborted) onAnswerNow();
+  else answerNowSignal.addEventListener("abort", onAnswerNow, { once: true });
+
   const timer =
     afterMs === null
       ? undefined
       : setTimeout(() => {
-          expired = true;
+          if (reason === null) reason = "deadline";
           controller.abort();
         }, afterMs);
   timer?.unref?.();
 
   return {
     signal: controller.signal,
-    // The client winning the race is not a deadline: if both fired, whoever the
-    // user is waiting on is the one that counts, and they have gone.
-    expired: () => expired && !clientSignal.aborted,
+    // The client winning the race is not a deadline or an answer-now request:
+    // if the client itself gave up, that is what counts, and nobody is
+    // waiting for a wrap-up any more.
+    stopReason: () => (clientSignal.aborted ? null : reason),
     dispose() {
       if (timer) clearTimeout(timer);
       clientSignal.removeEventListener("abort", onClientAbort);
+      answerNowSignal.removeEventListener("abort", onAnswerNow);
     },
   };
 }
@@ -93,16 +118,23 @@ function excerptReasoning(reasoning: string): string {
 /**
  * Why this turn is being asked to stop and write.
  *
- * "deadline" is normal mode running out of time. "empty-answer" is a turn that
- * finished on its own terms and left the answer blank — measured on
- * wise-lloa-max, which puts its whole working-out in reasoning_content and
- * never writes a body.
+ * "deadline" is the normal-mode safety net running out. "answer-now" is the
+ * person clicking "지금 답변하기" — mode-agnostic, and unlike "deadline" it is
+ * not a ceiling anyone configured. "empty-answer" is a turn that finished on
+ * its own terms and left the answer blank — measured on wise-lloa-max, which
+ * puts its whole working-out in reasoning_content and never writes a body.
  */
-export type WrapUpReason = { kind: "deadline"; deadlineMs: number } | { kind: "empty-answer" };
+export type WrapUpReason =
+  | { kind: "deadline"; deadlineMs: number }
+  | { kind: "answer-now" }
+  | { kind: "empty-answer" };
 
 function leadSentence(reason: WrapUpReason): string {
   if (reason.kind === "deadline") {
     return `생각할 시간 ${describeDeadline(reason.deadlineMs)}이 지났습니다. 더 생각하지 말고, 지금까지 진행한 추론만으로 최종 답변을 작성하세요.`;
+  }
+  if (reason.kind === "answer-now") {
+    return "사용자가 '지금 답변하기'를 눌렀습니다. 더 생각하거나 도구를 호출하지 말고, 지금까지 진행한 추론과 조사만으로 최종 답변을 지금 작성하세요.";
   }
   return "추론은 끝났는데 사용자에게 보낼 답변 본문이 비어 있습니다. 더 생각하지 말고, 지금까지 진행한 추론만으로 최종 답변을 작성하세요.";
 }

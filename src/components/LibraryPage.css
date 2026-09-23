@@ -303,29 +303,55 @@
   outline-offset: -1px;
 }
 
-.library-opted-out {
-  margin-top: var(--space-8);
-}
-
-.library-opted-out-list {
-  list-style: none;
-  margin: 0;
+/* 카드 제목 줄 우측 끝의 켜고 끄기 스위치. 트랙 배경색과 손잡이 위치가 함께
+   바뀌어 켜짐/꺼짐이 색만이 아니라 모양으로도 구별된다. */
+.library-switch {
+  margin-left: auto;
+  flex-shrink: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-full);
 }
 
-.library-opted-out-list li {
-  display: flex;
+.library-switch:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.library-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.library-switch-track {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-4) var(--space-6);
-  border-radius: var(--radius-sm);
-  background: var(--surface-container);
-  color: var(--on-surface-variant);
-  font-size: var(--text-xs);
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--outline-variant);
+  transition: background-color var(--press-out) var(--press-ease);
+}
+
+.library-switch[data-on="true"] .library-switch-track {
+  background: var(--primary);
+  justify-content: flex-end;
+}
+
+.library-switch-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform var(--press-out) var(--press-ease);
+}
+
+.library-switch:active .library-switch-thumb {
+  transition-duration: var(--press-in);
 }
 
 /* The checkbox is the whole point of this section, so it leads the row. */

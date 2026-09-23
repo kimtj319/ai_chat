@@ -1,4 +1,5 @@
-import { streamChatCompletion, countPromptTokens, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { streamChatCompletion, countPromptTokens, estimatePromptTokens, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { SAFETY_MARGIN_TOKENS } from "./contextBudget.js";
 import { buildHistoryMessages, type HistoryBuildOptions, type VllmMessage } from "./historyBuilder.js";
@@ -198,11 +199,38 @@ export function couldSummarise(conversation: Conversation): boolean {
  * Is the window full enough to summarise? A pure decision from numbers the
  * caller already has.
  *
- * "Full" is the point where the prompt has eaten the answer: the conversation's
- * own max_tokens no longer fits beside it. That is earlier than the ladder's
- * drop-oldest-turns rung, which only fires when fewer than 512 output tokens are
- * left (~99% of a 262k window), and later than contextCompaction's 70% tool
- * gate — so an ordinary conversation never reaches it and never pays for this.
+ * Two ways to answer yes:
+ *
+ * 1. Full outright: the conversation's own max_tokens no longer fits beside
+ *    the prompt. This is the original, hard-floor test — it fires even if
+ *    ratio-based summarisation below is somehow disabled or skipped, so a
+ *    request that could not otherwise be sent still gets one last chance to
+ *    shrink instead of failing outright.
+ *
+ * 2. Proactively, at contextToolStopRatio (chat/contextBudget.ts's default
+ *    0.8): the same fraction that makes chat/toolLoop.ts stop offering tools
+ *    for the rest of the turn.
+ *
+ *    Why the same number: this function used to fire only at the hard floor
+ *    above — ~99% of the window, i.e. essentially the same point the budget
+ *    ladder starts silently dropping old turns. That is well PAST 0.8, so on
+ *    a long-running conversation the tool-stop ratio always tripped first.
+ *    Once it does, chat/contextCompaction.ts's own in-turn compaction can
+ *    never take over either, because its gate requires two tool RESULTS
+ *    gathered by the CURRENT turn (see the comment there) — and a turn that
+ *    opens with tools already stopped never gets to make any. The result,
+ *    measured on real deployments: once a conversation's history alone
+ *    crossed 0.8 x window, every later turn opened past the ratio, tools were
+ *    stopped on round 1 before a single one could run, and nothing ever
+ *    shrank the history back down — the same "컨텍스트 한도에 근접하여 도구
+ *    호출을 중단합니다" notice on turn after turn, forever.
+ *
+ *    Firing here at the same ratio closes that gap: buildTurnHistory (which
+ *    calls this) runs once, before chat/toolLoop.ts's round loop even starts,
+ *    so folding the old turns into a summary here shrinks the prompt BEFORE
+ *    the tool-stop check ever sees it — the turn that would have opened
+ *    already stopped instead opens with room to spare, and calls tools like
+ *    any other.
  *
  * The tool schemas are not counted here even when the caller measured without
  * them: they are ~500-900 tokens for a typical conversation, inside the
@@ -218,7 +246,8 @@ export function needsSummary(
   if (contextWindow === null) return false;
   if (!couldSummarise(conversation)) return false;
   const desiredOutput = conversation.settings?.maxTokens ?? DEFAULT_SETTINGS.maxTokens;
-  return promptTokens + desiredOutput + SAFETY_MARGIN_TOKENS > contextWindow;
+  if (promptTokens + desiredOutput + SAFETY_MARGIN_TOKENS > contextWindow) return true;
+  return promptTokens > contextWindow * config.contextToolStopRatio;
 }
 
 /** The summary as the model sees it: one assistant message, ahead of the tail. */
@@ -376,6 +405,22 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
   // The cheap half of the decision first: an ordinary conversation must not pay
   // a /tokenize round-trip per turn for a feature it will never reach.
   if (input.contextWindow === null || !couldSummarise(conversation)) return { messages, summaryMessage };
+
+  // Cheaper still, before paying for the network round-trip: the character
+  // estimate vllm/client.ts already computes for a tokenizer outage. It is
+  // measured (see its own comment) to never come in UNDER the real count for
+  // any payload shape tried — punctuation-heavy JSON included — so if even
+  // this pessimistic number is not enough to need a summary, the real count
+  // (which can only be smaller) certainly is not either. A conversation only
+  // reaches this line once it is already long enough to fold something in
+  // (couldSummarise above), which used to mean every one of its later turns
+  // paid a real /tokenize call (mean 2,769ms on a 232k-token list) just to
+  // learn "not yet" — often for many turns in a row before the window
+  // actually filled. Skipping straight to "not yet" here costs nothing but a
+  // string length and a loop over it.
+  if (!needsSummary(conversation, estimatePromptTokens(messages), input.contextWindow)) {
+    return { messages, summaryMessage };
+  }
 
   const count = await countPromptTokens(input.endpoint, input.model, messages, undefined, input.signal).catch(
     // A tokenizer outage is not a reason to fail the turn: without a number

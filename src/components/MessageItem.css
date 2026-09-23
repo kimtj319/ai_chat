@@ -69,8 +69,11 @@
   justify-content: center;
 }
 
-.message-avatar::before {
-  content: ">_";
+/* ">"와 "_"를 별도 pseudo-element로 나눈 이유는 커서(밑줄)만 따로 깜빡이게
+   하기 위해서다 — 두 글자를 한 content 문자열로 두면 전체가 같이 점멸해
+   ">_" 라는 프롬프트 정체성이 아니라 그냥 깜빡이는 아이콘처럼 보인다. */
+.message-avatar::before,
+.message-avatar::after {
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: var(--weight-semibold);
@@ -79,6 +82,40 @@
   /* 밑줄이 글자칸 아래쪽에 붙어 있어 두 글자의 무게가 아래로 쏠린다. 광학적으로
      가운데에 오도록 아주 조금 올린다. */
   transform: translateY(-0.5px);
+}
+
+.message-avatar::before {
+  content: ">";
+}
+
+.message-avatar::after {
+  content: "_";
+}
+
+/* 답변이 만들어지는 동안(= message-status 의 "답변을 생성하는 중…" 라벨과 같은
+   조건, message.streaming) 커서를 옅게 맥동시켜 아바타가 살아 있는 것처럼 보이게
+   한다. 첫 글자가 나온 뒤에도 스트림이 끝날 때까지 계속된다 — 도구 호출·추론으로
+   중간에 긴 정적이 끼기 때문에, 글자가 나왔다고 멈추면 그 정적 동안 앱이 멈춘
+   것처럼 보인다. 스트림이 끝나 waiting 클래스가 빠지면 원래 밝기(opacity: 1)로
+   즉시 돌아오고, 글자 자체는 그대로라 크기·위치 변화가 없다. */
+.message-avatar.waiting::after {
+  animation: message-avatar-cursor-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes message-avatar-cursor-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-avatar.waiting::after {
+    animation: none;
+  }
 }
 
 .message-bubble {

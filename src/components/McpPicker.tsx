@@ -10,6 +10,7 @@ import {
   sameTools,
   selectionState,
   shortToolName,
+  visibleLibrary,
   type SelectionState,
 } from "../mcp/rules";
 import type { McpServerSummary, McpToolSummary } from "../api/types";
@@ -127,7 +128,7 @@ interface McpPickerProps {
 export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
   const { updateEnabledTools } = useStore();
   const { me } = useAuth();
-  const { servers, adopted, optedOutBuiltins, loading, unavailable } = useMcpLibrary();
+  const { servers, adopted, hidden, loading, unavailable } = useMcpLibrary();
   const [open, setOpen] = useState(false);
 
   // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
@@ -200,9 +201,13 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
     setExpandedServers((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
   }
 
-  // Only what this user adopted: a server someone else registered has nothing
-  // to offer here until it has been taken into the library.
-  const mine = myLibrary(servers, adopted, optedOutBuiltins, me?.id ?? "");
+  // The exact same rule the server applies before handing tools to the model
+  // (server/mcp/ownerPrefs.ts effectiveServers): a server switched off here
+  // must not be a server the model can still call.
+  const mine = visibleLibrary(servers, adopted, hidden, me?.id ?? "");
+  // Membership without the switch, only to tell "라이브러리가 비어 있다" apart
+  // from "라이브러리는 있지만 전부 꺼져 있다" — the two need different guidance.
+  const hasLibrary = myLibrary(servers, adopted, me?.id ?? "").length > 0;
   const enabled = new Set(selected);
   const visible = visibleServers(mine, query);
 
@@ -253,8 +258,22 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
               <p className="mcp-picker-empty">불러오는 중…</p>
             ) : unavailable ? (
               <p className="mcp-picker-empty">이 서버에는 아직 MCP 기능이 배포되지 않았습니다.</p>
-            ) : mine.length === 0 ? (
+            ) : mine.length === 0 && !hasLibrary ? (
               <p className="mcp-picker-empty">내 라이브러리가 비어 있습니다. 라이브러리에서 서버를 추가해보세요.</p>
+            ) : mine.length === 0 ? (
+              <div className="mcp-picker-empty">
+                <p>라이브러리에서 사용할 MCP 를 켜 주세요.</p>
+                <button
+                  type="button"
+                  className="mcp-picker-link"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenLibrary();
+                  }}
+                >
+                  라이브러리 열기
+                </button>
+              </div>
             ) : visible.length === 0 ? (
               <p className="mcp-picker-empty">검색 결과가 없습니다.</p>
             ) : (

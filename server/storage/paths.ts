@@ -167,6 +167,14 @@ export function ownerMcpFile(ownerId: string): string {
 }
 
 /**
+ * 이 사용자가 "하지 말라" 고 한 것들의 목록. 사람이 직접 읽고 고치는 파일이라
+ * JSON 이 아니라 markdown 이다. 계정과 함께 지워지도록 소유자 폴더 안에 둔다.
+ */
+export function ownerProhibitionsFile(ownerId: string): string {
+  return path.join(ownerDir(ownerId), "prohibitions.md");
+}
+
+/**
  * 문의 게시판. 소유자별이 아니라 **전역**이다 — 글은 모두가 보는 것이고,
  * 누가 썼는지는 파일 위치가 아니라 레코드의 authorId 가 말한다.
  */

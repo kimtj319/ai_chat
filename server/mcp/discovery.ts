@@ -254,9 +254,14 @@ export async function warm(): Promise<void> {
   const servers = (await listServers()).filter((s) => s.status === "active");
   if (servers.length === 0) return;
   const counts = await countAdoptions();
-  // Builtins are on for everyone by default, so they always have an adopter;
-  // a user server nobody adopted would cost a probe for nothing.
-  const wanted = servers.filter((s) => s.origin === "builtin" || (counts.adopted.get(s.id) ?? 0) > 0);
+  // 누군가에게 보이는 서버만 미리 탐색한다. 기본 제공은 모두에게 보이고, 사용자
+  // 서버는 가시성 규칙(ownerPrefs.effectiveServers)상 **등록자에게는 채택 없이도
+  // 보인다** — 그러니 등록자가 있는 서버는 채택 수와 상관없이 탐색 대상이다.
+  // 예전 조건(채택 수 > 0)은 규칙이 "채택해야 보임" 이던 시절의 것이라, 자기 서버
+  // 의 채택을 풀어 둔 계정에서는 목록에 보이는데 기동 직후 도구가 빈 채였다.
+  const wanted = servers.filter(
+    (s) => s.origin === "builtin" || Boolean(s.createdBy) || (counts.adopted.get(s.id) ?? 0) > 0,
+  );
   if (wanted.length === 0) return;
   console.log(`[mcp] warming discovery for ${wanted.length} server(s)`);
   // Four at a time: a probe is mostly waiting, and a restart should not open a

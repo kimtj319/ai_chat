@@ -149,6 +149,18 @@ export async function stopGeneration(id: string): Promise<void> {
   await request<void>(`/conversations/${id}/stream`, { method: "DELETE" });
 }
 
+/**
+ * "지금 답변하기": ask the server to move the in-flight turn to a wrap-up
+ * answer instead of cutting it off. Unlike stopGeneration, this does not touch
+ * our own fetch — the SSE stream keeps running and finishes normally with the
+ * wrap-up content. A 404 just means the turn already finished (or never
+ * started); the caller treats that as harmless, the same way stopGeneration's
+ * caller does.
+ */
+export async function answerNow(id: string): Promise<void> {
+  await request<void>(`/conversations/${id}/answer-now`, { method: "POST" });
+}
+
 /** Path the browser fetches an attachment's bytes from (also an <img> src). */
 export function attachmentUrl(conversationId: string, attachmentId: string): string {
   return `/api/conversations/${conversationId}/attachments/${attachmentId}`;
@@ -716,6 +728,15 @@ export function setMcpAdoption(id: string, adopted: boolean): Promise<{ adopted:
   });
 }
 
+/** Switch a server's tools on/off in the picker and in the model's prompt —
+ *  same call for a builtin, a self-registered server or an adopted one. */
+export function setMcpHidden(id: string, hidden: boolean): Promise<{ hidden: string[] }> {
+  return mcpRequest<{ hidden: string[] }>(`/mcp/servers/${encodeURIComponent(id)}/hidden`, {
+    method: "PUT",
+    body: JSON.stringify({ hidden }),
+  });
+}
+
 /** `null` clears it. The value is passed straight through and never stored here. */
 export function setMcpCredential(id: string, credential: string | null): Promise<{ hasCredential: boolean }> {
   return mcpRequest<{ hasCredential: boolean }>(`/mcp/servers/${encodeURIComponent(id)}/credential`, {
@@ -769,4 +790,28 @@ export function setBoardPostStatus(id: string, status: BoardPostStatus): Promise
 
 export function deleteBoardPost(id: string): Promise<void> {
   return request<void>(`/board/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** 내 "하지 말 것" 목록. 서버 routes/prohibitions.ts. */
+export interface ProhibitionsResponse {
+  markdown: string;
+  /** 대화에 반영되는 부분의 글자 수. */
+  activeChars: number;
+  limitChars: number;
+  /** activeChars / limitChars 가 이 비율을 넘으면 정리를 권한다. */
+  warnRatio: number;
+  fileMaxChars: number;
+  pendingCount: number;
+}
+
+export function getProhibitions(): Promise<ProhibitionsResponse> {
+  return request<ProhibitionsResponse>("/prohibitions");
+}
+
+export function saveProhibitions(markdown: string): Promise<ProhibitionsResponse> {
+  return request<ProhibitionsResponse>("/prohibitions", { method: "PUT", body: JSON.stringify({ markdown }) });
+}
+
+export function consolidateProhibitions(): Promise<{ proposal: string; before: number; after: number }> {
+  return request("/prohibitions/consolidate", { method: "POST" });
 }

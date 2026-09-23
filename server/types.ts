@@ -650,14 +650,21 @@ export interface McpServerSummary {
 /**
  * One owner's MCP preferences, at {DATA_DIR}/owners/{ownerId}/mcp.json.
  *
- * `adopted` holds user-origin server ids the owner switched on; builtins are on
- * by default and `optedOutBuiltins` is how they are switched off. Registering a
- * server adopts it for the registrant and for NOBODY else: publishing is not
- * switching on.
+ * `adopted` holds user-origin server ids the owner took into their library
+ * (the "담기" checkbox on a server someone else shared) — it says nothing about
+ * whether that server's tools currently run in a conversation.
+ *
+ * `hidden` is the on/off switch for tool availability, and applies to ANY
+ * server the owner's library holds — builtin, self-registered or adopted
+ * alike. This is the field the picker and the model both read (see
+ * mcp/ownerPrefs.ts `effectiveServers` and src/mcp/rules.ts `isMcpVisible`,
+ * which must agree). It replaces the old `optedOutBuiltins`, which only ever
+ * covered builtins; `ownerPrefs.ts` still reads that old field name out of a
+ * file written before this change, so nobody's saved preference is lost.
  */
 export interface OwnerMcpPrefs {
   adopted: string[];
-  optedOutBuiltins: string[];
+  hidden: string[];
   /** serverId -> credential. The only place a credential is ever written. */
   credentials: Record<string, string>;
 }

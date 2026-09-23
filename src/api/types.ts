@@ -351,6 +351,16 @@ export interface HealthResponse {
 // SSE event stream emitted by POST /api/conversations/:id/messages.
 export type ServerEvent =
   | { type: "user_message"; message: ChatMessage }
+  /**
+   * Sent once, right after `user_message`, for a chat turn only (not an
+   * embedding). `startedAt` is the server's own clock (ms since epoch) for
+   * when this turn began — the basis for the "지금 답변하기" button's 3-minute
+   * mark, so the client is not timing against its own Date.now() (request
+   * latency, clock skew). `answerNowAfterMs` is that mark, from the server's
+   * own config, so a deployment that changes it does not also need a client
+   * rebuild.
+   */
+  | { type: "turn_started"; startedAt: number; answerNowAfterMs: number }
   | { type: "reasoning"; delta: string }
   | { type: "content"; delta: string }
   | { type: "tool_call"; id: string; name: string; arguments: unknown }
@@ -571,8 +581,8 @@ export interface McpServersResponse {
   servers: McpServerSummary[];
   /** Ids of the user-registered servers this user took into their library. */
   adopted: string[];
-  /** Ids of the builtin servers this user switched off. */
-  optedOutBuiltins: string[];
+  /** Ids of any server (builtin, self-registered or adopted) this user switched off. */
+  hidden: string[];
 }
 
 export interface CreateMcpServerRequest {

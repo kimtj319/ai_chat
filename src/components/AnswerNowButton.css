@@ -1,0 +1,36 @@
+/* aria-live 영역(.answer-now-region)은 항상 DOM 에 있지만 그 자체는 스타일이
+   없다 — 비어 있으면 그대로 크기가 0이라 별도 처리가 필요 없다.
+
+   입력창(Composer) 바로 위, 보통 흐름 안에 쌓인다 — 절대 배치를 쓰지 않는 것이
+   핵심이다: 좁은 화면에서 겹칠 자리가 아예 없다. */
+.answer-now-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--text-sm);
+}
+
+.answer-now-button {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-8);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 560px) {
+  .answer-now-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+
+  .answer-now-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

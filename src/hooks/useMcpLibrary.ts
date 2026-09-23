@@ -5,7 +5,8 @@ import type { McpServerSummary } from "../api/types";
 export interface McpLibrary {
   servers: McpServerSummary[];
   adopted: string[];
-  optedOutBuiltins: string[];
+  /** Ids of any server (builtin, self-registered or adopted) this user switched off. */
+  hidden: string[];
   loading: boolean;
   /**
    * The routes answered 404. That is "this backend has no MCP support", not a
@@ -20,7 +21,7 @@ export interface McpLibrary {
 export function useMcpLibrary(): McpLibrary {
   const [servers, setServers] = useState<McpServerSummary[]>([]);
   const [adopted, setAdopted] = useState<string[]>([]);
-  const [optedOutBuiltins, setOptedOutBuiltins] = useState<string[]>([]);
+  const [hidden, setHidden] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,14 +33,14 @@ export function useMcpLibrary(): McpLibrary {
       // page behind, not a crash in the first `.filter` that reads it.
       setServers(data.servers ?? []);
       setAdopted(data.adopted ?? []);
-      setOptedOutBuiltins(data.optedOutBuiltins ?? []);
+      setHidden(data.hidden ?? []);
       setUnavailable(false);
       setError(null);
     } catch (err) {
       const notDeployed = err instanceof McpError && err.status === 404;
       setServers([]);
       setAdopted([]);
-      setOptedOutBuiltins([]);
+      setHidden([]);
       setUnavailable(notDeployed);
       setError(notDeployed ? null : err instanceof Error ? err.message : String(err));
     } finally {
@@ -51,5 +52,5 @@ export function useMcpLibrary(): McpLibrary {
     void reload();
   }, [reload]);
 
-  return { servers, adopted, optedOutBuiltins, loading, unavailable, error, reload };
+  return { servers, adopted, hidden, loading, unavailable, error, reload };
 }

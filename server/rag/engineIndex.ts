@@ -223,6 +223,58 @@ export async function indexDocument(params: {
 }
 
 /**
+ * 청크는 그대로 두고 권한만 바꾼다.
+ *
+ * scope 전환(공개↔비공개)은 청크 경계와 아무 상관이 없다. 그런데도 이 함수가
+ * 생기기 전에는 scope 만 바꾸는 요청도 `indexDocument` 를 그대로 타고 들어가
+ * 매번 LLM 에게 처음부터 다시 잘라 달라고 물었다 — 큰 문서는 그 재계산에만
+ * 수십 초가 걸리고, 응답 하나 없이 그동안(브라우저든 중간 프록시든) 연결이
+ * 끊기면 사용자에게는 "색인 실패"로 보이는데 서버는 뒤늦게 혼자 성공해
+ * 버린다 — 실패 기록도, 재현할 방법도 남지 않는 상태가 된다.
+ *
+ * 청크 개수가 그대로이므로 지웠다 다시 넣을 필요도 없다. 같은 DOCID 로
+ * 덮어쓰면(upsert) ACL·SCOPE 만 바뀐 채로 끝난다.
+ */
+export async function reindexScope(params: {
+  docId: string;
+  ownerId: string;
+  title: string;
+  scope: DocumentScope;
+  /** 이미 색인된 청크 본문. 순서가 곧 ORD 다 — 다시 자르지 않는다. */
+  chunkTexts: string[];
+}): Promise<void> {
+  const { docId, ownerId, title, scope, chunkTexts } = params;
+  const acl = scope === "shared" ? SHARED_KEY : ownerKey(ownerId);
+
+  if (scope === "private") await ensureOwnerKey(ownerId);
+
+  const collection = encodeURIComponent(config.ragCollection);
+  for (let i = 0; i < chunkTexts.length; i += BATCH_SIZE) {
+    const batch = chunkTexts.slice(i, i + BATCH_SIZE).map((text, j) => ({
+      DOCID: chunkId(docId, i + j),
+      PARENT_ID: docId,
+      TITLE: title,
+      BODY: text,
+      SOURCE: title,
+      ORD: String(i + j),
+      ACL: acl,
+      OWNER: ownerId,
+      SCOPE: scope === "shared" ? "shared" : "user",
+    }));
+    const answer = (await call(`/index/${collection}`, {
+      body: batch,
+      headers: { commit: "false" },
+      timeoutMs: INDEX_TIMEOUT_MS,
+    })) as { fail?: string[] } | null;
+    const failed = answer?.fail ?? [];
+    if (failed.length > 0) {
+      throw new RagEngineError(`${failed.length}개 조각의 권한을 갱신하지 못했습니다 (${failed.slice(0, 3).join(", ")}).`);
+    }
+  }
+  await commit();
+}
+
+/**
  * Take a document's chunks out of the engine.
  *
  * `chunks` is the count the caller recorded when it indexed — which it writes

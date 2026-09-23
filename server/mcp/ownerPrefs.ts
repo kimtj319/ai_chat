@@ -15,22 +15,32 @@ import type { McpServerRecord, OwnerMcpPrefs } from "../types.js";
  * returned by no endpoint at all — `hasCredential`, a boolean, is the most any
  * response ever says about it.
  *
- * ADOPTION IS THE SWITCH. Registering a server writes it into the registrant's
- * own `adopted` and into nobody else's file: publishing a server is not
- * switching it on for the deployment. Builtins are the one deliberate
- * exception — they are on for everyone until an owner opts out, which is what
- * `optedOutBuiltins` records.
+ * REGISTERING adopts a server for the registrant and for nobody else's file:
+ * publishing is not switching it on for the deployment. `hidden` is the
+ * separate on/off switch for whether a server's tools currently run in a
+ * conversation — orthogonal to adoption, and the same field for every origin
+ * (builtin, self-registered or adopted). See `effectiveServers` below and
+ * src/mcp/rules.ts `isMcpVisible`, which the two must always agree with.
  */
 
-const EMPTY: OwnerMcpPrefs = { adopted: [], optedOutBuiltins: [], credentials: {} };
+const EMPTY: OwnerMcpPrefs = { adopted: [], hidden: [], credentials: {} };
 
 function lockKey(ownerId: string): string {
   return `mcp-owner:${ownerId}`;
 }
 
-/** Tolerant of a missing file, a partial one, and anything hand-edited into the wrong shape. */
+/**
+ * Tolerant of a missing file, a partial one, and anything hand-edited into the
+ * wrong shape.
+ *
+ * A file written before `hidden` existed only has `optedOutBuiltins` — the old
+ * name for "builtins this owner switched off". Folding it into `hidden` here
+ * (read-side only, no migration write) is what keeps that old file working
+ * exactly as before without a migration step: the next write replaces it with
+ * the new shape anyway.
+ */
 function normalize(raw: unknown): OwnerMcpPrefs {
-  const record = (raw ?? {}) as Partial<OwnerMcpPrefs>;
+  const record = (raw ?? {}) as Partial<OwnerMcpPrefs> & { optedOutBuiltins?: unknown };
   const strings = (value: unknown): string[] =>
     Array.isArray(value) ? [...new Set(value.filter((v): v is string => typeof v === "string"))] : [];
   const credentials: Record<string, string> = {};
@@ -39,7 +49,8 @@ function normalize(raw: unknown): OwnerMcpPrefs {
       if (typeof value === "string" && value.length > 0) credentials[key] = value;
     }
   }
-  return { adopted: strings(record.adopted), optedOutBuiltins: strings(record.optedOutBuiltins), credentials };
+  const hidden = new Set([...strings(record.hidden), ...strings(record.optedOutBuiltins)]);
+  return { adopted: strings(record.adopted), hidden: [...hidden], credentials };
 }
 
 export async function readOwnerPrefs(ownerId: string): Promise<OwnerMcpPrefs> {
@@ -66,22 +77,33 @@ async function mutate(ownerId: string, fn: (prefs: OwnerMcpPrefs) => OwnerMcpPre
 }
 
 /**
- * Adopt or drop a server. For a BUILTIN this flips `optedOutBuiltins` instead,
- * because a builtin's default is "on": recording adoption for it would leave
- * every account that never opened the page without the tools everyone else has.
+ * Take a user-registered server into (or out of) this owner's library — the
+ * "담기" checkbox on something someone else shared. Meaningless for a builtin
+ * (always a library member, see `effectiveServers`) and for a server this
+ * owner registered themselves (always a member too), so this only ever needs
+ * to touch `adopted`; `hidden` is a separate switch (see `setHidden`).
  */
 export async function setAdoption(ownerId: string, server: McpServerRecord, adopted: boolean): Promise<OwnerMcpPrefs> {
   return mutate(ownerId, (prefs) => {
-    if (server.origin === "builtin") {
-      const optedOut = new Set(prefs.optedOutBuiltins);
-      if (adopted) optedOut.delete(server.id);
-      else optedOut.add(server.id);
-      return { ...prefs, optedOutBuiltins: [...optedOut] };
-    }
     const adoptedSet = new Set(prefs.adopted);
     if (adopted) adoptedSet.add(server.id);
     else adoptedSet.delete(server.id);
     return { ...prefs, adopted: [...adoptedSet] };
+  });
+}
+
+/**
+ * Switch a server's tools on or off for this owner's conversations —
+ * independent of origin, so the same call turns off a builtin, something this
+ * owner registered, or something they adopted. This is what the library
+ * page's card switch and the picker's absence of a server both come from.
+ */
+export async function setHidden(ownerId: string, serverId: string, hidden: boolean): Promise<OwnerMcpPrefs> {
+  return mutate(ownerId, (prefs) => {
+    const hiddenSet = new Set(prefs.hidden);
+    if (hidden) hiddenSet.add(serverId);
+    else hiddenSet.delete(serverId);
+    return { ...prefs, hidden: [...hiddenSet] };
   });
 }
 
@@ -101,16 +123,23 @@ export async function getCredential(ownerId: string, serverId: string): Promise<
 }
 
 /**
- * The servers whose tools this owner's turns may use: every ACTIVE builtin they
- * have not opted out of, plus every ACTIVE server they adopted. A disabled
- * server is in neither, whoever adopted it.
+ * The servers whose tools this owner's turns may use.
+ *
+ * THE FINAL RULE, shared word-for-word with src/mcp/rules.ts `isMcpVisible`
+ * (a matrix of inputs checks the two never disagree): active && (builtin ||
+ * registered by this owner || adopted by this owner) && not hidden by this
+ * owner. Registering your own server or adopting someone else's used to be
+ * two different ways onto this list, and un-adopting your OWN server used to
+ * drop it from here while the picker kept showing it — this formula is the
+ * fix, not just for tool assembly but for what the picker is allowed to show.
  */
-export function effectiveServers(servers: McpServerRecord[], prefs: OwnerMcpPrefs): McpServerRecord[] {
-  const optedOut = new Set(prefs.optedOutBuiltins);
+export function effectiveServers(servers: McpServerRecord[], prefs: OwnerMcpPrefs, ownerId: string): McpServerRecord[] {
+  const hidden = new Set(prefs.hidden);
   const adopted = new Set(prefs.adopted);
   return servers.filter((server) => {
     if (server.status !== "active") return false;
-    return server.origin === "builtin" ? !optedOut.has(server.id) : adopted.has(server.id);
+    if (hidden.has(server.id)) return false;
+    return server.origin === "builtin" || server.createdBy === ownerId || adopted.has(server.id);
   });
 }
 
@@ -129,8 +158,8 @@ async function ownerIdsWithPrefs(): Promise<string[]> {
 export interface AdoptionCounts {
   /** serverId -> how many owners hold it in `adopted`. */
   adopted: Map<string, number>;
-  /** serverId -> how many owners opted OUT of this builtin. */
-  optedOutBuiltins: Map<string, number>;
+  /** serverId -> how many owners switched it off (`hidden`). */
+  hidden: Map<string, number>;
   /** Owners with an mcp.json at all, which is the denominator for a builtin. */
   ownersWithPrefs: number;
 }
@@ -141,7 +170,7 @@ export interface AdoptionCounts {
  * recomputed per server.
  */
 export async function countAdoptions(): Promise<AdoptionCounts> {
-  const counts: AdoptionCounts = { adopted: new Map(), optedOutBuiltins: new Map(), ownersWithPrefs: 0 };
+  const counts: AdoptionCounts = { adopted: new Map(), hidden: new Map(), ownersWithPrefs: 0 };
   for (const ownerId of await ownerIdsWithPrefs()) {
     let prefs: OwnerMcpPrefs;
     try {
@@ -153,8 +182,8 @@ export async function countAdoptions(): Promise<AdoptionCounts> {
     }
     counts.ownersWithPrefs++;
     for (const id of prefs.adopted) counts.adopted.set(id, (counts.adopted.get(id) ?? 0) + 1);
-    for (const id of prefs.optedOutBuiltins) {
-      counts.optedOutBuiltins.set(id, (counts.optedOutBuiltins.get(id) ?? 0) + 1);
+    for (const id of prefs.hidden) {
+      counts.hidden.set(id, (counts.hidden.get(id) ?? 0) + 1);
     }
   }
   return counts;
@@ -166,17 +195,17 @@ export async function countAdoptions(): Promise<AdoptionCounts> {
  * For a user-registered server that is exactly the `adopted` count. For a
  * BUILTIN it cannot be — a builtin is on for accounts that have never written
  * an mcp.json at all — so it is reported as "accounts known to this store,
- * minus the ones that opted out", which is the number the delete guard and the
- * UI both want: how many people lose tools if this goes away.
+ * minus the ones that switched it off", which is the number the delete guard
+ * and the UI both want: how many people lose tools if this goes away.
  */
 export function adoptionCountFor(server: McpServerRecord, counts: AdoptionCounts, totalAccounts: number): number {
   if (server.origin !== "builtin") return counts.adopted.get(server.id) ?? 0;
-  const optedOut = counts.optedOutBuiltins.get(server.id) ?? 0;
-  return Math.max(totalAccounts - optedOut, 0);
+  const hiddenCount = counts.hidden.get(server.id) ?? 0;
+  return Math.max(totalAccounts - hiddenCount, 0);
 }
 
 /**
- * Drop a deleted server from every owner's file — adoption, opt-out and
+ * Drop a deleted server from every owner's file — adoption, hidden and
  * credential alike. Leaving a credential behind for an id that no longer exists
  * would keep a secret on disk for a server nobody can see any more.
  */
@@ -186,7 +215,7 @@ export async function forgetServerEverywhere(serverId: string): Promise<number> 
     const before = await readOwnerPrefs(ownerId);
     const needsWork =
       before.adopted.includes(serverId) ||
-      before.optedOutBuiltins.includes(serverId) ||
+      before.hidden.includes(serverId) ||
       Object.prototype.hasOwnProperty.call(before.credentials, serverId);
     if (!needsWork) continue;
     await mutate(ownerId, (prefs) => {
@@ -194,7 +223,7 @@ export async function forgetServerEverywhere(serverId: string): Promise<number> 
       delete credentials[serverId];
       return {
         adopted: prefs.adopted.filter((id) => id !== serverId),
-        optedOutBuiltins: prefs.optedOutBuiltins.filter((id) => id !== serverId),
+        hidden: prefs.hidden.filter((id) => id !== serverId),
         credentials,
       };
     });

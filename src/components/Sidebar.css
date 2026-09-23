@@ -561,3 +561,18 @@
     transition: none;
   }
 }
+
+/* 검토 대기 개수. 메뉴 항목 오른쪽 끝에 붙는다. */
+.sidebar-settings-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
+}

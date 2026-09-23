@@ -137,28 +137,49 @@ export function selectionState(toolNames: string[], enabled: ReadonlySet<string>
 }
 
 /**
- * What this user can switch on in a conversation: the builtins they have not
- * switched off, everything they registered themselves, and everything they
- * adopted. Nothing else — a server someone else registered runs for you only
- * once you have taken it into your own library.
+ * Membership in "내 라이브러리": the builtins, everything this user registered
+ * themselves, and everything they adopted. Not gated on `hidden` — a card the
+ * user switched off has to stay in this list, with its switch showing off, or
+ * there would be no way back on except leaving the page. This is what decides
+ * which cards LibraryPage draws, not what the model may call; for that, see
+ * `isMcpVisible` below.
  */
-export function myLibrary(
-  servers: McpServerSummary[],
-  adopted: string[],
-  optedOutBuiltins: string[],
-  meId: string,
-): McpServerSummary[] {
+export function myLibrary(servers: McpServerSummary[], adopted: string[], meId: string): McpServerSummary[] {
   const adoptedIds = new Set(adopted);
-  const optedOut = new Set(optedOutBuiltins);
-  return servers.filter((server) =>
-    server.origin === "builtin" ? !optedOut.has(server.id) : server.createdBy === meId || adoptedIds.has(server.id),
+  return servers.filter(
+    (server) => server.origin === "builtin" || server.createdBy === meId || adoptedIds.has(server.id),
   );
 }
 
-/** Builtins this user switched off, so switching one back on stays possible. */
-export function optedOutBuiltinServers(servers: McpServerSummary[], optedOutBuiltins: string[]): McpServerSummary[] {
-  const optedOut = new Set(optedOutBuiltins);
-  return servers.filter((server) => server.origin === "builtin" && optedOut.has(server.id));
+/**
+ * THE FINAL RULE — kept as one function so the picker and the "which tools
+ * does the model get" question can never quietly diverge again: a server used
+ * to be visible here (createdBy === me) while un-adopting it silently dropped
+ * its tools server-side. Must read exactly like
+ * server/mcp/ownerPrefs.ts `effectiveServers`; server/mcp/rulesParity.test.ts
+ * imports both and runs the same input matrix against them, failing if they
+ * ever answer differently.
+ */
+export function isMcpVisible(
+  server: Pick<McpServerSummary, "id" | "origin" | "createdBy" | "status">,
+  adopted: string[],
+  hidden: string[],
+  meId: string,
+): boolean {
+  if (server.status !== "active") return false;
+  if (hidden.includes(server.id)) return false;
+  return server.origin === "builtin" || server.createdBy === meId || adopted.includes(server.id);
+}
+
+/** What the picker shows and what the model may call — `isMcpVisible` applied
+ *  to the whole registry. */
+export function visibleLibrary(
+  servers: McpServerSummary[],
+  adopted: string[],
+  hidden: string[],
+  meId: string,
+): McpServerSummary[] {
+  return servers.filter((server) => isMcpVisible(server, adopted, hidden, meId));
 }
 
 /** The shared section: everything someone else registered, adopted or not. */

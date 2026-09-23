@@ -10,6 +10,7 @@ import {
   readOwnerPrefs,
   setAdoption,
   setCredential,
+  setHidden,
   type AdoptionCounts,
 } from "../mcp/ownerPrefs.js";
 import { toolSummaries } from "../mcp/toolAdapter.js";
@@ -151,7 +152,7 @@ mcpRouter.get("/mcp/servers", async (req, res, next) => {
       if (server.status === "active" && state.stale) scheduleRefresh(server, prefs.credentials[server.id]);
       summaries.push(summarize(server, prefs, counts, totalAccounts, state.tools));
     }
-    res.json({ servers: summaries, adopted: prefs.adopted, optedOutBuiltins: prefs.optedOutBuiltins });
+    res.json({ servers: summaries, adopted: prefs.adopted, hidden: prefs.hidden });
   } catch (err) {
     next(err);
   }
@@ -365,7 +366,7 @@ mcpRouter.delete("/mcp/servers/:id", async (req, res, next) => {
     }
     const [counts, prefs, users] = await Promise.all([countAdoptions(), readOwnerPrefs(req.ownerId), listUsers()]);
     const total = adoptionCountFor(server, counts, users.length);
-    const selfAdopted = server.origin === "builtin" ? !prefs.optedOutBuiltins.includes(id) : prefs.adopted.includes(id);
+    const selfAdopted = server.origin === "builtin" ? !prefs.hidden.includes(id) : prefs.adopted.includes(id);
     const others = Math.max(total - (selfAdopted ? 1 : 0), 0);
     if (!isAdmin && others > 0) {
       return res.status(409).json({
@@ -391,9 +392,10 @@ mcpRouter.delete("/mcp/servers/:id", async (req, res, next) => {
 });
 
 /**
- * PUT /api/mcp/servers/:id/adoption { adopted } — this owner's switch, nobody
- * else's. A builtin is on by default, so for one of those this flips the
- * opt-out list instead of the adoption list.
+ * PUT /api/mcp/servers/:id/adoption { adopted } — this owner's "담기", nobody
+ * else's. Only meaningful for a server someone else registered; harmless
+ * no-op data for a builtin or your own server, since membership for those
+ * never checks `adopted` (see effectiveServers / isMcpVisible).
  */
 mcpRouter.put("/mcp/servers/:id/adoption", async (req, res, next) => {
   try {
@@ -403,7 +405,28 @@ mcpRouter.put("/mcp/servers/:id/adoption", async (req, res, next) => {
     const adopted = (req.body ?? {}).adopted;
     if (typeof adopted !== "boolean") return fail(res, 400, "invalid_input", "adopted는 true 또는 false여야 합니다.");
     const prefs = await setAdoption(req.ownerId, server, adopted);
-    res.json({ adopted: prefs.adopted, optedOutBuiltins: prefs.optedOutBuiltins });
+    res.json({ adopted: prefs.adopted });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PUT /api/mcp/servers/:id/hidden { hidden } — this owner's switch, nobody
+ * else's. The one control behind the library card's on/off toggle: it works
+ * the same for a builtin, something this owner registered or something they
+ * adopted, because tool availability (effectiveServers) checks the same
+ * `hidden` list regardless of origin.
+ */
+mcpRouter.put("/mcp/servers/:id/hidden", async (req, res, next) => {
+  try {
+    const id = normalizeServerId(req.params.id);
+    const server = id ? await getServer(id) : null;
+    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const hidden = (req.body ?? {}).hidden;
+    if (typeof hidden !== "boolean") return fail(res, 400, "invalid_input", "hidden은 true 또는 false여야 합니다.");
+    const prefs = await setHidden(req.ownerId, id, hidden);
+    res.json({ hidden: prefs.hidden });
   } catch (err) {
     next(err);
   }

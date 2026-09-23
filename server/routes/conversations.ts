@@ -18,6 +18,8 @@ import { attachmentBudget, describeCost } from "../attachments/budget.js";
 import { resolveModel } from "../vllm/client.js";
 import { runConversationTurn } from "../chat/toolLoop.js";
 import { summariseConversationTitle } from "../chat/titleSummary.js";
+import { detectProhibition } from "../chat/prohibitionDetect.js";
+import { appendPending } from "../storage/prohibitionsStore.js";
 import { runEmbeddingTurn } from "../chat/embeddingTurn.js";
 import { config } from "../config.js";
 import { validateSettingsPatch } from "../types.js";
@@ -277,6 +279,55 @@ conversationsRouter.delete("/conversations/:id/stream", async (req, res, next) =
 });
 
 /**
+ * Every turn's "지금 답변하기" (answer now) signal, tracked separately from
+ * `activeStreams` above: aborting one of those tears the whole SSE response
+ * down (Stop), which is not what this button does. This map holds a SEPARATE
+ * AbortController per turn — passed into runConversationTurn as
+ * `answerNowSignal` — so triggering it only cuts the current model call short
+ * and moves the turn to a wrap-up answer; the response keeps streaming.
+ *
+ * A set, not one controller, for the same reason activeStreams is: two tabs
+ * can have a turn running on the same conversation.
+ */
+const activeAnswerNowSignals = new Map<string, Set<AbortController>>();
+
+function trackAnswerNow(conversationId: string, controller: AbortController): void {
+  const live = activeAnswerNowSignals.get(conversationId) ?? new Set<AbortController>();
+  live.add(controller);
+  activeAnswerNowSignals.set(conversationId, live);
+}
+
+function untrackAnswerNow(conversationId: string, controller: AbortController): void {
+  const live = activeAnswerNowSignals.get(conversationId);
+  if (!live) return;
+  live.delete(controller);
+  if (live.size === 0) activeAnswerNowSignals.delete(conversationId);
+}
+
+conversationsRouter.post("/conversations/:id/answer-now", async (req, res, next) => {
+  try {
+    // Same ownership rule as Stop above, for the same reason: an id is not a
+    // secret, and being signed in must not be enough to reach into someone
+    // else's turn.
+    if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
+    if (!(await getConversation(req.ownerId, req.params.id))) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    const live = activeAnswerNowSignals.get(req.params.id);
+    if (!live || live.size === 0) {
+      // No turn running (already finished, or never started) — the same shape
+      // as Stop's 404 above, and just as harmless: the client fires this and
+      // ignores the response either way (useChatStream.ts).
+      return res.status(404).json({ error: "No active turn for this conversation" });
+    }
+    for (const controller of live) controller.abort();
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * What the assistant message says in a transcript that only renders `content`.
  * The vector itself is on `message.embedding` for a client that can draw it;
  * this is the one line that makes the conversation readable without one.
@@ -490,8 +541,29 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   };
   send({ type: "user_message", message: userMessage });
 
+  // What the user waits through, measured where the server can see it: from
+  // the moment the request is ready to run to the moment the answer is whole.
+  // Sent to the client right away (not once the turn actually reaches vLLM) so
+  // a slow model resolution or attachment step is counted too — the person is
+  // waiting the whole time, not just once a token arrives. The client uses
+  // this as the clock for the "지금 답변하기" button instead of its own
+  // Date.now(), so the 3-minute mark does not drift with request latency or a
+  // client clock that disagrees with the server's.
+  const startedAt = Date.now();
+  if (turnKind === "chat") {
+    send({ type: "turn_started", startedAt, answerNowAfterMs: config.answerNowThresholdMs });
+  }
+
   const controller = new AbortController();
   trackStream(id, controller);
+  // "지금 답변하기": a SEPARATE controller from `controller` above, tracked in
+  // its own map (routes/conversations.ts's activeAnswerNowSignals). Aborting
+  // it cuts the current model call short without tearing the SSE response
+  // down the way Stop does — see runConversationTurn's answerNowSignal
+  // parameter. Embedding turns have no tool loop or reasoning to cut short, so
+  // this is only tracked (and only reachable) for a chat turn.
+  const answerNowController = new AbortController();
+  if (turnKind === "chat") trackAnswerNow(id, answerNowController);
   // Cancel the vLLM call when the client goes away (Stop button, closed tab).
   // This must listen on `res`, not `req`: an IncomingMessage emits "close" as
   // soon as its body has been fully read — measured ~1ms into the handler,
@@ -518,9 +590,31 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
     });
   }
 
-  // What the user waited through, measured where the server can see it: from
-  // the moment the request is ready to run to the moment the answer is whole.
-  const startedAt = Date.now();
+  // "하지 말라" 는 뜻이 담긴 말이면 그 사용자의 금지 목록 검토 대기에 한 줄 보탠다.
+  // 판정 대상은 방금 보낸 말과 그 앞의 답변이다 — 불만은 늘 직전 답변을 향한다.
+  // 답변과 무관하게 돌도록 자체 시한을 쓴다: 사용자가 답변을 멈춰도 이미 한 말은
+  // 그대로다. 검토 대기에만 들어가므로 이번 답변에도, 다음 답변에도 아직 반영되지
+  // 않는다(storage/prohibitionsStore.ts).
+  if (turnKind === "chat" && config.feedbackDetect && content.trim()) {
+    const previous = afterUser.messages
+      .slice(0, -1)
+      .reverse()
+      .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim());
+    if (previous) {
+      const ownerId = req.ownerId;
+      void detectProhibition({
+        assistant: previous.content,
+        user: content,
+        model: afterUser.model ?? "",
+        signal: AbortSignal.timeout(120_000),
+      })
+        .then((rule) => (rule ? appendPending(ownerId, rule, content, new Date()) : false))
+        .then((added) => {
+          if (added) console.log(`[prohibitions] ${ownerId}: 검토 대기에 한 줄 보탬`);
+        })
+        .catch((err) => console.warn("[prohibitions] could not record:", err instanceof Error ? err.message : err));
+    }
+  }
 
   try {
     let assistantMessage: StoredMessage;
@@ -545,7 +639,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
       // final message. The stream shape the client already parses is unchanged
       // (user_message -> done).
     } else {
-      const generator = runConversationTurn(afterUser, req.ownerId, controller.signal);
+      const generator = runConversationTurn(afterUser, req.ownerId, controller.signal, answerNowController.signal);
       let result;
       for (;;) {
         const step = await generator.next();
@@ -585,6 +679,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   } finally {
     clearInterval(heartbeat);
     untrackStream(id, controller);
+    if (turnKind === "chat") untrackAnswerNow(id, answerNowController);
     if (!res.writableEnded) {
       res.write("data: [DONE]\n\n");
       res.end();

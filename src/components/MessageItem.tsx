@@ -34,7 +34,14 @@ export function MessageItem({ conversationId, message }: MessageItemProps) {
 
   return (
     <div className={`message-row ${isUser ? "user" : "assistant"}`}>
-      {!isUser && <span className="message-avatar" aria-hidden="true" />}
+      {/* message-status 의 "답변을 생성하는 중…" 과 같은 조건(message.streaming)에
+          묶어, 아바타의 커서 깜빡임이 그 표시와 항상 같이 켜지고 같이 꺼진다. */}
+      {!isUser && (
+        <span
+          className={`message-avatar${message.streaming ? " waiting" : ""}`}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Pinned beside the avatar for the whole stream, not only while the
           content is empty, so the status never moves or disappears as the

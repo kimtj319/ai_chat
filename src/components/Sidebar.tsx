@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { pushOverlay } from "../ui/overlayStack";
-import { getConversation } from "../api/client";
+import { getConversation, getProhibitions } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useModels } from "../hooks/useModels";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
@@ -9,6 +9,7 @@ import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { CapabilityIcon } from "./CapabilityIcon";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { ProhibitionsDialog } from "./ProhibitionsDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { showErrorToast, showToast } from "./Toast";
 import { ModelEndpointDialog } from "./ModelEndpointDialog";
@@ -136,6 +137,15 @@ function ShieldIcon() {
   );
 }
 
+function NoEntryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M5.6 5.6l12.8 12.8" />
+    </svg>
+  );
+}
+
 function KeyIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -223,6 +233,10 @@ export function Sidebar({
 
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [prohibitionsOpen, setProhibitionsOpen] = useState(false);
+  // 메뉴를 열 때마다 새로 센다. 검토 대기는 대화 도중 서버가 보태므로, 앱을 연
+  // 시점의 값은 금방 낡는다.
+  const [prohibitionsPending, setProhibitionsPending] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -244,6 +258,19 @@ export function Sidebar({
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    let alive = true;
+    getProhibitions()
+      .then((res) => alive && setProhibitionsPending(res.pendingCount))
+      .catch(() => {
+        // 개수를 못 세도 메뉴는 그대로 쓸 수 있다.
+      });
+    return () => {
+      alive = false;
     };
   }, [settingsOpen]);
 
@@ -342,6 +369,22 @@ export function Sidebar({
         <KeyIcon />
         <span>비밀번호 변경</span>
       </button>
+      <button
+        type="button"
+        className="sidebar-settings-action"
+        onClick={() => {
+          setSettingsOpen(false);
+          setProhibitionsOpen(true);
+        }}
+      >
+        <NoEntryIcon />
+        <span>하지 말 것 목록</span>
+        {prohibitionsPending > 0 && (
+          <span className="sidebar-settings-badge" aria-label={`검토 대기 ${prohibitionsPending}건`}>
+            {prohibitionsPending}
+          </span>
+        )}
+      </button>
       {onOpenAdmin && (
         <button
           type="button"
@@ -405,6 +448,7 @@ export function Sidebar({
     <>
       {endpointsOpen && <ModelEndpointDialog onClose={() => setEndpointsOpen(false)} />}
       {passwordOpen && <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />}
+      {prohibitionsOpen && <ProhibitionsDialog onClose={() => setProhibitionsOpen(false)} />}
     {confirmLogout && (
       <ConfirmDialog
         title="로그아웃"

@@ -242,15 +242,37 @@ export const config = {
    */
   contextMaxCompactions: toInt(process.env.CONTEXT_MAX_COMPACTIONS, 2),
   /**
-   * "Normal" reasoning mode's ceiling on how long the model may think before
-   * the turn is stopped and asked to write its answer from the reasoning it
-   * already produced (chat/reasoningDeadline.ts). "External" mode ignores it
-   * and waits. Three minutes by default: measured here, the same question
-   * finished in 35s on one run and was still thinking after twenty minutes on
-   * another, so the ceiling is what turns the second case into an answer
-   * instead of an empty turn.
+   * "Normal" reasoning mode's SAFETY NET: past this, the turn is stopped and
+   * asked to write its answer from the reasoning it already produced
+   * (chat/reasoningDeadline.ts), the same way it always has. "External" mode
+   * ignores it and waits, as before.
+   *
+   * This used to be the primary way a turn ended early — a flat 3 minutes,
+   * enforced unconditionally. Now the "지금 답변하기" button (client, at
+   * ANSWER_NOW_THRESHOLD_MS) gives the person a choice at that same point
+   * instead of a forced cutoff, so this value only has to catch the case
+   * nobody is watching: a turn left running with the tab open. 30 minutes is
+   * well past the worst case measured here (35s on one run, still thinking
+   * after twenty minutes on another) rather than a number a person is
+   * expected to hit routinely.
    */
-  normalModeDeadlineMs: toDurationMs(process.env.NORMAL_MODE_DEADLINE_MS, 3 * 60 * 1000),
+  normalModeDeadlineMs: toDurationMs(process.env.NORMAL_MODE_DEADLINE_MS, 30 * 60 * 1000),
+  /**
+   * How long a turn may run before the client offers "지금 답변하기" (answer
+   * now). Mode-agnostic on purpose — a person waiting on "external" mode's
+   * unlimited thinking wants the same escape hatch as one on "normal" mode's
+   * eventual safety net, and the request that named this feature asked for it
+   * without distinguishing modes. Three minutes, matching what the old forced
+   * cutoff used to be, so the change is "the same wait becomes a choice"
+   * rather than "the wait got longer or shorter".
+   */
+  answerNowThresholdMs: toDurationMs(process.env.ANSWER_NOW_THRESHOLD_MS, 3 * 60 * 1000),
+  /**
+   * 사용자의 말에서 "하지 말라" 는 뜻을 찾아 그 사용자의 금지 목록 검토 대기에
+   * 보탤지. 단서가 있는 말에만 모델 호출이 하나 더 붙는다(chat/prohibitionDetect.ts).
+   * 끄면 목록은 사용자가 직접 적은 것만 반영된다.
+   */
+  feedbackDetect: process.env.FEEDBACK_DETECT !== "false",
   /**
    * Attachment limits. All of them are refusals at upload or send time, so the
    * prompt can never be assembled out of something the window cannot hold.
@@ -544,6 +566,7 @@ const RULES: Rule[] = [
   { key: "CONTEXT_KEEP_RECENT_RATIO", kind: "ratio" },
   { key: "CONTEXT_MAX_COMPACTIONS", kind: "int" },
   { key: "NORMAL_MODE_DEADLINE_MS", kind: "ms" },
+  { key: "ANSWER_NOW_THRESHOLD_MS", kind: "ms" },
   { key: "ATTACHMENT_MAX_IMAGE_BYTES", kind: "int" },
   { key: "ATTACHMENT_MAX_TEXT_BYTES", kind: "int" },
   { key: "ATTACHMENT_MAX_PER_MESSAGE", kind: "int" },
