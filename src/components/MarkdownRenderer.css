@@ -243,3 +243,35 @@
 .hljs-strong {
   font-weight: 700;
 }
+
+/* 출처 번호 "[n]". 본문 글자 흐름을 깨지 않게 작은 위 첨자 칩으로 그린다. */
+.markdown-body .citation-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.45em;
+  height: 1.45em;
+  margin: 0 0.12em;
+  padding: 0 0.3em;
+  border: none;
+  border-radius: 0.4em;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: 0.72em;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  vertical-align: 0.35em;
+  cursor: pointer;
+  transition: background var(--press-out) var(--press-ease);
+}
+
+.markdown-body .citation-link:hover {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.markdown-body .citation-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}

@@ -93,26 +93,45 @@
 }
 
 /* 답변이 만들어지는 동안(= message-status 의 "답변을 생성하는 중…" 라벨과 같은
-   조건, message.streaming) 커서를 옅게 맥동시켜 아바타가 살아 있는 것처럼 보이게
-   한다. 첫 글자가 나온 뒤에도 스트림이 끝날 때까지 계속된다 — 도구 호출·추론으로
-   중간에 긴 정적이 끼기 때문에, 글자가 나왔다고 멈추면 그 정적 동안 앱이 멈춘
-   것처럼 보인다. 스트림이 끝나 waiting 클래스가 빠지면 원래 밝기(opacity: 1)로
-   즉시 돌아오고, 글자 자체는 그대로라 크기·위치 변화가 없다. */
-.message-avatar.waiting::after {
-  animation: message-avatar-cursor-pulse 1.1s ease-in-out infinite;
+   조건, message.streaming) ">_" 가 왼쪽에서 오른쪽으로 달려 나간다. 들어올 때는
+   가운데에서 잠깐 멈췄다가, 떠날 때는 점점 빨라지며(ease-in) 옆으로 늘어나
+   원 밖으로 빠진다 — 프롬프트가 "치고 나가는" 느낌. 두 글자에 같은 애니메이션을
+   걸어 한 덩어리로 움직인다. 스트림이 끝나 waiting 이 빠지면 제자리(가운데)로
+   즉시 돌아온다. */
+.message-avatar.waiting {
+  overflow: hidden;
 }
 
-@keyframes message-avatar-cursor-pulse {
-  0%,
-  100% {
-    opacity: 1;
+.message-avatar.waiting::before,
+.message-avatar.waiting::after {
+  animation: message-avatar-dash 1.3s infinite;
+}
+
+@keyframes message-avatar-dash {
+  0% {
+    transform: translate(-18px, -0.5px) scaleX(1.3);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
   }
-  50% {
-    opacity: 0.25;
+  30% {
+    transform: translate(0, -0.5px) scaleX(1);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  48% {
+    transform: translate(0, -0.5px) scaleX(1);
+    opacity: 1;
+    /* 여기서부터 가속: 처음엔 거의 안 움직이다가 끝에서 확 빠진다. */
+    animation-timing-function: cubic-bezier(0.7, 0, 0.95, 0.35);
+  }
+  100% {
+    transform: translate(22px, -0.5px) scaleX(1.6);
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .message-avatar.waiting::before,
   .message-avatar.waiting::after {
     animation: none;
   }

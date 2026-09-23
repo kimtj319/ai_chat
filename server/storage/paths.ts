@@ -122,6 +122,14 @@ export function documentChunksFile(ownerId: string, documentId: string): string 
 }
 
 /**
+ * 올린 PDF 원본. 출처 "[n]" 을 누르면 이 파일을 그대로 띄운다. PDF 가 아닌 문서와
+ * 이 기능 전에 올린 문서에는 없다 — 그때는 원문 텍스트로 보여 준다.
+ */
+export function documentSourceFile(ownerId: string, documentId: string): string {
+  return path.join(documentsDir(ownerId), `${documentId}.pdf`);
+}
+
+/**
  * Every owner directory. Only enumerated to answer "how many people adopted
  * this MCP server?" — the count that decides whether a server can be deleted.
  */

@@ -1,9 +1,12 @@
-import { Component, isValidElement, type ReactNode } from "react";
+import { Component, isValidElement, useMemo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
+import type { CitationSource } from "../state/citations";
+import { openSource } from "../state/sourcePanel";
+import { remarkCitations } from "./citationMarkdown";
 import { CopyButton } from "./CopyButton";
 import "./MarkdownRenderer.css";
 
@@ -83,17 +86,47 @@ class MarkdownBoundary extends Component<BoundaryProps, BoundaryState> {
 
 interface MarkdownRendererProps {
   content: string;
+  /** 이 답변의 문서 출처. 있으면 본문의 "[n]" 이 그 단락을 여는 링크가 된다. */
+  citations?: readonly CitationSource[];
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
+/** 출처 번호. 누르면 오른쪽 창에 그 단락의 원문이 열린다. */
+function CitationLink({ source }: { source: CitationSource }) {
+  return (
+    <button
+      type="button"
+      className="citation-link"
+      data-tooltip={source.title || "출처"}
+      aria-label={`출처 ${source.n}: ${source.title}`}
+      onClick={() => openSource(source)}
+    >
+      {source.n}
+    </button>
+  );
+}
+
+export function MarkdownRenderer({ content, citations }: MarkdownRendererProps) {
+  const byNumber = useMemo(() => new Map((citations ?? []).map((c) => [c.n, c])), [citations]);
+  const remarkPlugins = useMemo(
+    () => (byNumber.size > 0 ? [remarkGfm, remarkMath, remarkCitations(new Set(byNumber.keys()))] : [remarkGfm, remarkMath]),
+    [byNumber],
+  );
+  const components = useMemo(
+    () => ({
+      pre: PreRenderer,
+      code: CodeRenderer,
+      a: ({ href, children }: { href?: string; children?: ReactNode }) => {
+        const cite = href?.startsWith("#cite-") ? byNumber.get(Number(href.slice(6))) : undefined;
+        if (cite) return <CitationLink source={cite} />;
+        return <a href={href}>{children}</a>;
+      },
+    }),
+    [byNumber],
+  );
   return (
     <div className="markdown-body">
       <MarkdownBoundary resetKey={content} fallback={<pre className="markdown-raw-fallback">{content}</pre>}>
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeHighlight, rehypeKatex]}
-          components={{ pre: PreRenderer, code: CodeRenderer }}
-        >
+        <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={[rehypeHighlight, rehypeKatex]} components={components}>
           {content}
         </ReactMarkdown>
       </MarkdownBoundary>

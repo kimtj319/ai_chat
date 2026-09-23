@@ -27,9 +27,11 @@ import {
   findSharedDocument,
   listSharedDocuments,
   type OwnedRagDocument,
+  documentSourcePath,
   readDocumentText,
   saveDocumentChunks,
   saveDocumentMeta,
+  saveDocumentSource,
   saveDocumentText,
 } from "../storage/documentStore.js";
 import { RagEngineError, countChunks, indexDocument, ragConfigured, reindexScope, removeDocument } from "../rag/engineIndex.js";
@@ -77,6 +79,7 @@ type DocumentErrorCode =
   | "unsupported_type"
   | "too_large"
   | "not_found"
+  | "no_source"
   | "invalid_input"
   | "index_failed";
 
@@ -262,6 +265,8 @@ documentsRouter.post(
         // Text first: runIndex writes the metadata, and metadata pointing at
         // text that is not on disk yet is a document no retry could ever fix.
         await saveDocumentText(req.ownerId, meta.id, part.text);
+        // 출처 "[n]" 을 누르면 이 원본을 그대로 띄운다(GET /documents/:id/file).
+        if (mime === "application/pdf") await saveDocumentSource(req.ownerId, meta.id, body);
         const done = await indexLock(req.ownerId, () =>
           runIndex(req.ownerId, meta, part.text, {
             previousChunks: 0,
@@ -393,6 +398,28 @@ documentsRouter.get("/documents/:id/text", async (req, res, next) => {
     const text = await readDocumentText(ownerId, doc.id);
     if (text === null) return fail(res, 404, "not_found", "문서 원문을 찾을 수 없습니다.");
     res.type("text/plain; charset=utf-8").send(text);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * 올린 PDF 원본. 답변의 출처 "[n]" 을 누르면 오른쪽 창이 이것을 띄운다.
+ *
+ * 볼 수 있는 사람은 /text 와 같다(loadReadable: 내 문서, 또는 공개 문서). PDF 가
+ * 아닌 문서와 원본을 보관하기 전에 올린 문서는 404 `no_source` — 화면은 그때
+ * 원문 텍스트로 대신 보여 준다.
+ */
+documentsRouter.get("/documents/:id/file", async (req, res, next) => {
+  try {
+    const found = await loadReadable(req.ownerId, req.params.id);
+    if (!found) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
+    const file = await documentSourcePath(found.ownerId, found.doc.id);
+    if (!file) return fail(res, 404, "no_source", "이 문서는 PDF 원본이 보관되어 있지 않습니다.");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(found.doc.name)}`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.sendFile(file);
   } catch (err) {
     next(err);
   }

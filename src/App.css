@@ -98,3 +98,13 @@
     min-width: 0;
   }
 }
+
+/* 출처 창이 열려 있는 동안 본문은 가운데 정렬을 풀고 왼쪽(사이드바 바로 옆,
+   사이드바가 접혀 있으면 접힌 레일 바로 옆)에 붙는다. 창이 폭을 가져가면서
+   대부분의 화면에서는 저절로 그렇게 되지만, 아주 넓은 화면에서는 가운데에 남은
+   여백이 생기므로 여기서 분명히 붙인다. */
+.app-shell[data-source-open] .chat-message-list-inner,
+.app-shell[data-source-open] .composer,
+.app-shell[data-source-open] .chat-header-left {
+  margin-left: 0;
+}

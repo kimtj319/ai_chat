@@ -1,8 +1,10 @@
+import { useMemo } from "react";
 import { embeddingJson } from "../state/embedding";
 import type { ClientChatMessage } from "../state/types";
 import { CopyButton } from "./CopyButton";
 import { EmbeddingResult } from "./EmbeddingResult";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { citationSources } from "../state/citations";
 import { MessageAttachments } from "./MessageAttachments";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ToolUsagePanel } from "./ToolUsagePanel";
@@ -31,11 +33,14 @@ export function MessageItem({ conversationId, message }: MessageItemProps) {
   // An embedding turn has no prose to render, and no completion tokens to
   // report — the result panel below carries both the numbers and the usage.
   const embedding = !isUser ? message.embedding : undefined;
+  // 문서 검색 결과에 매긴 번호. 서버가 모델에게 보여 준 번호와 같은 규칙으로 센다
+  // (state/citations.ts) — 스트리밍 중에는 도구 결과가 아직 없어 끝나면 링크가 된다.
+  const citations = useMemo(() => (isUser ? [] : citationSources(message.toolResults)), [isUser, message.toolResults]);
 
   return (
     <div className={`message-row ${isUser ? "user" : "assistant"}`}>
       {/* message-status 의 "답변을 생성하는 중…" 과 같은 조건(message.streaming)에
-          묶어, 아바타의 커서 깜빡임이 그 표시와 항상 같이 켜지고 같이 꺼진다. */}
+          묶어, 아바타의 ">_" 움직임이 그 표시와 항상 같이 켜지고 같이 꺼진다. */}
       {!isUser && (
         <span
           className={`message-avatar${message.streaming ? " waiting" : ""}`}
@@ -69,7 +74,7 @@ export function MessageItem({ conversationId, message }: MessageItemProps) {
         ) : embedding ? (
           <EmbeddingResult embedding={embedding} usage={message.usage} />
         ) : message.content.length > 0 ? (
-          <MarkdownRenderer content={message.content} />
+          <MarkdownRenderer content={message.content} citations={citations} />
         ) : null}
 
         {message.contentPromotedFromReasoning && (

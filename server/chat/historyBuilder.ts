@@ -1,5 +1,6 @@
 import type { Conversation, MessageAttachment, StoredMessage } from "../types.js";
 import { composeSystemPrompt } from "./systemPrompt.js";
+import { annotateForModel, citationSources } from "./citations.js";
 import { activeText, capActive, readProhibitions } from "../storage/prohibitionsStore.js";
 import { readAttachmentBytes } from "../storage/attachmentStore.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
@@ -130,12 +131,15 @@ async function messageToVllm(
         })),
       },
     ];
+    // 그 턴에 모델이 봤던 모양 그대로(인용 번호 포함) 다시 싣는다. 번호가 빠지면
+    // 이어지는 답변이 앞 답변의 "[n]" 을 이해하지 못한다.
+    const sources = citationSources(message.toolResults);
     for (const tr of message.toolResults ?? []) {
       out.push({
         role: "tool",
         tool_call_id: tr.id,
         name: tr.name,
-        content: JSON.stringify(tr.ok ? tr.result ?? null : { error: tr.error ?? "tool execution failed" }),
+        content: JSON.stringify(tr.ok ? annotateForModel(tr, sources) : { error: tr.error ?? "tool execution failed" }),
       });
     }
     if (message.content.trim().length > 0) {

@@ -1,0 +1,217 @@
+/* ---- 출처 창 ----
+   바깥(.source-panel)은 너비만 0 → 창 너비로 자란다. 그 너비를 빼앗긴 만큼
+   본문(ChatView)이 줄어 왼쪽으로 붙는다. 안쪽(.source-panel-inner)은 처음부터
+   창 너비 그대로이고 오른쪽 끝에 붙어 있어서, 바깥이 자라는 동안 오른쪽에서
+   밀려 들어오는 것처럼 보인다. 안쪽 너비가 변하지 않아야 PDF 를 처음 그릴 때
+   잰 폭이 끝까지 맞다. */
+
+.source-panel {
+  --source-panel-width: clamp(420px, 46vw, 900px);
+  position: relative;
+  z-index: 3;
+  flex: 0 0 auto;
+  width: 0;
+  height: 100%;
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  transition: width 420ms cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.source-panel.open {
+  width: var(--source-panel-width);
+}
+
+.source-panel-inner {
+  flex: 0 0 var(--source-panel-width);
+  width: var(--source-panel-width);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-container);
+  border-left: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(24px);
+  opacity: 0;
+  transition:
+    transform 420ms cubic-bezier(0.22, 0.8, 0.24, 1),
+    opacity 280ms ease;
+}
+
+.source-panel.open .source-panel-inner {
+  transform: none;
+  opacity: 1;
+}
+
+.source-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-6) var(--space-5) var(--space-8);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.source-panel-n {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: 6px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 22px;
+  text-align: center;
+}
+
+.source-panel-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-panel-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+/* PDF 쪽들이 쌓이는 스크롤 칸. */
+.source-pdf {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6) 16px var(--space-10);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  background: var(--surface-container-high);
+}
+
+.source-pdf.empty {
+  display: none;
+}
+
+.source-pdf-page {
+  position: relative;
+  flex-shrink: 0;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+}
+
+.source-pdf-page canvas {
+  display: block;
+}
+
+/* pdf.js 글자층. pdfjs-dist/web/pdf_viewer.css 에서 이 창에 필요한 규칙만 옮겼다
+   (전체를 들이면 뷰어용 전역 규칙까지 딸려 온다). 글자는 투명하고 캔버스가 보인다. */
+.source-pdf-page .textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+}
+
+.source-pdf-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.source-pdf-page .textLayer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.source-pdf-page .textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.source-pdf-page .textLayer ::selection {
+  background: rgb(0 0 255 / 0.25);
+}
+
+/* 형광펜. 캔버스의 글자 위에 곱하기로 얹어 글자는 그대로 보이고 바탕만 노랗다.
+   span 안에 일부만 감싼 조각(.source-hl-part)은 부모 span 의 위치를 그대로 쓴다. */
+.source-pdf-page .textLayer .source-hl {
+  background: rgb(255 214 0 / 0.55);
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+}
+
+.source-pdf-page .textLayer .source-hl-part {
+  position: static;
+}
+
+/* 원문 텍스트로 보여 줄 때(PDF 원본이 없는 문서). */
+.source-text {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: var(--space-6) var(--space-8) var(--space-10);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+  line-height: 1.8;
+  color: var(--on-surface);
+}
+
+/* 줄글 형광펜: 줄마다 끊겨도 각 줄이 같은 모양으로 칠해진다. */
+.source-text .source-hl {
+  background: rgb(255 214 0 / 0.45);
+  color: inherit;
+  padding: 0.1em 0;
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* 좁은 화면: 옆에 붙일 자리가 없으니 화면 전체를 덮는다. */
+@media (max-width: 900px) {
+  .source-panel {
+    --source-panel-width: 100vw;
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 60;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-panel,
+  .source-panel-inner {
+    transition: none;
+  }
+}

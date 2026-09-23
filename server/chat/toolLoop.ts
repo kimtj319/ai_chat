@@ -1,3 +1,4 @@
+import { annotateForModel, citationSources } from "./citations.js";
 import {
   resolveModel,
   streamChatCompletion,
@@ -690,12 +691,16 @@ export async function* runConversationTurn(
         function: { name: tc.name, arguments: typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments) },
       })),
     });
+    // 문서 검색 결과에는 인용 번호(ref)를 달아 보낸다. 번호는 이 턴 전체를 센
+    // 것이라, 앞 라운드에서 나온 단락은 그때 번호를 그대로 받는다 — 화면은 저장된
+    // 도구 결과로 같은 번호를 다시 세어 "[n]" 을 링크로 만든다(chat/citations.ts).
+    const sources = citationSources(allToolResults);
     for (const tr of roundToolResults) {
       workingMessages.push({
         role: "tool",
         tool_call_id: tr.id,
         name: tr.name,
-        content: JSON.stringify(tr.ok ? tr.result ?? null : { error: tr.error ?? "tool execution failed" }),
+        content: JSON.stringify(tr.ok ? annotateForModel(tr, sources) : { error: tr.error ?? "tool execution failed" }),
       });
     }
 

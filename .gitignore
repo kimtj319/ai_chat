@@ -5,6 +5,8 @@ node_modules
 dist/
 dist-ssr/
 dist-server/
+# scripts/copy-pdfjs-assets.mjs 가 빌드 때마다 node_modules 에서 새로 만든다.
+public/pdfjs/
 *.local
 .DS_Store
 .env

@@ -8,6 +8,8 @@ import { BoardPage } from "./components/BoardPage";
 import { ChatView } from "./components/ChatView";
 import { LibraryPage } from "./components/LibraryPage";
 import { DocumentsPage } from "./components/DocumentsPage";
+import { SourcePanel } from "./components/SourcePanel";
+import { closeSource, useOpenSource } from "./state/sourcePanel";
 import { Sidebar } from "./components/Sidebar";
 import { ToastHost } from "./components/Toast";
 import { TooltipLayer } from "./components/TooltipLayer";
@@ -190,11 +192,21 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   const showDocuments = view === "documents";
   const showBoard = view === "board";
 
+  const sourceOpen = useOpenSource() !== null;
+  useEffect(() => {
+    if (view !== "chat") closeSource();
+  }, [view]);
+
   useTheme(ui.theme);
   useKeyboardShortcuts({ onNewConversation: () => void createConversation(), onStop: chatStream.stopGeneration });
 
   return (
-    <div className="app-shell" data-narrow={narrow || undefined} data-drawer-open={drawerOpen || undefined}>
+    <div
+      className="app-shell"
+      data-narrow={narrow || undefined}
+      data-drawer-open={drawerOpen || undefined}
+      data-source-open={sourceOpen || undefined}
+    >
       <AppBackdrop />
 
       {narrow && (
@@ -254,6 +266,8 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
           onOpenBoard={() => navigate("board")}
         />
       )}
+      {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
+      {!showLibrary && !showDocuments && !showBoard && <SourcePanel />}
     </div>
   );
 }

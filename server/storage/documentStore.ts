@@ -13,8 +13,24 @@
  */
 import fs from "node:fs/promises";
 import { readJsonFile, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
-import { documentChunksFile, documentMetaFile, documentTextFile, documentsDir, isValidId, ownersRoot } from "./paths.js";
+import { documentChunksFile, documentMetaFile, documentSourceFile, documentTextFile, documentsDir, isValidId, ownersRoot } from "./paths.js";
 import type { RagDocument } from "../types.js";
+
+/** PDF 원본을 그대로 둔다. 여러 조각으로 나뉜 PDF 는 조각마다 한 벌씩 — 한 조각을 지워도 나머지가 원본을 잃지 않는다. */
+export async function saveDocumentSource(ownerId: string, documentId: string, bytes: Buffer): Promise<void> {
+  await writeFileAtomic(documentSourceFile(ownerId, documentId), bytes);
+}
+
+/** 원본이 있으면 그 경로, 없으면 null. */
+export async function documentSourcePath(ownerId: string, documentId: string): Promise<string | null> {
+  const file = documentSourceFile(ownerId, documentId);
+  try {
+    await fs.access(file);
+    return file;
+  } catch {
+    return null;
+  }
+}
 
 export async function saveDocumentText(ownerId: string, documentId: string, text: string): Promise<void> {
   await writeFileAtomic(documentTextFile(ownerId, documentId), text);
@@ -93,6 +109,7 @@ export async function deleteDocumentFiles(ownerId: string, documentId: string): 
     fs.rm(documentTextFile(ownerId, documentId), { force: true }),
     fs.rm(documentMetaFile(ownerId, documentId), { force: true }),
     fs.rm(documentChunksFile(ownerId, documentId), { force: true }),
+    fs.rm(documentSourceFile(ownerId, documentId), { force: true }),
   ]);
 }
 
