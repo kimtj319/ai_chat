@@ -1,5 +1,6 @@
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { appPath } from "../api/base";
 import { coverage, findPassage } from "../state/highlightMatch";
 
 /**
@@ -16,8 +17,9 @@ import { coverage, findPassage } from "../state/highlightMatch";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-const CMAP_URL = "/pdfjs/cmaps/";
-const STANDARD_FONT_URL = "/pdfjs/standard_fonts/";
+// 앱 루트 기준(api/base.ts) — 다른 도메인의 하위 경로로 연결돼도 찾아간다.
+const CMAP_URL = appPath("pdfjs/cmaps/");
+const STANDARD_FONT_URL = appPath("pdfjs/standard_fonts/");
 
 export interface PdfRenderResult {
   /** 단락을 찾았는가. 못 찾으면 첫 쪽을 보여 준다. */

@@ -1,3 +1,4 @@
+import { apiPath } from "./base";
 import { flushSseBuffer, parseSseChunk } from "./sseParser";
 import type {
   AddModelEndpointRequest,
@@ -96,7 +97,7 @@ async function extractErrorMessage(response: Response): Promise<string> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiPath(path), {
       credentials: "include",
       headers: init?.body ? { "Content-Type": "application/json" } : undefined,
       ...init,
@@ -163,7 +164,7 @@ export async function answerNow(id: string): Promise<void> {
 
 /** Path the browser fetches an attachment's bytes from (also an <img> src). */
 export function attachmentUrl(conversationId: string, attachmentId: string): string {
-  return `/api/conversations/${conversationId}/attachments/${attachmentId}`;
+  return apiPath(`/conversations/${conversationId}/attachments/${attachmentId}`);
 }
 
 /**
@@ -179,7 +180,7 @@ export async function uploadAttachment(
 ): Promise<MessageAttachment> {
   let response: Response;
   try {
-    response = await fetch(`/api/conversations/${conversationId}/attachments?name=${encodeURIComponent(name)}`, {
+    response = await fetch(apiPath(`/conversations/${conversationId}/attachments?name=${encodeURIComponent(name)}`), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": body.type || "application/octet-stream" },
@@ -254,7 +255,7 @@ export async function uploadDocument(
   const query = `name=${encodeURIComponent(name)}&scope=${scope}`;
   let response: Response;
   try {
-    response = await fetch(`/api/documents?${query}`, {
+    response = await fetch(apiPath(`/documents?${query}`), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": body.type || "text/plain" },
@@ -331,7 +332,7 @@ export async function deleteDocument(id: string): Promise<void> {
 
 /** 원문. 크기가 커서 JSON 이 아니라 평문으로 온다. */
 export async function fetchDocumentText(id: string): Promise<string> {
-  const response = await fetch(`/api/documents/${id}/text`, { credentials: "include" });
+  const response = await fetch(apiPath(`/documents/${id}/text`), { credentials: "include" });
   if (!response.ok) {
     if (response.status === 401) notifyUnauthorized();
     throw new ApiError(await extractErrorMessage(response));
@@ -372,7 +373,7 @@ async function endpointMutation<T>(init: RequestInit, adminToken: string, signal
 
   let response: Response;
   try {
-    response = await fetch("/api/models/endpoints", { credentials: "include", headers, signal, ...init });
+    response = await fetch(apiPath("/models/endpoints"), { credentials: "include", headers, signal, ...init });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     const message = error instanceof Error ? error.message : String(error);
@@ -458,7 +459,7 @@ export async function sendMessage(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`/api/conversations/${conversationId}/messages`, {
+    response = await fetch(apiPath(`/conversations/${conversationId}/messages`), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -529,7 +530,7 @@ export async function sendMessage(
 async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiPath(path), {
       credentials: "include",
       headers: init?.body ? { "Content-Type": "application/json" } : undefined,
       ...init,
@@ -676,7 +677,7 @@ export class McpError extends ApiError {
 async function mcpRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, {
+    response = await fetch(apiPath(path), {
       credentials: "include",
       headers: init?.body ? { "Content-Type": "application/json" } : undefined,
       ...init,

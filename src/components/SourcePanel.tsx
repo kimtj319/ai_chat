@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { apiPath } from "../api/base";
 import type { CitationSource } from "../state/citations";
 import { findPassage } from "../state/highlightMatch";
 import { closeSource, useOpenSource } from "../state/sourcePanel";
@@ -81,7 +82,7 @@ function SourceBody({ source }: { source: CitationSource }) {
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
-    const base = `/api/documents/${encodeURIComponent(source.documentId)}`;
+    const base = apiPath(`/documents/${encodeURIComponent(source.documentId)}`);
     (async () => {
       const file = await fetch(`${base}/file`, { credentials: "include", signal });
       if (file.ok) {
