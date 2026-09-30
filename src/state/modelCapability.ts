@@ -114,7 +114,12 @@ export function conversationKindMeta(kind: ConversationKind | undefined | null):
  * typed: on an embedding model the text does not get answered, it gets turned
  * into numbers.
  */
-export function composerPlaceholder(kind: ConversationKind): string {
+/**
+ * `touch` 는 손가락으로 쓰는 화면(폰·태블릿). 거기에는 Shift 가 없어 Enter 가
+ * 줄바꿈이고 보내기는 단추로 하므로, 키 안내를 붙이지 않는다.
+ */
+export function composerPlaceholder(kind: ConversationKind, touch = false): string {
+  if (touch) return kind === "embedding" ? "임베딩할 텍스트를 입력하세요…" : "메시지를 입력하세요…";
   return kind === "embedding"
     ? "임베딩할 텍스트를 입력하세요…  (Enter 실행, Shift+Enter 줄바꿈)"
     : "메시지를 입력하세요…  (Enter 전송, Shift+Enter 줄바꿈)";

@@ -25,14 +25,16 @@
   position: fixed;
   top: var(--space-5);
   left: var(--space-5);
-  z-index: 3;
+  /* 서랍(4)보다 위 — 토글이 덮이면 닫을 길이 스크림뿐이 된다. */
+  z-index: 5;
 }
 
 /* 서랍이 열렸을 때 뒤를 덮는다. 눌러서 닫는 가장 큰 표적이기도 하다. */
 .app-scrim {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  /* 대화 헤더(2)보다 위. 같거나 낮으면 서랍을 열어도 헤더 아이콘이 서랍 위로 비친다. */
+  z-index: 3;
   border: none;
   padding: 0;
   background: var(--scrim);
@@ -86,6 +88,59 @@
   .app-shell[data-narrow] .library-header,
   .app-shell[data-narrow] .admin-header {
     padding-left: calc(var(--space-5) + 40px + var(--space-5));
+  }
+
+  /* iOS Safari 는 16px 보다 작은 입력칸을 누르면 화면을 확대하고, 확대된 채로
+     남는다 — 폰에서 화면 전체가 어긋나 보이던 가장 큰 원인이다. 입력칸만
+     16px 로 올린다. 입력칸마다 제 클래스로 글자 크기를 정해 두어서(.composer-textarea,
+     .board-input …) 보통 규칙으로는 이기지 못한다 — 폰 폭의 이 한 속성만 !important 로 둔다. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  /* 한국어는 기본값이면 글자 하나 단위로 줄이 바뀐다("어떻 / 게"). 좁은 화면에서
+     특히 거슬리므로 낱말 단위로 끊고, 긴 URL 처럼 끊을 곳이 없는 것만 쪼갠다. */
+  body {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  /* 토큰 사용량은 답변마다 아래에 같은 정보가 있다. 폰 헤더에 두면 오른쪽
+     아이콘들과 겹친다. */
+  .chat-header-usage {
+    display: none;
+  }
+
+  /* 입력창: 글 쓰는 칸이 한 줄을 통째로 쓰고, 단추들은 그 아래 줄에 선다.
+     한 줄에 모두 두면 칸이 몇 글자 폭으로 좁아져 안내문이 여섯 줄로 늘어난다. */
+  .composer-input-row {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+    column-gap: var(--space-3);
+  }
+
+  .composer-textarea {
+    order: -1;
+    flex: 1 0 100%;
+  }
+
+  .composer-trailing {
+    margin-left: auto;
+  }
+
+  /* 답변은 아바타 옆 칸에 들어가 폰 폭의 1/6 가까이를 비워 둔다. 폰에서는 아바타를
+     한 줄에 두고 본문과 꼬리말이 그 아래 폭 전체를 쓴다. */
+  .message-row.assistant .message-bubble,
+  .message-row.assistant .message-footer {
+    grid-column: 1 / -1;
+  }
+
+  /* 표는 이미 가로로 스크롤된다. 칸이 한 글자 폭까지 줄어들지 않게만 한다. */
+  .markdown-body th,
+  .markdown-body td {
+    min-width: 5.5em;
   }
 
   /* 트리거 아래에 뜨는 것들은 제 최소 폭을 고집한다. 화면보다 넓어지면

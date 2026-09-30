@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, typ
 import type { ConversationKind, ReasoningLevel, ReasoningMode } from "../api/types";
 import { attachmentTotal, draftOverBudget, WAITING_FOR_UPLOAD } from "../attachments/messages";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { AttachmentDraft, DraftAttachment } from "../hooks/useAttachmentDraft";
 import { composerPlaceholder, EMBEDDING_MODE_NOTICE } from "../state/modelCapability";
 import type { ActiveConversation } from "../state/StoreContext";
@@ -75,6 +76,8 @@ export function Composer({
   onOpenLibrary,
 }: ComposerProps) {
   const { updateSettings, setLastReasoning, setLastReasoningMode } = useStore();
+  // 손가락으로 쓰는 화면: Shift 가 없으니 Enter 는 줄바꿈, 보내기는 단추(handleKeyDown).
+  const touch = useMediaQuery("(pointer: coarse)");
   const [text, setText] = useState("");
   const [budget, setBudget] = useState(conversation.settings.thinkingTokenBudget);
   // Enter pressed while an upload is still running: the text is frozen and the
@@ -166,6 +169,11 @@ export function Composer({
       setPendingSubmit(false);
       return;
     }
+    // 한글을 조합하는 중의 Enter 는 글자를 끝내는 것이지 보내라는 것이 아니다.
+    // 이것을 보내기로 받으면 마지막 글자가 빠지거나 두 번 들어간 채 전송된다.
+    if (event.nativeEvent.isComposing) return;
+    // 폰·태블릿에는 Shift 가 없으니 Enter 는 줄바꿈으로 두고, 보내기는 단추로 한다.
+    if (touch) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -246,7 +254,7 @@ export function Composer({
         <textarea
           ref={textareaRef}
           className="composer-textarea"
-          placeholder={composerPlaceholder(kind)}
+          placeholder={composerPlaceholder(kind, touch)}
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={handleKeyDown}

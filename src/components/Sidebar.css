@@ -388,6 +388,8 @@
 
 .theme-option {
   flex: 1;
+  /* 좁은 메뉴에서 "시스템"이 두 줄로 갈라지지 않게. */
+  white-space: nowrap;
   background: transparent;
   border: none;
   border-radius: var(--radius-full);
@@ -530,9 +532,10 @@
   top: 0;
   bottom: 0;
   left: 0;
-  /* 스크림(1)보다 위, 서랍 토글(3)보다 아래. 토글이 서랍에 덮이면 닫을
-     길이 스크림뿐이 된다. */
-  z-index: 2;
+  /* 스크림(3)보다 위, 서랍 토글(5)보다 아래. 토글이 서랍에 덮이면 닫을
+     길이 스크림뿐이 된다. 대화 헤더(2)보다도 위여야 헤더 아이콘이 서랍 위로
+     비치지 않는다. */
+  z-index: 4;
   margin: var(--space-5);
   /* 좁은 화면에서는 접힌 레일로 두지 않는다. 서랍을 일부러 열었다면
      이름까지 보고 고르려는 것이다. 접힘 선호값은 사용자의 것이라 건드리지
@@ -560,6 +563,17 @@
   .app-shell[data-narrow] .sidebar {
     transition: none;
   }
+}
+
+/* 서랍 토글은 화면 왼쪽 위에 떠 있다. 서랍이 열리면 그 자리가 로고 자리라
+   둘이 겹치므로, 로고 줄을 토글 너비만큼 비켜 둔다. */
+.app-shell[data-narrow] .sidebar-brand {
+  padding-left: calc(40px + var(--space-6));
+}
+
+/* 서랍에는 접기가 없다(좁은 화면은 늘 펼친 서랍) — 눌러도 아무 일이 없는 단추는 뺀다. */
+.app-shell[data-narrow] .sidebar-collapse-toggle {
+  display: none;
 }
 
 /* 검토 대기 개수. 메뉴 항목 오른쪽 끝에 붙는다. */
