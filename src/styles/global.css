@@ -18,6 +18,43 @@ body,
   height: 100%;
 }
 
+/* 문서 자체는 절대 스크롤되지 않는다. 화면마다 제 칸(대화 목록·사이드바 목록·
+   페이지 본문·대화상자)이 따로 스크롤되는 구조라, 문서가 움직일 이유가 없다.
+
+   iOS Safari 는 이것을 막지 않으면 손가락 스크롤을 문서로 넘긴다 — 폰에서 답변을
+   내리면 화면 전체가 같이 밀려 위아래 내용을 볼 수 없던 것, 사이드바를 밀면 페이지가
+   밀리던 것이 그것이다. overflow 만으로는 옛 iOS 가 지키지 않아, body 를 화면에
+   고정하는 방법을 함께 쓴다. 대화상자·서랍은 이미 position: fixed 라 영향이 없다. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+/* 스크롤되는 칸들. 끝에 닿은 스크롤이 바깥(문서·뒤쪽 칸)으로 넘어가지 않게 한다 —
+   넘어가면 iOS 에서 화면 전체가 튕기거나, 서랍 뒤의 대화가 대신 움직인다. */
+.chat-message-list,
+.sidebar-recents,
+.sidebar-settings-page-body,
+.documents-body,
+.library-body,
+.board-body,
+.admin-body,
+.modal-body,
+.source-pdf,
+.source-text,
+.docview-text,
+.docview-chunks {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 body {
   margin: 0;
   background: var(--surface);
