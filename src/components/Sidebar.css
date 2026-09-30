@@ -565,17 +565,6 @@
   }
 }
 
-/* 서랍 토글은 화면 왼쪽 위에 떠 있다. 서랍이 열리면 그 자리가 로고 자리라
-   둘이 겹치므로, 로고 줄을 토글 너비만큼 비켜 둔다. */
-.app-shell[data-narrow] .sidebar-brand {
-  padding-left: calc(40px + var(--space-6));
-}
-
-/* 서랍에는 접기가 없다(좁은 화면은 늘 펼친 서랍) — 눌러도 아무 일이 없는 단추는 뺀다. */
-.app-shell[data-narrow] .sidebar-collapse-toggle {
-  display: none;
-}
-
 /* 검토 대기 개수. 메뉴 항목 오른쪽 끝에 붙는다. */
 .sidebar-settings-badge {
   margin-left: auto;
@@ -589,4 +578,85 @@
   font-variant-numeric: tabular-nums;
   line-height: 18px;
   text-align: center;
+}
+
+/* ---- 설정 화면: 사이드바 전체를 바꿔 끼운다 ----
+   메뉴·대화 목록은 왼쪽으로 조금 밀리며 사라지고, 설정 화면이 오른쪽에서 들어온다.
+   유리판(사이드바 배경)은 그대로 두고 그 위의 내용만 갈아 끼우므로, 화면 전체가
+   "갱신" 되는 느낌이 난다. 닫힐 때는 거꾸로. */
+.sidebar > :not(.sidebar-settings-page) {
+  transition:
+    opacity 0.24s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar.settings-open > :not(.sidebar-settings-page) {
+  /* 위의 등장 애니메이션(sidebar-content-in, fill both)이 opacity 를 1 로 붙잡고
+     있어 여기서 끈다. 닫으면 애니메이션이 되살아나 메뉴가 다시 서서히 나타난다. */
+  animation: none;
+  opacity: 0;
+  transform: translateX(-20px);
+  pointer-events: none;
+}
+
+.sidebar-settings-page {
+  /* 등장 애니메이션에서 뺀다 — 제 opacity 전환을 쓴다. */
+  animation: none;
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transform: translateX(28px);
+  visibility: hidden;
+  transition:
+    opacity 0.24s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0.32s;
+}
+
+.sidebar-settings-page.open {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    opacity 0.28s ease 0.06s,
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1) 0.04s,
+    visibility 0s;
+}
+
+.sidebar-settings-page-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  /* 로고 줄과 같은 높이에 선다 — 들어오고 나갈 때 머리 줄이 제자리에서 바뀌게. */
+  padding: var(--space-8) var(--space-6) var(--space-6) var(--space-4);
+}
+
+.sidebar-settings-page-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.sidebar-settings-page-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-6) var(--space-8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar > :not(.sidebar-settings-page),
+  .sidebar-settings-page,
+  .sidebar-settings-page.open {
+    transition: none;
+  }
 }

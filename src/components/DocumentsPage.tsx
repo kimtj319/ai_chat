@@ -240,7 +240,7 @@ export function DocumentsPage({ onBack }: Props) {
   return (
     <div className="documents-page">
       <header className="documents-header">
-        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기">
+        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
           <BackIcon />
         </button>
         <div className="documents-header-text">

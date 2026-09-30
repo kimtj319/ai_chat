@@ -209,7 +209,8 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
     >
       <AppBackdrop />
 
-      {narrow && (
+      {/* 서랍이 열려 있는 동안은 서랍 안의 닫기 단추(로고 줄)를 쓴다. */}
+      {narrow && !drawerOpen && (
         <button
           type="button"
           className="btn-icon app-drawer-toggle"
@@ -247,6 +248,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         onOpenDocuments={() => navigate("documents")}
         onShowChat={() => navigate("chat")}
         onOpenAdmin={onOpenAdmin}
+        onCloseDrawer={narrow ? () => setDrawerOpen(false) : undefined}
       />
       {showLibrary ? (
         <LibraryPage onBack={() => navigate("chat")} onAdminSetStatus={onAdminSetMcpStatus} />

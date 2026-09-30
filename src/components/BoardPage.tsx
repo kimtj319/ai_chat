@@ -209,6 +209,7 @@ export function BoardPage({ onBack }: Props) {
           type="button"
           className="btn-icon board-back"
           onClick={onDetail ? showList : onBack}
+          data-back-to-chat={onDetail ? undefined : true}
           // 같은 자리의 버튼이지만 가는 곳이 다르다. 화면을 못 보는 사람에게는
           // 이 문구가 유일한 단서다.
           aria-label={onDetail ? "게시판 목록으로" : "대화로 돌아가기"}

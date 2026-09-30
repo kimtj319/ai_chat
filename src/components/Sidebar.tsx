@@ -127,6 +127,22 @@ function ShieldIcon() {
   );
 }
 
+function BackIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 5l-7 7 7 7" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
 function NoEntryIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -172,6 +188,11 @@ interface SidebarProps {
   onShowChat: () => void;
   /** Null for a non-administrator: the row is then not rendered at all. */
   onOpenAdmin: (() => void) | null;
+  /**
+   * 좁은 화면에서 서랍으로 떠 있을 때만 온다. 있으면 로고 줄 오른쪽(넓은 화면의 접기
+   * 단추 자리)에 닫기 단추를 둔다 — 화면 구석에 떠 있는 토글 대신 서랍 안에서 닫는다.
+   */
+  onCloseDrawer?: () => void;
 }
 
 export function Sidebar({
@@ -186,6 +207,7 @@ export function Sidebar({
   onOpenDocuments,
   onShowChat,
   onOpenAdmin,
+  onCloseDrawer,
 }: SidebarProps) {
   const {
     ui,
@@ -326,9 +348,11 @@ export function Sidebar({
   }
 
   // One definition, rendered by both the full sidebar and the collapsed
-  // rail, so the two can never drift apart.
-  const settingsMenu = settingsOpen && (
-    <div className="sidebar-settings-popover">
+  // rail, so the two can never drift apart. 겉모양만 다르다: 펼친 사이드바에서는
+  // 사이드바 전체를 덮는 설정 화면(sidebar-settings-page)이 되고, 68px 레일에는 그
+  // 화면을 둘 자리가 없어 옆으로 뜨는 팝오버로 남는다.
+  const settingsItems = (
+    <>
       <p className="sidebar-settings-heading">계정</p>
       <div className="sidebar-account">
         <span className="sidebar-account-name">{me?.name ?? "알 수 없는 사용자"}</span>
@@ -419,8 +443,9 @@ export function Sidebar({
         <LogoutIcon />
         <span>로그아웃</span>
       </button>
-    </div>
+    </>
   );
+  const settingsMenu = settingsOpen && <div className="sidebar-settings-popover">{settingsItems}</div>;
 
   // Overlays: they position themselves, so it does not matter which branch
   // renders them, only that every branch does.
@@ -560,7 +585,7 @@ export function Sidebar({
     !boardOpen;
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${settingsOpen ? " settings-open" : ""}`}>
       <div className="sidebar-brand">
         {/* The mark is the way back to a blank prompt, from anywhere: it starts
             a new conversation whatever is on screen, including the admin page's
@@ -575,15 +600,27 @@ export function Sidebar({
           <BrandMark size={24} className="brand-mark" />
           <span className="brand-wordmark">{BRAND_WORDMARK}</span>
         </button>
-        <button
-          type="button"
-          className="btn-icon sidebar-collapse-toggle"
-          data-tooltip="사이드바 접기"
-          aria-label="사이드바 접기"
-          onClick={() => setSidebarCollapsed(true)}
-        >
-          <PanelIcon />
-        </button>
+        {onCloseDrawer ? (
+          <button
+            type="button"
+            className="btn-icon sidebar-collapse-toggle"
+            data-tooltip="메뉴 닫기"
+            aria-label="메뉴 닫기"
+            onClick={onCloseDrawer}
+          >
+            <CloseIcon />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-icon sidebar-collapse-toggle"
+            data-tooltip="사이드바 접기"
+            aria-label="사이드바 접기"
+            onClick={() => setSidebarCollapsed(true)}
+          >
+            <PanelIcon />
+          </button>
+        )}
       </div>
 
       <nav className="sidebar-nav" aria-label="주요 메뉴">
@@ -716,7 +753,7 @@ export function Sidebar({
         ))}
       </div>
 
-      <div className="sidebar-bottom" ref={settingsRef}>
+      <div className="sidebar-bottom">
         {/* Which model, and where it runs — one block, on its own line. The
             decorative glyph that used to sit here was aria-hidden and cost 42px
             of a 280px sidebar, which is what pushed both of these strings into
@@ -744,9 +781,29 @@ export function Sidebar({
           <GearIcon />
           <span>설정</span>
         </button>
+      </div>
 
-        {settingsMenu}
-
+      {/* 설정은 사이드바 전체를 바꿔 끼우는 화면이다. 늘 그려 두고 열고 닫을 때
+          미끄러지게 하며, 닫혀 있는 동안은 inert 로 포커스·클릭을 받지 않는다. */}
+      <div
+        ref={settingsRef}
+        className={`sidebar-settings-page${settingsOpen ? " open" : ""}`}
+        aria-hidden={!settingsOpen}
+        inert={!settingsOpen}
+      >
+        <div className="sidebar-settings-page-header">
+          <button
+            type="button"
+            className="btn-icon"
+            aria-label="설정 닫기"
+            data-tooltip="뒤로"
+            onClick={() => setSettingsOpen(false)}
+          >
+            <BackIcon />
+          </button>
+          <h2 className="sidebar-settings-page-title">설정</h2>
+        </div>
+        <div className="sidebar-settings-page-body">{settingsItems}</div>
       </div>
 
       {settingsDialogs}

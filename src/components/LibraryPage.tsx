@@ -447,7 +447,7 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
   return (
     <div className="library-page">
       <header className="library-header">
-        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기">
+        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
           <BackIcon />
         </button>
         <div className="library-header-text">
