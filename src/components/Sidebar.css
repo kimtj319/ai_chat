@@ -529,9 +529,10 @@
 
 .app-shell[data-narrow] .sidebar {
   position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  /* 떠 있는 서랍도 노치·홈 막대 안쪽에 선다. */
+  top: env(safe-area-inset-top);
+  bottom: env(safe-area-inset-bottom);
+  left: env(safe-area-inset-left);
   /* 스크림(3)보다 위, 서랍 토글(5)보다 아래. 토글이 서랍에 덮이면 닫을
      길이 스크림뿐이 된다. 대화 헤더(2)보다도 위여야 헤더 아이콘이 서랍 위로
      비치지 않는다. */

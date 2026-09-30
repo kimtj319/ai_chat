@@ -6,7 +6,7 @@
   /* Clear of the composer, which owns the bottom of the chat view — a
      confirmation that covers the box you are about to type in is worse than
      no confirmation. */
-  bottom: calc(var(--space-11) * 3);
+  bottom: calc(var(--space-11) * 3 + env(safe-area-inset-bottom));
   transform: translateX(-50%);
   /* Above .modal-overlay (100), so a copy inside a dialog still confirms. */
   z-index: 200;

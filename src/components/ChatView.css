@@ -135,7 +135,8 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
-  padding: var(--space-4) var(--space-10) var(--space-9);
+  /* 아래는 홈 막대 자리만큼 더 띄운다(넓은 화면·일반 사파리에서는 0). */
+  padding: var(--space-4) var(--space-10) calc(var(--space-9) + env(safe-area-inset-bottom));
 }
 
 /* 대화가 있으면 본문이 입력창 뒤까지 흐른다. dock 은 제 키만큼 위로 올라가 목록의

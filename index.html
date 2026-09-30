@@ -2,7 +2,19 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- 홈 화면에 추가해 열면 사파리 막대 없이 앱처럼 화면 전체로 뜬다(iOS·Android).
+         경로는 모두 상대 경로 — 앱이 다른 도메인의 하위 경로에 놓여도 찾아간다.
+         상태 표시줄은 default: 앱이 그 밑으로 들어가지 않고, 색은 theme-color 를
+         테마마다 따른다(black-translucent 는 글자가 늘 흰색이라 밝은 테마에서 안 보인다). -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="AI Console" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17181a" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <!-- The tab's name is the wordmark beside the logo: BRAND_WORDMARK in
          src/components/BrandMark.tsx. Static HTML cannot import it, so the

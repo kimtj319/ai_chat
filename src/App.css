@@ -1,5 +1,11 @@
 .app-shell {
   display: flex;
+  /* 홈 화면 앱(전체 화면)이나 가로 모드에서는 노치·둥근 모서리가 화면을 파고든다.
+     viewport-fit=cover 로 가장자리까지 그리되, 내용은 그 안쪽에 둔다. 아래쪽은 입력창
+     dock 이 따로 챙긴다 — 본문은 홈 막대 뒤까지 흘러도 된다. 넓은 화면에서는 모두 0. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   /* 주소창이 나타났다 사라지는 모바일에서 100vh 는 화면보다 크다. dvh 를
      아는 브라우저는 그것을 쓰고, 모르면 100vh 로 물러선다. */
   height: 100vh;
@@ -24,8 +30,8 @@
 .app-drawer-toggle {
   position: fixed;
   /* 대화 헤더의 아이콘 줄(위 16px·36px 단추)과 같은 높이. */
-  top: var(--space-8);
-  left: var(--space-5);
+  top: calc(var(--space-8) + env(safe-area-inset-top));
+  left: calc(var(--space-5) + env(safe-area-inset-left));
   /* 서랍(4)보다 위 — 토글이 덮이면 닫을 길이 스크림뿐이 된다. */
   z-index: 5;
 }
@@ -197,4 +203,15 @@
 .app-shell[data-source-open] .composer,
 .app-shell[data-source-open] .chat-header-left {
   margin-left: 0;
+}
+
+/* 페이지 본문은 홈 막대 뒤까지 스크롤되되, 끝까지 내리면 마지막 줄이 막대 위에 온다. */
+.documents-body::after,
+.library-body::after,
+.board-body::after,
+.admin-body::after {
+  content: "";
+  display: block;
+  flex-shrink: 0;
+  height: env(safe-area-inset-bottom);
 }
