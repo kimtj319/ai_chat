@@ -557,6 +557,9 @@
    보인다. */
 .app-shell[data-narrow]:not([data-drawer-open]) .sidebar {
   visibility: hidden;
+  /* 미끄러져 나가는 동안에도 손가락을 받지 않는다. 닫힌 서랍이 본문 위에 남아
+     터치를 가로채면 본문이 스크롤되지 않는다. */
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -658,5 +661,49 @@
   .sidebar-settings-page,
   .sidebar-settings-page.open {
     transition: none;
+  }
+}
+
+/* ---- 폰: 서랍이 화면 전체를 쓴다 ----
+   ChatGPT·Claude·Gemini 의 폰 앱처럼, 메뉴를 열면 대화 목록이 화면을 통째로
+   차지한다. 떠 있는 유리 카드(여백·둥근 모서리·뒤가 비치는 배경)는 폰 폭에서는 옆에
+   본문 조각이 남아 어중간해 보이므로 걷고, 불투명한 바탕으로 가장자리까지 채운다.
+   위는 로고와 닫기, 가운데는 목록(여기만 스크롤), 아래는 모델·설정이 붙박이다. */
+@media (max-width: 640px) {
+  .app-shell[data-narrow] .sidebar {
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--app-canvas);
+    backdrop-filter: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-100%);
+  }
+
+  .app-shell[data-narrow][data-drawer-open] .sidebar {
+    transform: translateX(0);
+  }
+
+  /* 화면을 다 덮으니 뒤를 어둡게 할 것이 없다. */
+  .app-shell[data-narrow] .app-scrim {
+    display: none;
+  }
+
+  .app-shell[data-narrow] .sidebar-brand {
+    padding: var(--space-8) var(--space-6) var(--space-6) var(--space-8);
+  }
+
+  /* 손가락으로 누르는 줄은 44px 이상. */
+  .app-shell[data-narrow] .sidebar-nav-item,
+  .app-shell[data-narrow] .sidebar-item {
+    min-height: 44px;
+  }
+
+  .app-shell[data-narrow] .sidebar-bottom {
+    border-top: 1px solid var(--outline-variant);
   }
 }

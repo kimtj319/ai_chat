@@ -138,6 +138,43 @@
   padding: var(--space-4) var(--space-10) var(--space-9);
 }
 
+/* 대화가 있으면 본문이 입력창 뒤까지 흐른다. dock 은 제 키만큼 위로 올라가 목록의
+   아래쪽을 덮고(--dock-h 는 ChatView 가 잰다), 목록은 끝에 같은 만큼 여백을 둔다 —
+   끝까지 내리면 마지막 줄이 입력창 위에 온다. 빈 대화는 가운데 정렬(인사말 + 입력창)
+   을 그대로 쓰므로 건드리지 않는다. */
+.chat-view.has-messages .composer-dock {
+  margin-top: calc(-1 * var(--dock-h, 0px));
+}
+
+.chat-view.has-messages .chat-message-list-inner {
+  padding-bottom: calc(var(--space-11) + var(--dock-h, 0px));
+}
+
+/* 입력창 뒤의 흐림: 두 겹을 겹쳐 아래 가장자리로 갈수록 세진다. 한 겹의 일정한 흐림은
+   경계선이 생겨 "판자" 로 보이지만, 가려 쓰는 마스크를 서로 어긋나게 두면 위쪽은
+   살짝, 맨 아래는 거의 읽히지 않을 만큼 흐려져 본문이 자연스럽게 사라진다.
+   dock 보다 조금 위(-28px)에서 시작해 입력창 윗단 너머로 스며들게 한다. */
+.chat-view.has-messages .composer-dock::before,
+.chat-view.has-messages .composer-dock::after {
+  content: "";
+  position: absolute;
+  inset: -28px 0 0 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.chat-view.has-messages .composer-dock::before {
+  backdrop-filter: blur(3px);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
+}
+
+.chat-view.has-messages .composer-dock::after {
+  backdrop-filter: blur(14px);
+  mask-image: linear-gradient(to bottom, transparent 35%, #000 90%);
+  /* 맨 아래는 바탕색을 조금 깔아 글자가 번져 보이지 않게 한다. */
+  background: linear-gradient(to bottom, transparent 55%, color-mix(in srgb, var(--app-canvas) 55%, transparent));
+}
+
 /* Anchored to the dock's top edge rather than to the view's bottom, so a
    composer grown to several lines carries the button up with it instead of
    being overlapped by it. It cannot live inside the transcript: that scrolls,

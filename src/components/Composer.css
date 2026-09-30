@@ -1,7 +1,10 @@
 .composer {
   max-width: 830px;
   margin: 0 auto;
-  background: var(--composer-surface);
+  /* 살짝 비치는 유리. 뒤로 지나가는 본문이 희미하게 보이되 글은 흐려서 입력칸의
+     글과 섞이지 않게 한다. */
+  background: color-mix(in srgb, var(--composer-surface) 68%, transparent);
+  backdrop-filter: blur(10px) saturate(160%);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   /* Symmetric now that a control leads the row: the 24px left inset was there

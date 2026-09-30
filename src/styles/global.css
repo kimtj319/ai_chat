@@ -51,8 +51,10 @@ body {
 .source-text,
 .docview-text,
 .docview-chunks {
+  /* -webkit-overflow-scrolling 은 쓰지 않는다. 지금 iOS 에서는 효과가 없고, 떠 있는
+     서랍이 나타났다 사라진 뒤 그 칸이 손가락 스크롤을 받지 않게 되는 WebKit 결함의
+     원인으로 알려져 있다. */
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
 }
 
 body {

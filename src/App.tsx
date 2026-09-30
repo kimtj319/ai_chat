@@ -163,6 +163,19 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   // 닫기), 저기서 모양이 바뀐다.
   const narrow = useMediaQuery("(max-width: 1024px)");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
+  // 서랍을 닫으면 포커스를 메뉴 단추로 돌려준다. 닫기 단추가 숨은 서랍 안에 포커스를
+  // 쥔 채 남으면, iOS 에서 그 뒤의 본문이 손가락 스크롤을 받지 못하는 일이 있다
+  // (키보드 사용자에게도 포커스가 사라진 것처럼 보인다).
+  useEffect(() => {
+    if (drawerWasOpen.current && !drawerOpen) {
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.closest(".sidebar")) active.blur();
+      requestAnimationFrame(() => drawerToggleRef.current?.focus({ preventScroll: true }));
+    }
+    drawerWasOpen.current = drawerOpen;
+  }, [drawerOpen]);
 
   // 서랍은 무엇을 고르면 닫힌다. 무엇을 골랐는지는 주소와 열린 대화가 말해 주므로
   // 사이드바 안의 버튼 하나하나에 손을 댈 필요가 없다 — 설정 팝오버처럼
@@ -212,6 +225,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
       {/* 서랍이 열려 있는 동안은 서랍 안의 닫기 단추(로고 줄)를 쓴다. */}
       {narrow && !drawerOpen && (
         <button
+          ref={drawerToggleRef}
           type="button"
           className="btn-icon app-drawer-toggle"
           aria-label={drawerOpen ? "메뉴 닫기" : "메뉴 열기"}

@@ -130,6 +130,21 @@ export function ChatView({
     chatStream;
   const { status, recheck } = useHealthCheck();
   const listRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  // 입력창 묶음(dock)의 키를 --dock-h 로 알린다. 본문은 그만큼 dock 밑으로 들어가
+  // 흐르고, 목록 끝에 같은 만큼 여백을 두어 마지막 줄이 입력창에 가리지 않는다.
+  // 입력창은 글을 쓰면 늘어나므로 한 번 재지 않고 계속 본다.
+  useEffect(() => {
+    const view = viewRef.current;
+    const dock = dockRef.current;
+    if (!view || !dock) return;
+    const update = () => view.style.setProperty("--dock-h", `${dock.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  });
   const listInnerRef = useRef<HTMLDivElement>(null);
 
   // 다운로드 형식 선택(JSON / PDF). 바깥을 누르거나 Esc 면 닫힌다.
@@ -277,7 +292,7 @@ export function ChatView({
       : "chat";
 
   return (
-    <div className={`chat-view${hasMessages ? " has-messages" : ""}`} {...dropHandlers}>
+    <div ref={viewRef} className={`chat-view${hasMessages ? " has-messages" : ""}`} {...dropHandlers}>
 
       {/* pointer-events: none, so crossing it cannot fire another
           dragenter/dragleave pair and strobe the overlay it belongs to. */}
@@ -418,7 +433,7 @@ export function ChatView({
         </div>
       </div>
 
-      <div className="composer-dock">
+      <div ref={dockRef} className="composer-dock">
         {/* Only while an answer is still arriving: once it has finished there
             is nothing left to chase, and where the user parked the view is
             theirs to keep. */}
