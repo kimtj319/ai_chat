@@ -251,6 +251,12 @@ export function Sidebar({
   const [prohibitionsPending, setProhibitionsPending] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  // 폰에서는 서랍 전체가 스크롤된다(Sidebar.css). 설정 화면은 서랍을 덮는 칸이라
+  // 열 때 맨 위로 되돌려야 스크롤된 자리만큼 내려가 열리지 않는다.
+  const asideRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (settingsOpen && asideRef.current) asideRef.current.scrollTop = 0;
+  }, [settingsOpen]);
 
   // Close the bottom-row settings popover on outside click / Esc — purely
   // presentational open/closed state, mirrors the pattern used by the
@@ -585,7 +591,7 @@ export function Sidebar({
     !boardOpen;
 
   return (
-    <aside className={`sidebar${settingsOpen ? " settings-open" : ""}`}>
+    <aside ref={asideRef} className={`sidebar${settingsOpen ? " settings-open" : ""}`}>
       <div className="sidebar-brand">
         {/* The mark is the way back to a blank prompt, from anywhere: it starts
             a new conversation whatever is on screen, including the admin page's

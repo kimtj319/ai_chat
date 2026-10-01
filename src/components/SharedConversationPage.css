@@ -1,0 +1,77 @@
+/* 공유 링크로 연 대화. 칸은 ChatView.css 를 그대로 쓰고, 여기에는 머리의 제목과
+   입력창 자리의 안내만 있다. */
+
+.shared-header-left {
+  flex-wrap: nowrap;
+  gap: var(--space-5);
+}
+
+.shared-brand {
+  flex-shrink: 0;
+}
+
+.shared-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.shared-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-subtitle {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shared-open-app {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.shared-footer-note,
+.shared-note {
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.shared-footer-note {
+  padding: var(--space-6) 0 calc(var(--space-6) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* 폰: 머리 높이가 대화 화면과 같아야 위쪽 흐림(App.css)의 계산이 맞는다 — 제목 두 줄이
+   아이콘 한 줄(36px)보다 크지 않게 줄이고, 앱 열기 단추는 작게 둔다. */
+@media (max-width: 640px) {
+  .shared-header-left {
+    padding-left: 0;
+    gap: var(--space-4);
+  }
+
+  .shared-title {
+    font-size: var(--text-sm);
+    line-height: 1.25;
+  }
+
+  .shared-subtitle {
+    line-height: 1.2;
+  }
+
+  .shared-open-app {
+    padding: var(--space-3) var(--space-5);
+    font-size: var(--text-xs);
+  }
+}

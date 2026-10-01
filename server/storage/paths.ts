@@ -197,3 +197,29 @@ export function boardPostsDir(): string {
 export function boardPostFile(postId: string): string {
   return path.join(boardPostsDir(), `${postId}.json`);
 }
+
+/**
+ * 공유 링크. 소유자별이 아니라 **전역**이다 — 링크를 연 사람은 누구의 것인지 모르고
+ * 토큰만 안다. `{DATA_DIR}/shares/<토큰>/share.json` 에 공유한 순간의 대화 사본,
+ * 같은 칸의 attachments/ 에 그 대화가 가리키던 첨부의 사본을 둔다.
+ */
+export function sharesDir(): string {
+  return path.join(config.dataDir, "shares");
+}
+
+/** 대화(소유자/대화 id) → 토큰. 같은 대화를 다시 공유하면 같은 링크를 갱신한다. */
+export function sharesIndexFile(): string {
+  return path.join(sharesDir(), "index.json");
+}
+
+export function shareDir(token: string): string {
+  return path.join(sharesDir(), token);
+}
+
+export function shareFile(token: string): string {
+  return path.join(shareDir(token), "share.json");
+}
+
+export function shareAttachmentsDir(token: string): string {
+  return path.join(shareDir(token), "attachments");
+}

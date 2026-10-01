@@ -139,6 +139,43 @@
     padding-top: 0;
   }
 
+  /* 위쪽 흐림: 아래 입력창과 같은 방식이다. 본문 목록을 헤더 밑까지 끌어올려
+     (헤더 높이 = 위아래 16px + 아이콘 36px) 스크롤한 글이 아이콘 뒤로 지나가게 하고,
+     헤더 뒤에 두 겹의 흐림을 깔아 위 가장자리로 갈수록 세게 흐린다. 글이 처음 놓이는
+     자리는 목록 위 여백으로 되돌려 그대로다. 연결 오류 배너가 뜬 동안에는 배너가
+     헤더와 목록 사이에 서므로 끌어올리지 않는다(+ 결합자). */
+  .chat-view.has-messages {
+    --chat-header-h: calc(var(--space-8) * 2 + 36px);
+  }
+
+  .chat-view.has-messages .chat-header + .chat-message-list {
+    margin-top: calc(-1 * var(--chat-header-h));
+  }
+
+  .chat-view.has-messages .chat-header + .chat-message-list > .chat-message-list-inner {
+    padding-top: var(--chat-header-h);
+  }
+
+  .chat-view.has-messages .chat-header::before,
+  .chat-view.has-messages .chat-header::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 -20px 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  .chat-view.has-messages .chat-header::before {
+    backdrop-filter: blur(3px);
+    mask-image: linear-gradient(to top, transparent 0%, #000 45%);
+  }
+
+  .chat-view.has-messages .chat-header::after {
+    backdrop-filter: blur(14px);
+    mask-image: linear-gradient(to top, transparent 35%, #000 90%);
+    background: linear-gradient(to top, transparent 50%, color-mix(in srgb, var(--app-canvas) 60%, transparent));
+  }
+
   /* 문서·라이브러리·게시판 머리는 제목+설명 두 줄(46px)이라 위 여백 16px 이면 가운데가
      39px 에 온다. 서랍 토글(16px 위, 36px 높이)의 가운데 34px 와 맞도록 위 여백을 줄인다. */
   .app-shell[data-narrow] .board-header,

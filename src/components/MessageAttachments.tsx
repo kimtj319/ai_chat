@@ -8,6 +8,8 @@ import "./MessageAttachments.css";
 interface MessageAttachmentsProps {
   conversationId: string;
   attachments: MessageAttachment[];
+  /** 첨부를 받아 올 주소. 공유 링크로 연 대화는 원본이 아니라 사본에서 받는다. */
+  urlFor?: (attachmentId: string) => string;
 }
 
 /**
@@ -15,7 +17,8 @@ interface MessageAttachmentsProps {
  * the transcript is the conversation, not a file viewer — clicking opens a
  * preview instead.
  */
-export function MessageAttachments({ conversationId, attachments }: MessageAttachmentsProps) {
+export function MessageAttachments({ conversationId, attachments, urlFor }: MessageAttachmentsProps) {
+  const srcOf = urlFor ?? ((attachmentId: string) => attachmentUrl(conversationId, attachmentId));
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   if (attachments.length === 0) return null;
 
@@ -23,7 +26,7 @@ export function MessageAttachments({ conversationId, attachments }: MessageAttac
   const files = attachments.filter((attachment) => attachment.kind !== "image");
 
   function openImage(attachment: MessageAttachment) {
-    setPreview({ kind: "image", name: attachment.name, src: attachmentUrl(conversationId, attachment.id) });
+    setPreview({ kind: "image", name: attachment.name, src: srcOf(attachment.id) });
   }
 
   return (
@@ -36,7 +39,7 @@ export function MessageAttachments({ conversationId, attachments }: MessageAttac
           aria-label={`${images[0].name} 미리보기`}
           data-tooltip="크게 보기"
         >
-          <img src={attachmentUrl(conversationId, images[0].id)} alt={images[0].name} />
+          <img src={srcOf(images[0].id)} alt={images[0].name} />
         </button>
       ) : images.length > 1 ? (
         <div className="message-attachment-grid">
@@ -48,7 +51,7 @@ export function MessageAttachments({ conversationId, attachments }: MessageAttac
               aria-label={`${attachment.name} 미리보기`}
               data-tooltip="크게 보기"
             >
-              <img src={attachmentUrl(conversationId, attachment.id)} alt={attachment.name} />
+              <img src={srcOf(attachment.id)} alt={attachment.name} />
             </button>
           ))}
         </div>
@@ -66,7 +69,7 @@ export function MessageAttachments({ conversationId, attachments }: MessageAttac
                 setPreview({
                   kind: "text",
                   name: attachment.name,
-                  url: attachmentUrl(conversationId, attachment.id),
+                  url: srcOf(attachment.id),
                 })
               }
             />

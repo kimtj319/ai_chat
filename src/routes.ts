@@ -53,3 +53,24 @@ export function boardPostIdFromHash(hash: string): string | null {
     return raw || null;
   }
 }
+
+/**
+ * 공유 링크로 연 대화 — #/share/<토큰>. 다른 화면과 달리 로그인 앞에서 갈린다
+ * (App.tsx): 링크를 받은 사람은 계정이 없을 수 있다.
+ */
+export const SHARE_HASH_PREFIX = "#/share/";
+
+export function shareHash(token: string): string {
+  return `${SHARE_HASH_PREFIX}${encodeURIComponent(token)}`;
+}
+
+/** 공유 링크가 아니면 null. */
+export function shareTokenFromHash(hash: string): string | null {
+  if (!hash.startsWith(SHARE_HASH_PREFIX)) return null;
+  const raw = hash.slice(SHARE_HASH_PREFIX.length);
+  try {
+    return decodeURIComponent(raw) || null;
+  } catch {
+    return raw || null;
+  }
+}

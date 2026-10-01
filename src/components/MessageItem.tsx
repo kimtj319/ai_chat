@@ -14,6 +14,8 @@ interface MessageItemProps {
   /** Needed to address the message's attachments on the server. */
   conversationId: string;
   message: ClientChatMessage;
+  /** 공유 링크로 연 대화에서만 — 첨부를 사본에서 받는다. */
+  attachmentUrlFor?: (attachmentId: string) => string;
 }
 
 /**
@@ -28,7 +30,7 @@ function formatDuration(ms: number): string {
   return seconds === 0 ? `${minutes}분` : `${minutes}분 ${seconds}초`;
 }
 
-export function MessageItem({ conversationId, message }: MessageItemProps) {
+export function MessageItem({ conversationId, message, attachmentUrlFor }: MessageItemProps) {
   const isUser = message.role === "user";
   // An embedding turn has no prose to render, and no completion tokens to
   // report — the result panel below carries both the numbers and the usage.
@@ -63,7 +65,7 @@ export function MessageItem({ conversationId, message }: MessageItemProps) {
         {!isUser && <ToolUsagePanel message={message} />}
 
         {message.attachments && message.attachments.length > 0 && (
-          <MessageAttachments conversationId={conversationId} attachments={message.attachments} />
+          <MessageAttachments conversationId={conversationId} attachments={message.attachments} urlFor={attachmentUrlFor} />
         )}
 
         {isUser ? (

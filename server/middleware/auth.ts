@@ -37,8 +37,15 @@ declare global {
  */
 const PUBLIC_API_PATHS = new Set(["/auth/signup", "/auth/login", "/auth/logout", "/auth/me", "/health"]);
 
+/**
+ * 공유 링크로 연 대화(routes/share.ts). 링크를 받은 사람은 계정이 없을 수 있으므로
+ * 로그인 없이 열린다 — 막는 것은 토큰을 아느냐이다. 읽기(GET)만 있고, 사본만 내준다.
+ */
+const PUBLIC_SHARED_PATH = /^\/shared\/[A-Za-z0-9_-]+(\/attachments\/[A-Za-z0-9_-]+)?$/;
+
 export function isPublicApiPath(path: string): boolean {
-  return PUBLIC_API_PATHS.has(path.replace(/\/+$/, "") || "/");
+  const normalized = path.replace(/\/+$/, "") || "/";
+  return PUBLIC_API_PATHS.has(normalized) || PUBLIC_SHARED_PATH.test(normalized);
 }
 
 function refuse(res: Response, status: number, code: AuthErrorCode, error: string): void {

@@ -291,8 +291,19 @@
   flex-shrink: 0;
 }
 
-.sidebar-item:hover .sidebar-item-actions {
-  display: flex;
+/* 마우스로만 드러낸다. iOS 는 :hover 로 보이는 것이 바뀌는 요소의 첫 탭을 "가리키기"
+   로 써 버려서, 폰에서 대화를 두 번 눌러야 열렸다. 손가락 화면에서는 늘 보여 둔다 —
+   가리킬 수단이 없으니 숨겨 두면 이름 변경·삭제에 닿을 길도 없다. */
+@media (hover: hover) {
+  .sidebar-item:hover .sidebar-item-actions {
+    display: flex;
+  }
+}
+
+@media (hover: none) {
+  .sidebar-item-actions {
+    display: flex;
+  }
 }
 
 .sidebar-item-actions .btn-icon {
@@ -669,7 +680,7 @@
    ChatGPT·Claude·Gemini 의 폰 앱처럼, 메뉴를 열면 대화 목록이 화면을 통째로
    차지한다. 떠 있는 유리 카드(여백·둥근 모서리·뒤가 비치는 배경)는 폰 폭에서는 옆에
    본문 조각이 남아 어중간해 보이므로 걷고, 불투명한 바탕으로 가장자리까지 채운다.
-   위는 로고와 닫기, 가운데는 목록(여기만 스크롤), 아래는 모델·설정이 붙박이다. */
+   위는 로고와 닫기, 가운데는 목록, 아래는 모델·설정 — 서랍 전체가 함께 스크롤된다. */
 @media (max-width: 640px) {
   .app-shell[data-narrow] .sidebar {
     inset: 0;
@@ -706,5 +717,24 @@
 
   .app-shell[data-narrow] .sidebar-bottom {
     border-top: 1px solid var(--outline-variant);
+  }
+
+  /* 폰에서는 서랍 전체가 한 장으로 스크롤된다. 위 메뉴를 붙박이로 두고 목록만
+     스크롤하면 세로가 짧은 폰에서 목록 칸이 몇 줄밖에 안 남는다. 목록은 제 높이대로
+     펴고(스크롤 없음), 짧을 때는 남는 자리를 채워 모델·설정 줄이 바닥에 붙는다. */
+  .app-shell[data-narrow] .sidebar {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell[data-narrow] .sidebar-recents {
+    flex: 1 0 auto;
+    overflow: visible;
+  }
+
+  /* 설정 화면은 서랍을 덮는 absolute 칸이라, 서랍이 스크롤된 채면 그만큼 아래에서
+     열린다. 열려 있는 동안은 맨 위에 고정한다(맨 위로 되돌리는 것은 Sidebar.tsx). */
+  .app-shell[data-narrow] .sidebar.settings-open {
+    overflow: hidden;
   }
 }

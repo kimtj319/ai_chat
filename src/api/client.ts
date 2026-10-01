@@ -8,6 +8,7 @@ import type {
   AttachmentErrorCode,
   AuthErrorCode,
   AuthUser,
+  ChatMessage,
   Conversation,
   ConversationSummary,
   CreateConversationRequest,
@@ -815,4 +816,36 @@ export function saveProhibitions(markdown: string): Promise<ProhibitionsResponse
 
 export function consolidateProhibitions(): Promise<{ proposal: string; before: number; after: number }> {
   return request("/prohibitions/consolidate", { method: "POST" });
+}
+
+/** 공유 링크로 연 대화의 사본. 서버 routes/share.ts. */
+export interface SharedConversation {
+  token: string;
+  title: string;
+  model: string;
+  sharedAt: string;
+  messages: ChatMessage[];
+}
+
+/** 이 대화에 이미 있는 공유 토큰. 공유한 적이 없으면 null. */
+export async function getShareToken(conversationId: string): Promise<string | null> {
+  return (await request<{ token: string | null }>(`/conversations/${conversationId}/share`)).token;
+}
+
+/** 지금 모습으로 사본을 뜨거나 고친다. 이미 공유한 대화면 서버가 원래 토큰을 돌려준다. */
+export async function saveShare(conversationId: string, token: string): Promise<string> {
+  return (
+    await request<{ token: string }>(`/conversations/${conversationId}/share`, {
+      method: "PUT",
+      body: JSON.stringify({ token }),
+    })
+  ).token;
+}
+
+export function getSharedConversation(token: string): Promise<SharedConversation> {
+  return request<SharedConversation>(`/shared/${encodeURIComponent(token)}`);
+}
+
+export function sharedAttachmentUrl(token: string, attachmentId: string): string {
+  return apiPath(`/shared/${encodeURIComponent(token)}/attachments/${attachmentId}`);
 }

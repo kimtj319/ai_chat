@@ -8,6 +8,7 @@ import { BoardPage } from "./components/BoardPage";
 import { ChatView } from "./components/ChatView";
 import { LibraryPage } from "./components/LibraryPage";
 import { DocumentsPage } from "./components/DocumentsPage";
+import { SharedConversationPage } from "./components/SharedConversationPage";
 import { SourcePanel } from "./components/SourcePanel";
 import { closeSource, useOpenSource } from "./state/sourcePanel";
 import { Sidebar } from "./components/Sidebar";
@@ -19,7 +20,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useScrollbarFade } from "./hooks/useScrollbarFade";
 import { useTheme } from "./hooks/useTheme";
-import { HASHES, viewFromHash } from "./routes";
+import { HASHES, shareTokenFromHash, viewFromHash } from "./routes";
 import { pushOverlay } from "./ui/overlayStack";
 import type { View } from "./routes";
 import { loadUiPreferences } from "./state/storage";
@@ -51,12 +52,14 @@ function AuthSplash() {
 export default function App() {
   const { status, isAdmin } = useAuth();
   const [view, setView] = useState<View>(() => viewFromHash(window.location.hash));
+  const [shareToken, setShareToken] = useState(() => shareTokenFromHash(window.location.hash));
   // Every scroll area in the app, including ones mounted long after this runs.
   useScrollbarFade();
 
   useEffect(() => {
     function handleHashChange() {
       setView(viewFromHash(window.location.hash));
+      setShareToken(shareTokenFromHash(window.location.hash));
     }
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
@@ -79,6 +82,18 @@ export default function App() {
   // 취향은 localStorage 에 있으므로 스토어 없이도 읽힌다 — 그래서 로그인
   // 화면과 로딩 화면에도 같은 테마가 적용된다.
   useTheme(loadUiPreferences().theme);
+
+  // 공유 링크는 로그인보다 앞에서 갈린다 — 받은 사람은 계정이 없을 수 있다. 로그인한
+  // 사람이 열어도 같은 읽기 전용 화면이다(남의 대화를 제 대화 목록에 섞지 않는다).
+  if (shareToken) {
+    return (
+      <>
+        <SharedConversationPage token={shareToken} />
+        <ToastHost />
+        <TooltipLayer />
+      </>
+    );
+  }
 
   if (status === "loading") return <AuthSplash />;
   if (status === "anonymous") return <AuthScreen />;
@@ -180,9 +195,26 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   // 서랍은 무엇을 고르면 닫힌다. 무엇을 골랐는지는 주소와 열린 대화가 말해 주므로
   // 사이드바 안의 버튼 하나하나에 손을 댈 필요가 없다 — 설정 팝오버처럼
   // 화면을 옮기지 않는 것을 눌렀을 때 서랍이 닫히지 않는 것도 같은 이유다.
+  //
+  // 예외는 뒤로 가기다. 서랍에서 라이브러리·문서로 갔다가 뒤로(왼쪽 끝에서 쓸어 넘기기,
+  // 브라우저 뒤로) 오면 떠났던 자리, 곧 열린 서랍으로 돌아와야 한다. 떠날 때 그 기록에
+  // 표시를 남기고(navigateFromDrawer), 돌아와 한 번 쓰면 지운다 — 남겨 두면 그 화면에서
+  // 대화를 고를 때마다 서랍이 다시 열린다.
   useEffect(() => {
-    setDrawerOpen(false);
+    const state = window.history.state as { drawerOpen?: boolean } | null;
+    const reopen = narrow && state?.drawerOpen === true;
+    if (reopen) window.history.replaceState({ ...state, drawerOpen: undefined }, "");
+    setDrawerOpen(reopen);
+    // narrow 는 일부러 뺀다 — 폭이 바뀐 것은 무엇을 고른 것이 아니다(아래 effect 가 맡는다).
   }, [view, activeConversationId]);
+
+  /** 서랍에서 다른 화면으로 갈 때. 지금 기록에 "서랍이 열려 있었다" 를 남긴다. */
+  function navigateFromDrawer(target: View) {
+    if (narrow && drawerOpen && HASHES[target] !== window.location.hash) {
+      window.history.replaceState({ ...(window.history.state ?? {}), drawerOpen: true }, "");
+    }
+    navigate(target);
+  }
 
   // 창을 넓히면 서랍이라는 개념 자체가 사라진다. 열린 채로 두면 넓은 화면에
   // 쓸모없는 스크림만 남는다.
@@ -258,10 +290,10 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
           navigate("chat");
           setShowToolsPanel(true);
         }}
-        onOpenLibrary={() => navigate("library")}
-        onOpenDocuments={() => navigate("documents")}
+        onOpenLibrary={() => navigateFromDrawer("library")}
+        onOpenDocuments={() => navigateFromDrawer("documents")}
         onShowChat={() => navigate("chat")}
-        onOpenAdmin={onOpenAdmin}
+        onOpenAdmin={onOpenAdmin && (() => navigateFromDrawer("admin"))}
         onCloseDrawer={narrow ? () => setDrawerOpen(false) : undefined}
       />
       {showLibrary ? (
