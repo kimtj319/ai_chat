@@ -128,6 +128,25 @@
     display: none;
   }
 
+  /* 헤더 아이콘 위아래를 같은 간격으로 둔다. 아래 여백이 없으면 스크롤한 본문이
+     아이콘 바로 밑에서 잘리고, 맨 위에서는 목록 위 여백(24px)만큼 벌어져 위쪽
+     간격(16px)과 어긋나 보인다. 목록 위 여백은 이 헤더 여백이 대신한다. */
+  .chat-view .chat-header {
+    padding-bottom: var(--space-8);
+  }
+
+  .chat-view .chat-message-list-inner {
+    padding-top: 0;
+  }
+
+  /* 문서·라이브러리·게시판 머리는 제목+설명 두 줄(46px)이라 위 여백 16px 이면 가운데가
+     39px 에 온다. 서랍 토글(16px 위, 36px 높이)의 가운데 34px 와 맞도록 위 여백을 줄인다. */
+  .app-shell[data-narrow] .board-header,
+  .app-shell[data-narrow] .documents-header,
+  .app-shell[data-narrow] .library-header {
+    padding-top: var(--space-5);
+  }
+
   /* 입력창: 글 쓰는 칸이 한 줄을 통째로 쓰고, 단추들은 그 아래 줄에 선다.
      한 줄에 모두 두면 칸이 몇 글자 폭으로 좁아져 안내문이 여섯 줄로 늘어난다. */
   .composer-input-row {

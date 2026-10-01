@@ -50,7 +50,10 @@
      blur, same lit rim and ink hairline. The radius is the panel's rather than
      the plate's — 34px on something this size would leave the rows' own pills
      fighting the corner they sit in. */
-  background: var(--glass-tint);
+  /* 입력창 안에 있어서 이 블러는 입력창만 비춘다 — 입력창 자체에 backdrop-filter 가
+     걸려 그것이 뒤 그림의 경계가 되기 때문이다. 그래서 뒤로 지나가는 본문이 흐려지지
+     않고 그대로 비쳐 글이 겹친다. 유리 빛깔은 남기고 밑에 입력창 바탕을 깐다. */
+  background: var(--glass-tint), var(--composer-surface);
   backdrop-filter: blur(var(--glass-blur)) saturate(180%);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
