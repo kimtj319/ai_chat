@@ -109,8 +109,13 @@ export async function fetchCatalog(signal?: AbortSignal, force = false): Promise
       return;
     }
     console.warn(`[vllm] endpoint "${endpoint.label}" unreachable:`, r.reason);
-    for (const stale of lastKnownByEndpoint.get(endpoint.baseUrl) ?? []) {
-      entries.push({ ...stale, label: endpoint.label, reachable: false });
+    const stale = lastKnownByEndpoint.get(endpoint.baseUrl) ?? [];
+    for (const entry of stale) entries.push({ ...entry, label: endpoint.label, reachable: false });
+    // 이 서버가 뜬 뒤 한 번도 답하지 않은 곳은 무엇을 서빙하는지 모른다. 그래도 목록에서
+    // 사라지면 사용자는 모델이 없어진 줄 안다 — 이름(라벨)으로 한 줄 남겨 "연결 안 됨" 으로 보인다.
+    // reachable:false 라 기본 모델로도, 대화의 모델로도 고를 수 없다(아래 resolveModel·화면).
+    if (stale.length === 0) {
+      entries.push({ id: endpoint.label, label: endpoint.label, baseUrl: endpoint.baseUrl, maxModelLen: null, reachable: false, capability: "chat" });
     }
   });
   if (entries.length > 0) cachedCatalog = { entries, fetchedAt: Date.now(), revision: endpointsRevision() };

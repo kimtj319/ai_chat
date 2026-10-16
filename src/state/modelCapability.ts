@@ -62,6 +62,18 @@ export function modelAvailability(
     return { listed: false, selectable: false, capability, badge: null, reason: null };
   }
 
+  // 마지막 확인에서 답하지 않은 서버의 모델. 목록에는 남기되(사라지면 없어진 줄 안다)
+  // 고를 수 없게 흐리게 보인다.
+  if (entry.reachable === false) {
+    return {
+      listed: true,
+      selectable: false,
+      capability,
+      badge: "연결 안 됨",
+      reason: `연결 실패 · ${entry.endpoint}${entry.baseUrl ? ` (${entry.baseUrl.replace(/^https?:\/\//, "").replace(/\/v1\/?$/, "")})` : ""}`,
+    };
+  }
+
   if (capability === "rerank") {
     return {
       listed: true,

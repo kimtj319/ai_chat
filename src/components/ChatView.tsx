@@ -418,7 +418,7 @@ export function ChatView({
                           // "" on the record means "use the server default", which tells a
                           // reader of the file nothing. Name the model that actually
                           // answered — the same one the header shows.
-                          { ...activeConversation, model: activeConversation.model || models[0] || "" },
+                          { ...activeConversation, model: activeConversation.model || current || models[0] || "" },
                           activeConversation.messages.map(toExportableMessage),
                         ),
                       );
@@ -505,7 +505,7 @@ export function ChatView({
               {/* Reads the conversation's own model, so switching it in the
                   sidebar updates this line immediately. */}
               <p className="empty-model-note">
-                현재 <strong>{shortModelName(activeConversation.model || models[0] || "")}</strong>이(가) 선택되어 있습니다
+                현재 <strong>{shortModelName(activeConversation.model || current || models[0] || "")}</strong>이(가) 선택되어 있습니다
               </p>
             </div>
           ) : (
