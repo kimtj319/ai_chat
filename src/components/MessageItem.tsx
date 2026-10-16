@@ -8,6 +8,7 @@ import { citationSources } from "../state/citations";
 import { MessageAttachments } from "./MessageAttachments";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ToolUsagePanel } from "./ToolUsagePanel";
+import { BrowserActivity } from "./BrowserActivity";
 import "./MessageItem.css";
 
 interface MessageItemProps {
@@ -63,6 +64,9 @@ export function MessageItem({ conversationId, message, attachmentUrlFor }: Messa
         {!isUser && <ThinkingPanel message={message} />}
 
         {!isUser && <ToolUsagePanel message={message} />}
+
+        {/* 모델이 크롬에서 본 화면. 이 브라우저에서 찍힌 것만 있다(새로고침하면 사라진다). */}
+        {!isUser && <BrowserActivity toolCalls={message.toolCalls} live={Boolean(message.streaming)} />}
 
         {message.attachments && message.attachments.length > 0 && (
           <MessageAttachments conversationId={conversationId} attachments={message.attachments} urlFor={attachmentUrlFor} />

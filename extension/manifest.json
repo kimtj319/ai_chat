@@ -1,11 +1,25 @@
 {
   "manifest_version": 3,
   "name": "AI Console 크롬 연결",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "AI Console 의 모델이 사용자가 허용한 사이트에서 이 크롬을 조작하게 합니다. 연결할 AI Console 주소는 이 확장 프로그램의 창에서 정합니다.",
-  "permissions": ["tabs", "scripting", "storage"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "AI Console 크롬 연결" },
-  "icons": { "128": "icons/icon-192.png" }
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Console 크롬 연결"
+  },
+  "icons": {
+    "128": "icons/icon-192.png"
+  }
 }

@@ -10,6 +10,13 @@
 //   - 비밀번호 칸에는 입력하지 않는다. AI Console 자신과 크롬 웹 스토어는 다루지 않는다.
 //
 // 모델에게는 화면 그림이 아니라 글로 된 페이지 요약(본문 + 번호 붙은 조작 요소)을 준다.
+//
+// 사용자에게는 모델이 무엇을 보고 어디를 누르는지 보여 준다(Claude in Chrome 처럼):
+//   - 모델이 여는 페이지는 따로 띄운 "작업 창"에, "AI Console" 탭 그룹으로 연다.
+//   - 동작마다 그 페이지 위에 테두리·배지를 띄우고, 읽을 때는 조작 요소에 번호표를,
+//     누를·입력할 때는 대상에 강조 상자를 그린 뒤 화면을 찍어 AI Console 로 보낸다.
+//     찍은 화면은 사용자에게만 보이고 모델에게는 가지 않는다.
+//   - 허용 안 된 사이트는 찍지 않는다.
 
 const MAX_TEXT = 6000;
 const MAX_ELEMENTS = 150;
@@ -103,6 +110,7 @@ async function handleCommand(command, sender) {
     confirm: command?.confirm && typeof command.confirm === "object" ? command.confirm : {},
     // 명령을 보낸 AI Console 탭. 새 탭이 앞으로 튀어나오면 이 탭을 다시 앞으로 돌린다.
     appTabId: sender.tab?.id ?? null,
+    appWindowId: sender.tab?.windowId ?? null,
   };
   switch (name) {
     case "browser_tabs":
@@ -119,6 +127,9 @@ async function handleCommand(command, sender) {
       return scrollCommand(args, ctx);
     case "browser_back":
       return backCommand(args, ctx);
+    // 모델의 도구가 아니다 — AI Console 화면의 "작업 창 보기" 단추.
+    case "focus_agent_window":
+      return focusAgentWindow();
     default:
       return { ok: false, error: `알 수 없는 브라우저 명령: ${name}` };
   }
@@ -202,6 +213,125 @@ async function run(tabId, func, args) {
   return injection?.result;
 }
 
+// ---------------------------------------------------------------- 작업 창·탭 그룹
+
+async function agentWindowId() {
+  const { agentWindowId } = await chrome.storage.session.get(["agentWindowId"]);
+  if (!Number.isInteger(agentWindowId)) return null;
+  try {
+    await chrome.windows.get(agentWindowId);
+    return agentWindowId;
+  } catch {
+    return null; // 사용자가 닫았다 — 다음에 새로 띄운다.
+  }
+}
+
+/** 작업 창에 새 탭으로 연다. 작업 창이 없으면 AI Console 창 근처에 뒤쪽으로 띄운다. */
+async function openInAgentWindow(url, ctx) {
+  const existing = await agentWindowId();
+  if (existing !== null) {
+    const tab = await chrome.tabs.create({ windowId: existing, url, active: true });
+    await groupAgentTab(tab.id, existing);
+    return tab.id;
+  }
+  let bounds = {};
+  if (ctx.appWindowId !== null) {
+    const app = await chrome.windows.get(ctx.appWindowId).catch(() => null);
+    if (app && app.state === "normal") {
+      bounds = {
+        left: (app.left ?? 0) + 48,
+        top: (app.top ?? 0) + 48,
+        width: Math.min(1280, app.width ?? 1280),
+        height: Math.min(900, app.height ?? 900),
+      };
+    }
+  }
+  // 위치·크기는 바람일 뿐이다. 화면 가장자리·보조 모니터에서는 크롬이 "화면 안에 절반 이상"
+  // 이 아니라며 거절한다 — 그때는 크롬이 정하게 둔다.
+  const win = await chrome.windows
+    .create({ url, focused: false, ...bounds })
+    .catch(() => chrome.windows.create({ url, focused: false }));
+  await chrome.storage.session.set({ agentWindowId: win.id });
+  const tabId = win.tabs?.[0]?.id;
+  if (tabId !== undefined) await groupAgentTab(tabId, win.id);
+  // 사용자는 AI Console 에서 진행 화면과 확인 창을 본다. 작업 창이 앞을 가리지 않게 한다.
+  if (ctx.appWindowId !== null) await chrome.windows.update(ctx.appWindowId, { focused: true }).catch(() => {});
+  return tabId;
+}
+
+/** 작업 탭을 "AI Console" 탭 그룹에 넣는다. 그룹 기능이 없거나 실패해도 작업은 계속한다. */
+async function groupAgentTab(tabId, windowId) {
+  try {
+    const { agentGroupId } = await chrome.storage.session.get(["agentGroupId"]);
+    let groupId = null;
+    if (Number.isInteger(agentGroupId)) {
+      const group = await chrome.tabGroups.get(agentGroupId).catch(() => null);
+      if (group && group.windowId === windowId) groupId = group.id;
+    }
+    groupId = await chrome.tabs.group(
+      groupId === null ? { tabIds: [tabId], createProperties: { windowId } } : { tabIds: [tabId], groupId },
+    );
+    await chrome.tabGroups.update(groupId, { title: "AI Console", color: "blue" });
+    await chrome.storage.session.set({ agentGroupId: groupId });
+  } catch {
+    // 표시일 뿐이다.
+  }
+}
+
+async function focusAgentWindow() {
+  const id = await agentWindowId();
+  if (id === null) return { ok: false, error: "열려 있는 작업 창이 없습니다." };
+  await chrome.windows.update(id, { focused: true, state: "normal" });
+  return { ok: true, result: "작업 창을 앞으로 가져왔습니다." };
+}
+
+// ---------------------------------------------------------------- 보이기·찍기
+
+let lastCaptureAt = 0;
+
+/**
+ * 페이지 위에 지금 하는 일을 그리고 화면을 찍는다. 찍을 수 없으면(탭이 그 창의 앞 탭이
+ * 아님, 창이 최소화됨 등) null — 찍는 것은 보여 주기일 뿐 작업을 막지 않는다.
+ */
+async function visualize(tabId, spec, ctx) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!isAllowed(tab.url ?? "", ctx)) return null;
+    await run(tabId, drawOverlay, [spec]);
+    if (!tab.active) return null;
+    // captureVisibleTab 은 초당 2번까지다.
+    const wait = 550 - (Date.now() - lastCaptureAt);
+    await sleep(Math.max(150, wait));
+    lastCaptureAt = Date.now();
+    const raw = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 85 });
+    // 번호표는 찍을 때만 — 사용자가 작업 창을 볼 때 페이지를 덮지 않게 지운다.
+    if (spec.showTags) await run(tabId, drawOverlay, [{ ...spec, showTags: false }]).catch(() => {});
+    return { image: await shrink(raw), caption: spec.label, url: tab.url ?? "", title: tab.title ?? "", at: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+/** 레티나 화면을 그대로 보내면 한 장에 수백 KB 다. 폭 1280 으로 줄여 JPEG 로 다시 굽는다. */
+async function shrink(dataUrl, maxWidth = 1280) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const bitmap = await createImageBitmap(blob);
+  const scale = Math.min(1, maxWidth / bitmap.width);
+  const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const out = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.72 });
+  const bytes = new Uint8Array(await out.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:image/jpeg;base64,${btoa(binary)}`;
+}
+
+function withShots(response, shots) {
+  const list = shots.filter(Boolean);
+  if (list.length === 0) return response;
+  return { ...response, visual: { shots: [...list, ...(response.visual?.shots ?? [])] } };
+}
+
 // ---------------------------------------------------------------- 명령
 
 async function listTabs(ctx) {
@@ -240,13 +370,9 @@ async function openUrl(args, ctx) {
       // 탭이 닫혔다 — 새로 연다.
     }
   }
-  if (tabId === null) {
-    // 앞으로 가져오지 않는다. 사용자는 AI Console 탭에서 진행과 확인 창을 본다.
-    const tab = await chrome.tabs.create({ url, active: false });
-    tabId = tab.id;
-  }
+  if (tabId === null) tabId = await openInAgentWindow(url, ctx);
   await waitForLoad(tabId);
-  return afterAction(tabId, ctx, `${url} 을(를) 열었습니다.`);
+  return afterAction(tabId, ctx, `${url} 을(를) 열었습니다.`, "페이지 여는 중");
 }
 
 async function readCommand(args, ctx) {
@@ -255,17 +381,19 @@ async function readCommand(args, ctx) {
   const gate = await siteGate(tab.url ?? "", ctx);
   if (gate) return gate;
   const offset = Number.isInteger(args.text_offset) && args.text_offset > 0 ? args.text_offset : 0;
-  return readTab(tab.id, offset);
+  return readTab(tab.id, ctx, offset, "", "페이지 읽는 중");
 }
 
-async function readTab(tabId, textOffset = 0, note = "") {
+/** 페이지를 글로 읽어 모델에게 주고, 사용자에게는 무엇을 봤는지(번호표) 찍어 보여 준다. */
+async function readTab(tabId, ctx, textOffset = 0, note = "", label = "페이지 읽는 중") {
   const snap = await run(tabId, snapshotPage, [MAX_TEXT, MAX_ELEMENTS, textOffset]);
   await rememberTab(tabId);
-  return { ok: true, result: formatSnapshot(tabId, snap, textOffset, note) };
+  const shot = await visualize(tabId, { label, showTags: true }, ctx);
+  return withShots({ ok: true, result: formatSnapshot(tabId, snap, textOffset, note) }, [shot]);
 }
 
 /** 동작 뒤의 페이지. 허용 안 된 사이트로 옮겨 갔으면 읽지 않고 그 사실만 알린다. */
-async function afterAction(tabId, ctx, message) {
+async function afterAction(tabId, ctx, message, label = "결과 읽는 중") {
   const tab = await chrome.tabs.get(tabId);
   await rememberTab(tabId);
   if (!isAllowed(tab.url ?? "", ctx)) {
@@ -276,7 +404,7 @@ async function afterAction(tabId, ctx, message) {
         "계속하려면 browser_read 를 호출하세요(사용자에게 허용을 묻습니다).",
     };
   }
-  return readTab(tabId, 0, message);
+  return readTab(tabId, ctx, 0, message, label);
 }
 
 async function elementAction(args, ctx, kind) {
@@ -295,11 +423,19 @@ async function elementAction(args, ctx, kind) {
     return { ok: false, error: "비밀번호 칸에는 입력하지 않습니다. 사용자에게 직접 입력해 달라고 하세요." };
   }
   const text = String(args.text ?? "");
+  // 무엇을 누르거나 입력하려는지 대상에 강조 상자를 그려 찍는다. 확인 창에도 이 화면이 뜬다.
+  const verb = kind === "click" ? "누르기" : args.submit ? "입력 후 제출" : "입력";
+  const target = await visualize(
+    tab.id,
+    { label: `${verb}: ${info.label || ref}`, highlightRef: ref, targetLabel: `${ref} ${verb}` },
+    ctx,
+  );
   const risky = kind === "click" ? info.risky : Boolean(args.submit) && info.submitRisky;
   if (risky && ctx.confirm.action !== true) {
     const host = new URL(tab.url).hostname;
     return {
       needsConfirm: {
+        preview: target,
         kind: "action",
         host,
         message:
@@ -321,7 +457,7 @@ async function elementAction(args, ctx, kind) {
   await sleep(600);
   if (kind === "click" && created.length === 0) await sleep(900);
   chrome.tabs.onCreated.removeListener(onCreated);
-  if (!done?.ok) return done ?? { ok: false, error: "동작을 실행하지 못했습니다." };
+  if (!done?.ok) return withShots(done ?? { ok: false, error: "동작을 실행하지 못했습니다." }, [target]);
 
   // 새 탭으로 열리는 링크면 그 탭으로 옮겨 간다. openerTabId 는 믿을 수 없다 — 누른 탭이
   // 아니라 명령을 보낸 AI Console 탭이 찍혀 나오기도 한다(실측). 누른 직후에 생긴 탭으로 가린다.
@@ -329,8 +465,12 @@ async function elementAction(args, ctx, kind) {
   const targetId = opened?.id ?? tab.id;
   // 새 탭이 앞으로 나오면 사용자는 AI Console(진행 상황과 확인 창)을 놓친다. 되돌린다.
   if (opened && ctx.appTabId !== null) await chrome.tabs.update(ctx.appTabId, { active: true }).catch(() => {});
+  if (opened) await groupAgentTab(targetId, opened.windowId);
   await waitForLoad(targetId);
-  return afterAction(targetId, ctx, opened ? `${done.message} 새 탭(${targetId})이 열렸습니다.` : done.message);
+  return withShots(
+    await afterAction(targetId, ctx, opened ? `${done.message} 새 탭(${targetId})이 열렸습니다.` : done.message),
+    [target],
+  );
 }
 
 async function scrollCommand(args, ctx) {
@@ -341,7 +481,7 @@ async function scrollCommand(args, ctx) {
   const direction = ["up", "down", "top", "bottom"].includes(args.direction) ? args.direction : "down";
   await run(tab.id, scrollPage, [direction]);
   await sleep(400);
-  return readTab(tab.id, 0, `${direction} 방향으로 스크롤했습니다.`);
+  return readTab(tab.id, ctx, 0, `${direction} 방향으로 스크롤했습니다.`, "스크롤 후 읽는 중");
 }
 
 async function backCommand(args, ctx) {
@@ -361,7 +501,7 @@ async function backCommand(args, ctx) {
   await waitForLoad(tab.id);
   const after = await chrome.tabs.get(tab.id);
   if (after.url === before) return { ok: false, error: "뒤로 갈 페이지가 없습니다." };
-  return afterAction(tab.id, ctx, "뒤로 갔습니다.");
+  return afterAction(tab.id, ctx, "뒤로 갔습니다.", "뒤로 간 페이지 읽는 중");
 }
 
 function formatSnapshot(tabId, snap, textOffset, note) {
@@ -560,5 +700,68 @@ function scrollPage(direction) {
   if (direction === "top") scrollTo({ top: 0, behavior: "instant" });
   else if (direction === "bottom") scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
   else scrollBy({ top: (direction === "up" ? -1 : 1) * Math.round(innerHeight * 0.8), behavior: "instant" });
+  return true;
+}
+
+/**
+ * 작업 중임을 페이지 위에 그린다. 그림자 DOM 안에 그려 페이지의 CSS 와 섞이지 않고,
+ * pointer-events: none 이라 페이지 조작을 막지 않는다. innerText 에도 잡히지 않아
+ * 모델이 읽는 본문에 섞이지 않는다. 마지막 동작에서 8초가 지나면 사라진다.
+ */
+function drawOverlay(spec) {
+  const HOST_ID = "aic-overlay-host";
+  let host = document.getElementById(HOST_ID);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = HOST_ID;
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
+    host.attachShadow({ mode: "open" });
+    document.documentElement.appendChild(host);
+  }
+  const root = host.shadowRoot;
+  root.innerHTML = `<style>
+    .glow{position:fixed;inset:0;box-shadow:inset 0 0 0 3px rgba(66,133,244,.95),inset 0 0 32px 8px rgba(66,133,244,.4);animation:pulse 1.8s ease-in-out infinite}
+    @keyframes pulse{50%{box-shadow:inset 0 0 0 3px rgba(155,114,203,.95),inset 0 0 40px 10px rgba(155,114,203,.35)}}
+    .badge{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center;max-width:80vw;padding:7px 16px;border-radius:999px;background:rgba(32,33,36,.92);color:#fff;font:600 13px/1.4 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.28);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#8ab4f8;animation:blink 1s infinite}
+    @keyframes blink{50%{opacity:.25}}
+    .target{position:fixed;border:3px solid #ff7a1a;border-radius:8px;background:rgba(255,122,26,.12);box-shadow:0 0 0 5px rgba(255,122,26,.22)}
+    .target-label{position:absolute;top:-26px;left:-3px;padding:2px 8px;border-radius:6px 6px 6px 0;background:#ff7a1a;color:#fff;font:700 12px/1.6 system-ui,sans-serif;white-space:nowrap}
+    .box{position:fixed;border:1px dashed rgba(66,133,244,.85);border-radius:3px}
+    .tag{position:fixed;padding:0 4px;border-radius:3px;background:rgba(66,133,244,.95);color:#fff;font:700 10px/15px ui-monospace,Menlo,monospace}
+  </style><div class="glow"></div><div class="badge"><span class="dot"></span><span class="text"></span></div>`;
+  root.querySelector(".text").textContent = `AI Console 작업 중 · ${spec.label}`;
+  if (spec.highlightRef) {
+    const el = document.querySelector(`[data-aic-ref="${spec.highlightRef}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center", inline: "center" });
+      const r = el.getBoundingClientRect();
+      const box = document.createElement("div");
+      box.className = "target";
+      Object.assign(box.style, { left: `${r.left - 5}px`, top: `${r.top - 5}px`, width: `${r.width + 10}px`, height: `${r.height + 10}px` });
+      const label = document.createElement("div");
+      label.className = "target-label";
+      label.textContent = spec.targetLabel ?? spec.highlightRef;
+      box.append(label);
+      root.append(box);
+    }
+  }
+  if (spec.showTags) {
+    for (const el of document.querySelectorAll("[data-aic-ref]")) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+      const box = document.createElement("div");
+      box.className = "box";
+      Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+      const tag = document.createElement("div");
+      tag.className = "tag";
+      tag.textContent = el.getAttribute("data-aic-ref");
+      Object.assign(tag.style, { left: `${Math.max(0, r.left)}px`, top: `${Math.max(0, r.top - 15)}px` });
+      root.append(box, tag);
+    }
+  }
+  clearTimeout(window.__aicOverlayTimer);
+  window.__aicOverlayTimer = setTimeout(() => host.remove(), 8000);
   return true;
 }

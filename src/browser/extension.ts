@@ -17,15 +17,30 @@ export interface ExtensionState {
   version: string;
 }
 
+/** 확장이 찍은 작업 화면 한 장(모델에게는 가지 않는다). */
+export interface BrowserShot {
+  /** data:image/jpeg URL. 확장이 폭 1280 이하로 줄여 보낸다. */
+  image: string;
+  /** 그때 하던 일 — "페이지 읽는 중", "누르기: 더보기" 같은. */
+  caption: string;
+  url: string;
+  title: string;
+  at: number;
+}
+
 export interface BrowserConfirmRequest {
   kind: "site" | "action";
   host: string;
   message: string;
+  /** 누르거나 입력하려는 대상에 강조 상자를 그린 화면. */
+  preview?: BrowserShot | null;
 }
 
+type WithVisual = { visual?: { shots: BrowserShot[] } };
+
 export type ExtensionResponse =
-  | { ok: true; result: unknown }
-  | { ok: false; error: string }
+  | ({ ok: true; result: unknown } & WithVisual)
+  | ({ ok: false; error: string } & WithVisual)
   | { needsConfirm: BrowserConfirmRequest };
 
 export interface BrowserCommand {

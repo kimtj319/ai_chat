@@ -1,6 +1,7 @@
 import { postBrowserActionResult } from "../api/client";
 import { askBrowserConfirm } from "./confirm";
 import { sendBrowserCommand, type BrowserCommand } from "./extension";
+import { addBrowserShots } from "./shots";
 
 /**
  * 서버가 보낸 크롬 명령 하나를 끝까지: 확장에 실행시키고, 확인이 필요하면 사용자에게
@@ -9,7 +10,7 @@ import { sendBrowserCommand, type BrowserCommand } from "./extension";
  */
 export async function runBrowserAction(
   conversationId: string,
-  event: { callId: string; name: string; arguments: unknown },
+  event: { callId: string; toolCallId: string; name: string; arguments: unknown },
   signal: AbortSignal,
 ): Promise<void> {
   const command: BrowserCommand = { name: event.name, args: event.arguments ?? {} };
@@ -17,6 +18,9 @@ export async function runBrowserAction(
   // 사이트 허용 한 번 + 동작 확인 한 번이 겹칠 수 있다. 그 이상은 확장의 잘못이다.
   for (let attempt = 0; attempt < 3 && !outcome; attempt++) {
     const response = await sendBrowserCommand(command);
+    // 찍힌 화면은 바로 보여 준다 — 확인 창을 기다리는 동안에도 무엇을 하려는지 보이게.
+    if ("needsConfirm" in response) addBrowserShots(event.toolCallId, response.needsConfirm.preview ? [response.needsConfirm.preview] : []);
+    else addBrowserShots(event.toolCallId, response.visual?.shots);
     if (!("needsConfirm" in response)) {
       outcome = response.ok ? { ok: true, result: response.result } : { ok: false, error: response.error };
       break;
