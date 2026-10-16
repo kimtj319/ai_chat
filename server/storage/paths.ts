@@ -228,3 +228,13 @@ export function shareAttachmentsDir(token: string): string {
 export function ownerSchedulesFile(ownerId: string): string {
   return path.join(ownerDir(ownerId), "schedules.json");
 }
+
+/** 계정마다 하나: 본인이 등록한 외부 서비스 키(웹 검색·GitLab). storage/personalKeys.ts. */
+export function ownerKeysFile(ownerId: string): string {
+  return path.join(ownerDir(ownerId), "keys.json");
+}
+
+/** 사용자가 등록한 모델 엔드포인트의 등록자(baseUrl → 계정 id). storage/modelOwners.ts. */
+export function modelOwnersFile(): string {
+  return path.join(config.dataDir, "model-owners.json");
+}

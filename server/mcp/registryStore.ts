@@ -322,6 +322,11 @@ export async function deleteServer(id: string): Promise<boolean> {
  * verified against, it needs no credential, and a feature whose server list
  * starts empty is a feature nobody switches on.
  */
+/** Builtins whose shared key toolAdapter swaps for the caller's own (callUrlFor). */
+export const GITLAB_SLUG = "gitlab";
+export const ALPHAVANTAGE_SLUG = "alphavantage";
+export const ALPHAVANTAGE_MCP_URL = "https://mcp.alphavantage.co/mcp";
+
 const BUILTIN_SERVERS: Array<Omit<CreateServerInput, "createdBy">> = [
   {
     name: "DeepWiki",
@@ -359,10 +364,12 @@ const BUILTIN_SERVERS: Array<Omit<CreateServerInput, "createdBy">> = [
     ? [
         {
           name: "Alpha Vantage",
-          slug: "alphavantage",
+          slug: ALPHAVANTAGE_SLUG,
           description:
             "주식 시세·시계열·재무제표·실적·배당·뉴스·환율을 조회하는 금융 데이터 MCP 서버입니다. 미국 시장이 중심이며, 종목 검색과 시장 개장 여부 확인도 지원합니다.",
-          url: `https://mcp.alphavantage.co/mcp?apikey=${config.alphavantageApiKey}`,
+          // The shared key, for discovery; a call carries the caller's own key
+          // (toolAdapter.ts callUrlFor), like the GitLab builtin.
+          url: `${ALPHAVANTAGE_MCP_URL}?apikey=${config.alphavantageApiKey}`,
           authMode: "none" as const,
           origin: "builtin" as const,
           // It offers 133 tools; these are the ones worth a place in every
@@ -409,22 +416,23 @@ const BUILTIN_SERVERS: Array<Omit<CreateServerInput, "createdBy">> = [
         },
       ]
     : []),
-  // GitLab, for reading the SF-1 issue tracker. Both halves are required: the
+  // GitLab, for reading the wisenut issue tracker. Both halves are required: the
   // endpoint, and the token that is appended to it here. The token is not on
   // that server — it travels in the URL and is forwarded to GitLab — so the
   // pair is what makes the server usable, and the absence of either would seed
   // an entry whose every call answers "no token".
   //
-  // sendUserIdentity is deliberately absent: the token is one project-scoped
-  // bot, so every account sees the same issues and there is nothing for a name
-  // to change. Sending one would be telling a server something it cannot use.
+  // The token in this URL is the shared one, used for discovery (tools/list).
+  // A tool CALL swaps in the caller's own GitLab token (mcp/toolAdapter.ts
+  // callUrlFor) — only accounts that may use shared resources fall back to
+  // this one. sendUserIdentity stays absent: the token already says who asks.
   ...(config.gitlabMcpUrl && config.gitlabToken
     ? [
         {
-          name: "SF-1 이슈",
-          slug: "gitlab",
+          name: "wisenut 이슈",
+          slug: GITLAB_SLUG,
           description:
-            "GitLab 의 SF-1 v7 이슈를 읽습니다. 제목·본문 부분일치 검색, 라벨·상태별 목록, 이슈 본문과 댓글 조회를 지원합니다. 읽기 전용입니다.",
+            "GitLab 의 wisenut 이슈를 읽습니다. 제목·본문 부분일치 검색, 라벨·상태별 목록, 이슈 본문과 댓글 조회를 지원합니다. 읽기 전용이며, 각자 등록한 GitLab 토큰으로 볼 수 있는 이슈만 검색됩니다.",
           url: `${config.gitlabMcpUrl}?token=${encodeURIComponent(config.gitlabToken)}`,
           authMode: "none" as const,
           origin: "builtin" as const,
@@ -460,8 +468,13 @@ export async function seedBuiltinServers(): Promise<void> {
       // builtin, and the half nobody sees. Adopting it here is what makes the
       // definition in code actually govern the record.
       const sameOrigin = present.origin === (builtin.origin ?? "user");
-      if (present.url !== builtin.url || !sameTools || !sameIdentity || !sameOrigin) {
+      // A renamed builtin ("SF-1 이슈" → "wisenut 이슈") is found by its slug and
+      // takes the new name and description too.
+      const sameText = present.name === builtin.name && (present.description ?? "") === (builtin.description ?? "");
+      if (present.url !== builtin.url || !sameTools || !sameIdentity || !sameOrigin || !sameText) {
         const patched = await updateServer(present.id, {
+          name: builtin.name,
+          description: builtin.description,
           url: builtin.url,
           toolAllowlist: builtin.toolAllowlist ?? [],
           sendUserIdentity: Boolean(builtin.sendUserIdentity),

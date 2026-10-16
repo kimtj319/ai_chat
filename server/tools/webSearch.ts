@@ -1,5 +1,7 @@
-import type { ToolDefinition } from "./types.js";
+import type { ToolContext, ToolDefinition } from "./types.js";
 import { config } from "../config.js";
+import { isPrivilegedOwner } from "../auth/privilege.js";
+import { getPersonalKey } from "../storage/personalKeys.js";
 
 const MAX_RESULTS_CAP = 10;
 const SNIPPET_CHARS = 1_200;
@@ -33,9 +35,17 @@ function clampResults(value: unknown): number {
  * so the model usually does not need a follow-up http_fetch — though it can
  * still fetch a returned URL for the full page.
  *
- * Requires TAVILY_API_KEY. Without it the tool fails with a clear message
- * rather than silently returning nothing.
+ * 키: 호출한 계정이 개인 키를 등록했으면 그것을, 아니면 공용 자원 계정(auth/privilege.ts)
+ * 에게만 공용 TAVILY_API_KEY 를 쓴다. 그 밖의 계정은 개인 키를 등록하라는 오류를 받는다.
+ * 계정을 모르는 호출(ctx 없음 — 서버 안의 점검 등)은 공용 키를 쓴다.
  */
+export async function tavilyKeyFor(ctx: ToolContext | undefined): Promise<string | null> {
+  if (!ctx) return config.tavilyApiKey || null;
+  const own = await getPersonalKey(ctx.ownerId, "tavily");
+  if (own) return own;
+  return (await isPrivilegedOwner(ctx.ownerId)) ? config.tavilyApiKey || null : null;
+}
+
 export const webSearchTool: ToolDefinition = {
   name: "web_search",
   description:
@@ -89,14 +99,17 @@ export const webSearchTool: ToolDefinition = {
     topic?: "general" | "news";
     include_domains?: string[];
     exclude_domains?: string[];
-  }) {
+  }, ctx?: ToolContext) {
     const query = typeof args?.query === "string" ? args.query.trim() : "";
     if (!query) throw new Error("query must be a non-empty string");
 
-    const apiKey = config.tavilyApiKey;
+    const apiKey = await tavilyKeyFor(ctx);
     if (!apiKey) {
       throw new Error(
-        "Web search is not configured: set TAVILY_API_KEY in the server environment.",
+        ctx && (await isPrivilegedOwner(ctx.ownerId))
+          ? "Web search is not configured: set TAVILY_API_KEY in the server environment."
+          : "웹 검색을 쓰려면 본인 Tavily API 키가 필요합니다. 설정 › 개인 키에서 등록하세요(app.tavily.com 에서 무료 발급). " +
+              "Tell the user this in Korean; do not retry.",
       );
     }
 
@@ -137,7 +150,7 @@ export const webSearchTool: ToolDefinition = {
       // echo the API key back into the transcript.
       const detail = await res.text().catch(() => "");
       if (res.status === 401 || res.status === 403) {
-        throw new Error("Web search rejected the API key (check TAVILY_API_KEY).");
+        throw new Error("Web search rejected the API key (check the personal Tavily key in 설정 › 개인 키, or TAVILY_API_KEY).");
       }
       if (res.status === 429) {
         throw new Error("Web search rate limit or monthly quota exceeded.");

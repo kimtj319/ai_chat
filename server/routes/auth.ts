@@ -13,6 +13,7 @@ import {
 import { setSessionUser, signInOnFreshSession, signOutOtherSessions } from "../storage/sessionStore.js";
 import { setSessionCookie } from "../middleware/session.js";
 import { toPublicUser } from "../types.js";
+import { isPrivilegedUser } from "../auth/privilege.js";
 import type { AuthErrorCode } from "../types.js";
 
 export const authRouter = Router();
@@ -149,7 +150,7 @@ authRouter.post("/auth/login", async (req, res, next) => {
     req.sessionId = session.sessionId;
     setSessionCookie(res, session.sessionId);
     console.log(`[auth] login ${user.id} from ${ip}`);
-    res.json({ user: toPublicUser(user) });
+    res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
   } catch (err) {
     next(err);
   }
@@ -241,10 +242,11 @@ authRouter.post("/auth/password", async (req, res, next) => {
  * A pending or blocked account gets its own code here too, so a session that
  * was signed in when the block landed is told why it stopped working.
  */
-authRouter.get("/auth/me", (req, res) => {
+authRouter.get("/auth/me", async (req, res) => {
   const user = req.user;
   if (!user) return fail(res, 401, "unauthorized", "로그인이 필요합니다.");
   if (user.status === "blocked") return fail(res, 403, "blocked", "차단된 계정입니다. 관리자에게 문의해 주세요.");
   if (user.status !== "active") return fail(res, 403, "pending_approval", "관리자 승인 대기 중인 계정입니다.");
-  res.json({ user: toPublicUser(user) });
+  // privileged: may use shared keys and every model (auth/privilege.ts).
+  res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
 });

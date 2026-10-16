@@ -22,6 +22,8 @@ import type {
   ModelEndpointErrorCode,
   ModelEndpointsResponse,
   ModelsResponse,
+  MyAccess,
+  PersonalKeyName,
   PatchConversationRequest,
   PatchMcpServerRequest,
   RagDocument,
@@ -416,6 +418,19 @@ export function addModelEndpoint(
 
 export async function deleteModelEndpoint(baseUrl: string, adminToken: string): Promise<void> {
   await endpointMutation<void>({ method: "DELETE", body: JSON.stringify({ baseUrl }) }, adminToken);
+}
+
+/** 내 권한과 개인 키 등록 상태. 키 값 자체는 돌아오지 않는다. */
+export function getMyAccess(): Promise<MyAccess> {
+  return request<MyAccess>("/me/access");
+}
+
+export function setPersonalKey(name: PersonalKeyName, value: string): Promise<{ keys: MyAccess["keys"] }> {
+  return request(`/me/keys/${name}`, { method: "PUT", body: JSON.stringify({ value }) });
+}
+
+export function deletePersonalKey(name: PersonalKeyName): Promise<{ keys: MyAccess["keys"] }> {
+  return request(`/me/keys/${name}`, { method: "DELETE" });
 }
 
 export function getHealth(): Promise<HealthResponse> {

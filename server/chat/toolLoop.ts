@@ -1,3 +1,4 @@
+import { modelAccessForOwner } from "../vllm/access.js";
 import { annotateForModel, citationSources } from "./citations.js";
 import {
   resolveModel,
@@ -185,7 +186,9 @@ export async function* runConversationTurn(
   mcpToolsPromise.catch(() => {});
   // The conversation's chosen model decides which vLLM endpoint serves it;
   // an unknown/blank selection falls back to the first available model.
-  const { model, endpoint, maxModelLen } = await resolveModel(conversation.model);
+  // Only among the models this account may use (vllm/access.ts) — the same
+  // rule for a turn sent from the page and one a schedule runs.
+  const { model, endpoint, maxModelLen } = await resolveModel(conversation.model, (await modelAccessForOwner(ownerId)).allows);
   // Asking for a model that is not in the catalogue used to be answered by a
   // different model without a word — the conversation still displayed the name
   // it was pinned to, and a single typo in a model id was enough. The fallback

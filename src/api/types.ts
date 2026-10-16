@@ -303,6 +303,10 @@ export interface ModelEndpoint {
   baseUrl: string;
   /** "env" entries are fixed by deployment and cannot be removed from the UI. */
   source: "file" | "env";
+  /** 이 계정이 등록한 서버 — 등록한 사람과 AI Product 팀만 쓸 수 있다. */
+  mine?: boolean;
+  /** 이 계정이 지울 수 있는가(서버가 정한다). */
+  deletable?: boolean;
   reachable: boolean;
   models: string[];
   maxModelLen: number;
@@ -312,6 +316,8 @@ export interface ModelEndpoint {
 export interface ModelEndpointsResponse {
   /** True when the server has no admin token configured — anyone can mutate. */
   unprotected: boolean;
+  /** 모든 모델을 쓰는 계정(관리자·AI Product 팀)인가. */
+  privileged?: boolean;
   endpoints: ModelEndpoint[];
 }
 
@@ -330,6 +336,7 @@ export interface AddModelEndpointResponse {
 }
 
 export type ModelEndpointErrorCode =
+  | "not_owner"
   | "invalid_url"
   | "unreachable"
   | "not_vllm"
@@ -397,6 +404,8 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   status: AccountStatus;
+  /** 공용 키·모든 모델을 쓸 수 있는 계정(관리자·AI Product 팀). 서버가 정한다. */
+  privileged?: boolean;
 }
 
 /** One row of `GET /api/admin/users`. */
@@ -655,4 +664,16 @@ export interface BoardListResponse {
   posts: BoardPostSummary[];
   /** 지금 쓰이고 있는 태그 전부. 새 글을 쓸 때 고르게 한다. */
   tags: string[];
+}
+
+/** `GET /api/me/access` — 내 권한과 개인 키 등록 상태(키 값은 오지 않는다). */
+export type PersonalKeyName = "tavily" | "gitlab" | "alphavantage";
+export interface PersonalKeyState {
+  set: boolean;
+  /** 끝 네 자리, 예: "…a1b2". */
+  hint: string | null;
+}
+export interface MyAccess {
+  privileged: boolean;
+  keys: Record<PersonalKeyName, PersonalKeyState>;
 }

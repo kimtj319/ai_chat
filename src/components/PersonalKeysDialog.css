@@ -1,0 +1,70 @@
+.keys-scope {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
+.keys-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.keys-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.keys-row-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.keys-row-state {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.keys-row-state[data-set="true"] {
+  color: var(--success);
+}
+
+.keys-row-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
+/* .field gives the input its look; the row lays it out beside the buttons. */
+.keys-row-input.field {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.keys-row-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.keys-row-message {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+.keys-row-message[data-tone="ok"] {
+  color: var(--success);
+}
+
+.keys-row-message[data-tone="danger"] {
+  color: var(--danger);
+}

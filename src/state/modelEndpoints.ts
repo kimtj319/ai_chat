@@ -50,6 +50,8 @@ export function endpointErrorMessage(code: ModelEndpointErrorCode | null, host: 
       return `이미 등록된 주소입니다: ${host}`;
     case "forbidden":
       return "권한이 없습니다. 관리 토큰을 확인하세요.";
+    case "not_owner":
+      return "직접 등록한 서버만 제거할 수 있습니다.";
     case "write_failed":
       return "설정 파일에 저장하지 못했습니다.";
     case "unreachable":
@@ -71,11 +73,12 @@ export interface EndpointRow {
   statusText: string;
   /** False for an "env" entry: DELETE would 409, so no button is offered. */
   removable: boolean;
-  /** Why it cannot be removed, or null when it can. */
+  /** Why it cannot be removed, or whose it is; null otherwise. */
   sourceNote: string | null;
 }
 
 export const ENV_SOURCE_NOTE = "환경변수로 지정된 서버는 여기서 제거할 수 없습니다.";
+export const MINE_NOTE = "내가 등록한 서버 — 나와 AI Product 팀만 쓸 수 있습니다.";
 
 /** Everything one row of the endpoint list renders, decided in one place. */
 export function endpointRow(entry: ModelEndpoint): EndpointRow {
@@ -86,7 +89,8 @@ export function endpointRow(entry: ModelEndpoint): EndpointRow {
     models: entry.models.length > 0 ? entry.models.join(", ") : "모델 없음",
     reachable: entry.reachable,
     statusText: entry.reachable ? "연결됨" : "연결할 수 없음",
-    removable: entry.source !== "env",
-    sourceNote: entry.source === "env" ? ENV_SOURCE_NOTE : null,
+    // The server decides (owner or AI Product); an older server sends no flag.
+    removable: entry.deletable ?? entry.source !== "env",
+    sourceNote: entry.source === "env" ? ENV_SOURCE_NOTE : entry.mine ? MINE_NOTE : null,
   };
 }

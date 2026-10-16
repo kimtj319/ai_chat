@@ -14,12 +14,17 @@ import { attachmentBudget } from "../attachments/budget.js";
 import { MAX_IMAGE_EDGE } from "../attachments/sniff.js";
 import { config } from "../config.js";
 import { reasoningIsFixed } from "../chat/reasoningProfiles.js";
+import { modelAccessFor } from "../vllm/access.js";
+import { modelOwnerOf, removeModelOwner, setModelOwner } from "../storage/modelOwners.js";
 
 export const modelsRouter = Router();
 
-modelsRouter.get("/models", async (_req, res) => {
+modelsRouter.get("/models", async (req, res) => {
   try {
-    const catalog = await fetchCatalog();
+    // Only what this account may use (vllm/access.ts) — a model it cannot use
+    // is not offered at all rather than offered and refused.
+    const access = await modelAccessFor(req.user);
+    const catalog = (await fetchCatalog()).filter(access.allows);
     res.json({
       // `models` stays a flat string[] so existing clients keep working.
       models: catalog.map((e) => e.id),
@@ -93,30 +98,31 @@ function clientAddress(req: Request): string {
   return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
-function adminAllowed(req: Request, res: Response): boolean {
-  // Adding an endpoint makes the server fetch an address of the caller's
-  // choosing, and every user of the app can then be pointed at it. That is an
-  // administrator's decision. The comment above predates accounts existing;
-  // now that they do, the account's role is the gate, and MODEL_ADMIN_TOKEN
-  // stays as an extra lock rather than the only one.
-  if (req.user?.role !== "admin") {
-    res.status(403).json({ error: "관리자만 모델 엔드포인트를 변경할 수 있습니다.", code: "not_admin" });
-    return false;
-  }
+function adminTokenAllowed(req: Request, res: Response): boolean {
+  // Any account may register an endpoint now: what it registers is usable only
+  // by itself and the accounts that may use every model (vllm/access.ts), so
+  // nobody else can be pointed at it. Deleting is limited to that same circle
+  // (below). MODEL_ADMIN_TOKEN stays as the extra lock on making the server
+  // fetch an address of the caller's choosing.
   if (!config.modelAdminToken) return true;
   if (req.get("X-Model-Admin-Token") === config.modelAdminToken) return true;
   res.status(403).json({ error: "이 서버에서는 모델 엔드포인트를 변경할 권한이 필요합니다.", code: "forbidden" });
   return false;
 }
 
-modelsRouter.get("/models/endpoints", async (_req, res) => {
+modelsRouter.get("/models/endpoints", async (req, res) => {
+  const access = await modelAccessFor(req.user);
   const endpoints = await Promise.all(
-    listEndpoints().map(async (endpoint) => {
+    listEndpoints().filter(access.allows).map(async (endpoint) => {
       const probe = await probeEndpoint(endpoint.baseUrl, endpoint.apiKey);
+      const source = endpointSource(endpoint.baseUrl);
       return {
         label: endpoint.label,
         baseUrl: endpoint.baseUrl,
-        source: endpointSource(endpoint.baseUrl),
+        source,
+        // Registered by this account — and so deletable by it.
+        mine: access.owns(endpoint.baseUrl),
+        deletable: source === "file" && (access.privileged || access.owns(endpoint.baseUrl)),
         reachable: probe.ok,
         models: probe.models,
         maxModelLen: probe.maxModelLen,
@@ -124,11 +130,11 @@ modelsRouter.get("/models/endpoints", async (_req, res) => {
       };
     }),
   );
-  res.json({ unprotected: config.modelAdminToken.length === 0, endpoints });
+  res.json({ unprotected: config.modelAdminToken.length === 0, privileged: access.privileged, endpoints });
 });
 
 modelsRouter.post("/models/endpoints", async (req, res) => {
-  if (!adminAllowed(req, res)) return;
+  if (!adminTokenAllowed(req, res)) return;
   const body = req.body ?? {};
   const baseUrl = normalizeBaseUrl(body.baseUrl);
   if (!baseUrl) {
@@ -151,13 +157,14 @@ modelsRouter.post("/models/endpoints", async (req, res) => {
   const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 80) : baseUrl;
   try {
     await upsertFileEndpoint({ label, baseUrl, apiKey });
+    await setModelOwner(baseUrl, req.ownerId);
   } catch (err) {
     console.error("[models] could not write the endpoints file:", err);
     return res.status(500).json({ error: `엔드포인트 파일(${writableEndpointsFile()})에 기록하지 못했습니다.`, code: "write_failed" });
   }
   invalidateCatalog();
   console.log(
-    `[models] endpoint ADDED by ${clientAddress(req)}: ${label} ${baseUrl} ` +
+    `[models] endpoint ADDED by ${req.ownerId}@${clientAddress(req)}: ${label} ${baseUrl} ` +
       `models=${probe.models.join(",")} apiKey=${apiKey ? "provided" : "none"} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`,
   );
   res.status(201).json({
@@ -172,9 +179,13 @@ modelsRouter.post("/models/endpoints", async (req, res) => {
 });
 
 modelsRouter.delete("/models/endpoints", async (req, res) => {
-  if (!adminAllowed(req, res)) return;
+  if (!adminTokenAllowed(req, res)) return;
   const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
   if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
+  const access = await modelAccessFor(req.user);
+  if (!access.privileged && (await modelOwnerOf(baseUrl)) !== req.ownerId) {
+    return res.status(403).json({ error: "직접 등록한 모델만 지울 수 있습니다.", code: "not_owner" });
+  }
   if (isEnvEndpoint(baseUrl)) {
     // VLLM_ENDPOINTS is the deployment's own configuration. Even when the file
     // also lists this URL, deleting the file's line would leave the endpoint
@@ -186,7 +197,8 @@ modelsRouter.delete("/models/endpoints", async (req, res) => {
   }
   const removed = await removeFileEndpoint(baseUrl);
   if (!removed) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
+  await removeModelOwner(baseUrl);
   invalidateCatalog();
-  console.log(`[models] endpoint REMOVED by ${clientAddress(req)}: ${baseUrl} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`);
+  console.log(`[models] endpoint REMOVED by ${req.ownerId}@${clientAddress(req)}: ${baseUrl} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`);
   res.status(204).end();
 });

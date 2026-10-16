@@ -143,6 +143,12 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
         </p>
       )}
 
+      {data && !data.privileged && (
+        <p className="endpoint-scope" role="note">
+          기본 모델 외에 직접 등록한 서버의 모델은 등록한 본인과 AI Product 팀만 사용할 수 있습니다.
+        </p>
+      )}
+
       {listError && <p className="message-error">{listError}</p>}
 
       <ul className="endpoint-list">

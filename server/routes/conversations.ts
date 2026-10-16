@@ -16,6 +16,7 @@ import {
 } from "../storage/attachmentStore.js";
 import { attachmentBudget, describeCost } from "../attachments/budget.js";
 import { resolveModel } from "../vllm/client.js";
+import { modelAccessFor, modelIsForbidden } from "../vllm/access.js";
 import { runConversationTurn } from "../chat/toolLoop.js";
 import { summariseConversationTitle } from "../chat/titleSummary.js";
 import { detectProhibition } from "../chat/prohibitionDetect.js";
@@ -132,6 +133,9 @@ conversationsRouter.post("/conversations", async (req, res, next) => {
       const problem = checkTextField(field, body[field] as string);
       if (problem) return res.status(400).json(problem);
     }
+    if (typeof body.model === "string" && (await modelIsForbidden(await modelAccessFor(req.user), body.model))) {
+      return res.status(403).json({ error: "이 계정에서는 쓸 수 없는 모델입니다.", code: "model_forbidden" });
+    }
     const conv = await createConversation(req.ownerId, {
       title: typeof body.title === "string" ? body.title : undefined,
       systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : undefined,
@@ -171,7 +175,12 @@ conversationsRouter.patch("/conversations/:id", async (req, res, next) => {
       if (problem) return res.status(400).json(problem);
       patch[field] = body[field] as string;
     }
-    if (typeof body.model === "string") patch.model = body.model;
+    if (typeof body.model === "string") {
+      if (await modelIsForbidden(await modelAccessFor(req.user), body.model)) {
+        return res.status(403).json({ error: "이 계정에서는 쓸 수 없는 모델입니다.", code: "model_forbidden" });
+      }
+      patch.model = body.model;
+    }
     const settings = checkSettings(body.settings);
     if (!settings.ok) return res.status(400).json(settings.problem);
     if (settings.value) patch.settings = settings.value;
@@ -373,7 +382,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
 
   let resolved;
   try {
-    resolved = await resolveModel(existing.model);
+    resolved = await resolveModel(existing.model, (await modelAccessFor(req.user)).allows);
   } catch (err) {
     return res.status(502).json({ error: err instanceof Error ? err.message : "모델 서버에 연결하지 못했습니다." });
   }
@@ -580,7 +589,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   // under its clipped title, and the summarised name replaces it whenever it
   // arrives. Nothing awaits this, and a failure leaves the clipped title.
   if (openedConversation && turnKind === "chat") {
-    void summariseConversationTitle(content, afterUser.model ?? "", controller.signal).then(async (title) => {
+    void summariseConversationTitle(content, resolved.model, controller.signal).then(async (title) => {
       if (!title) return;
       const renamed = await mutateConversation(req.ownerId, id, (conv) => {
         conv.title = title;
@@ -605,7 +614,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
       void detectProhibition({
         assistant: previous.content,
         user: content,
-        model: afterUser.model ?? "",
+        model: resolved.model,
         signal: AbortSignal.timeout(120_000),
       })
         .then((rule) => (rule ? appendPending(ownerId, rule, content, new Date()) : false))

@@ -10,6 +10,7 @@ import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { CapabilityIcon } from "./CapabilityIcon";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { ProhibitionsDialog } from "./ProhibitionsDialog";
+import { PersonalKeysDialog } from "./PersonalKeysDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { showErrorToast, showToast } from "./Toast";
 import { ModelEndpointDialog } from "./ModelEndpointDialog";
@@ -163,6 +164,15 @@ function KeyIcon() {
   );
 }
 
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -246,6 +256,7 @@ export function Sidebar({
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [prohibitionsOpen, setProhibitionsOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
   // 메뉴를 열 때마다 새로 센다. 검토 대기는 대화 도중 서버가 보태므로, 앱을 연
   // 시점의 값은 금방 낡는다.
   const [prohibitionsPending, setProhibitionsPending] = useState(0);
@@ -395,6 +406,17 @@ export function Sidebar({
           </span>
         )}
       </button>
+      <button
+        type="button"
+        className="sidebar-settings-action"
+        onClick={() => {
+          setSettingsOpen(false);
+          setKeysOpen(true);
+        }}
+      >
+        <LockIcon />
+        <span>개인 키 (API 키·토큰)</span>
+      </button>
       {onOpenAdmin && (
         <button
           type="button"
@@ -460,6 +482,7 @@ export function Sidebar({
       {endpointsOpen && <ModelEndpointDialog onClose={() => setEndpointsOpen(false)} />}
       {passwordOpen && <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />}
       {prohibitionsOpen && <ProhibitionsDialog onClose={() => setProhibitionsOpen(false)} />}
+      {keysOpen && <PersonalKeysDialog onClose={() => setKeysOpen(false)} />}
     {confirmLogout && (
       <ConfirmDialog
         title="로그아웃"

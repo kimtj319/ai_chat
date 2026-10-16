@@ -1,8 +1,10 @@
 import { callMcpTool, openSession, type McpCallResult, type McpToolDescriptor } from "./client.js";
 import { noteCallFailure, noteCallSuccess, scheduleRefresh, snapshot } from "./discovery.js";
 import { effectiveServers, getCredential, readOwnerPrefs } from "./ownerPrefs.js";
-import { listServers } from "./registryStore.js";
+import { ALPHAVANTAGE_MCP_URL, ALPHAVANTAGE_SLUG, GITLAB_SLUG, listServers } from "./registryStore.js";
 import { config } from "../config.js";
+import { isPrivilegedOwner } from "../auth/privilege.js";
+import { getPersonalKey, type PersonalKeyName } from "../storage/personalKeys.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { McpServerRecord, McpToolSummary } from "../types.js";
 
@@ -249,6 +251,39 @@ function identityHeadersFor(server: McpServerRecord, ownerId: string): { identit
   };
 }
 
+/**
+ * Builtins that authenticate with a key in the URL. The stored URL carries the
+ * shared key and is what discovery uses; a tool CALL carries the caller's own
+ * key instead, and only an account that may use shared resources
+ * (auth/privilege.ts) falls back to the shared one.
+ */
+const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () => string; url: (key: string) => string; missing: string }> = {
+  [GITLAB_SLUG]: {
+    key: "gitlab",
+    shared: () => config.gitlabToken,
+    url: (key) => `${config.gitlabMcpUrl}?token=${encodeURIComponent(key)}`,
+    missing: "wisenut 이슈를 검색하려면 본인 GitLab 토큰(read_api 권한)이 필요합니다. 설정 › 개인 키에서 등록하세요.",
+  },
+  [ALPHAVANTAGE_SLUG]: {
+    key: "alphavantage",
+    shared: () => config.alphavantageApiKey,
+    url: (key) => `${ALPHAVANTAGE_MCP_URL}?apikey=${encodeURIComponent(key)}`,
+    missing: "Alpha Vantage 를 쓰려면 본인 API 키가 필요합니다. 설정 › 개인 키에서 등록하세요(alphavantage.co 에서 무료 발급).",
+  },
+};
+
+/**
+ * The URL a tool call goes to. Without either key the call is refused as a
+ * tool result — the server is healthy, the caller just has no key.
+ */
+export async function callUrlFor(server: McpServerRecord, ownerId: string): Promise<string> {
+  const spec = server.origin === "builtin" ? PERSONAL_KEY_SERVERS[server.slug] : undefined;
+  if (!spec) return server.url;
+  const key = (await getPersonalKey(ownerId, spec.key)) ?? ((await isPrivilegedOwner(ownerId)) ? spec.shared() : "");
+  if (!key) throw new McpToolReportedError(`${spec.missing} Tell the user this in Korean; do not retry.`);
+  return spec.url(key);
+}
+
 function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshotOwnerId: string): ToolDefinition {
   const name = mcpToolName(server.slug, tool.name);
   const description = cleanText(tool.description) || `${server.name}의 ${tool.name} 도구입니다.`;
@@ -264,9 +299,10 @@ function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshot
       const credential = server.authMode === "header" ? await getCredential(ownerId, server.id) : undefined;
       const signal = AbortSignal.timeout(server.timeoutMs);
       try {
+        const url = await callUrlFor(server, ownerId);
         const session = await openSession(
           {
-            url: server.url,
+            url,
             ...(server.authHeaderName ? { authHeaderName: server.authHeaderName } : {}),
             ...(credential ? { credential } : {}),
             ...(identityHeadersFor(server, ownerId) ?? {}),

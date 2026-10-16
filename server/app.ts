@@ -19,6 +19,7 @@ import { shareRouter } from "./routes/share.js";
 import { browserRouter } from "./routes/browser.js";
 import { schedulesRouter } from "./routes/schedules.js";
 import { modelsRouter } from "./routes/models.js";
+import { meRouter } from "./routes/me.js";
 import { healthRouter } from "./routes/health.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,7 @@ export function createApp() {
   app.use("/api", browserRouter);
   app.use("/api", schedulesRouter);
   app.use("/api", modelsRouter);
+  app.use("/api", meRouter);
   app.use("/api", healthRouter);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "Not found" });

@@ -97,3 +97,10 @@
 .endpoint-status[data-tone="danger"] {
   color: var(--danger);
 }
+
+.endpoint-scope {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}

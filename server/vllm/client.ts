@@ -143,9 +143,14 @@ export async function fetchModels(signal?: AbortSignal): Promise<string[]> {
  */
 export async function resolveModel(
   requested?: string,
+  // Who is asking (vllm/access.ts): a model this account may not use is
+  // treated like an unknown id and falls back to one it may.
+  allows?: (entry: { baseUrl: string }) => boolean,
 ): Promise<{ model: string; endpoint: VllmEndpoint; maxModelLen: number | null; capability: ModelCapability }> {
-  const catalog = await fetchCatalog();
-  if (catalog.length === 0) throw new Error("No vLLM endpoint returned any model");
+  const all = await fetchCatalog();
+  if (all.length === 0) throw new Error("No vLLM endpoint returned any model");
+  const catalog = allows ? all.filter(allows) : all;
+  if (catalog.length === 0) throw new Error("이 계정이 쓸 수 있는 모델이 없습니다. 관리자에게 문의하세요.");
 
   const wanted = requested?.trim();
   const match = wanted ? catalog.find((e) => e.id === wanted) : undefined;
