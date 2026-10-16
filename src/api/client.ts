@@ -22,6 +22,7 @@ import type {
   ModelEndpointErrorCode,
   ModelEndpointsResponse,
   ModelsResponse,
+  CompactionStatusResponse,
   MyAccess,
   PersonalKeyName,
   PatchConversationRequest,
@@ -418,6 +419,11 @@ export function addModelEndpoint(
 
 export async function deleteModelEndpoint(baseUrl: string, adminToken: string): Promise<void> {
   await endpointMutation<void>({ method: "DELETE", body: JSON.stringify({ baseUrl }) }, adminToken);
+}
+
+/** 이 대화에서 진행 중인 컨텍스트 압축(새로 열었거나 새로 고친 페이지가 확인한다). */
+export function getCompactionStatus(conversationId: string): Promise<CompactionStatusResponse> {
+  return request<CompactionStatusResponse>(`/conversations/${encodeURIComponent(conversationId)}/compaction`);
 }
 
 /** 내 권한과 개인 키 등록 상태. 키 값 자체는 돌아오지 않는다. */

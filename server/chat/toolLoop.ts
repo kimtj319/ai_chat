@@ -20,6 +20,9 @@ import {
 } from "./reasoningDeadline.js";
 import { reasoningParamsFor } from "./reasoningProfiles.js";
 import { compactResearchContext, type CompactionResult } from "./contextCompaction.js";
+import { withCompactionEvents, type CompactionEvent } from "./compactionProgress.js";
+import { BudgetLeakGate } from "./budgetLeak.js";
+import { isMissingKeyError } from "../tools/missingKey.js";
 import crypto from "node:crypto";
 import { getTool, readAttachmentTool } from "../tools/index.js";
 import { runTool, truncateToolResult } from "../tools/runner.js";
@@ -51,6 +54,8 @@ export type ChatEvent =
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
   // Informational, not a failure: the turn continues in a degraded form.
   | { type: "notice"; message: string }
+  // 컨텍스트 압축 진행률(chat/compactionProgress.ts). 그동안 화면은 입력을 막는다.
+  | CompactionEvent
   | { type: "error"; message: string };
 
 export interface TurnResult {
@@ -202,14 +207,20 @@ export async function* runConversationTurn(
   // full — instead of the budget ladder dropping them, and saying so, on every
   // later turn. Never throws: any failure returns the history that
   // buildHistoryMessages would have built.
-  const history = await buildTurnHistory({
-    conversation,
-    ownerId,
-    model,
-    endpoint,
-    contextWindow: maxModelLen,
-    signal,
-  });
+  const history = yield* withCompactionEvents(
+    { ownerId, conversationId: conversation.id, kind: "history" },
+    (onProgress) =>
+      buildTurnHistory({
+        conversation,
+        ownerId,
+        model,
+        endpoint,
+        contextWindow: maxModelLen,
+        signal,
+        onProgress,
+      }),
+    (built) => Boolean(built.notice),
+  );
   let workingMessages: VllmMessage[] = history.messages;
   // The turn's starting context: system prompt + prior turns + the triggering
   // user message. Compaction rebuilds around it, so it has to be a copy — the
@@ -331,9 +342,13 @@ export async function* runConversationTurn(
   // Set once the model is told to answer without tools, so that nudge can never
   // repeat and spin the loop.
   let finalAnswerForced = false;
-  // Turned off for the rest of the turn after a failed summarisation: retrying
-  // it every round would charge each one its latency for the same failure.
+  // Turned off for the rest of the turn after a second failed summarisation:
+  // retrying every round would charge each one its latency for the same
+  // failure, but giving up after one meant a single over-long report stopped
+  // tools for the rest of the turn (production, 2026-10-16).
   let compactionAvailable = config.contextCompactRatio > 0;
+  let compactionFailures = 0;
+  const missingKeyNoticed = new Set<string>();
   let extraReserve = 0;
   let contextRetries = 0;
   const notices: string[] = [];
@@ -427,14 +442,20 @@ export async function* runConversationTurn(
         preCount = before;
         const window = maxModelLen ?? before.maxModelLen;
         if (window !== null && before.tokens > window * config.contextCompactRatio) {
-          const compacted = await compactResearchContext({
-            endpoint,
-            model,
-            messages: workingMessages,
-            baseMessages,
-            contextWindow: maxModelLen,
-            signal,
-          });
+          const compacted = yield* withCompactionEvents(
+            { ownerId, conversationId: conversation.id, kind: "research" },
+            (onProgress) =>
+              compactResearchContext({
+                endpoint,
+                model,
+                messages: workingMessages,
+                baseMessages,
+                contextWindow: maxModelLen,
+                signal,
+                onProgress,
+              }),
+            () => true,
+          );
           // Only the list sent to vLLM is replaced: allToolCalls/allToolResults
           // are what the UI shows for this turn, and the user must still see
           // every call that was made.
@@ -461,7 +482,9 @@ export async function* runConversationTurn(
         // Never worse than before compaction existed: leave the messages alone
         // and let the ladder degrade this round the way it always has.
         console.warn(`[compact] round ${round} failed, falling back to the context budget ladder:`, err);
-        compactionAvailable = false;
+        compactionFailures++;
+        // Nothing older to summarise will not change by retrying; anything else gets one more go.
+        if (compactionFailures >= 2 || /nothing older/.test(String(err))) compactionAvailable = false;
       }
     }
 
@@ -559,6 +582,10 @@ export async function* runConversationTurn(
     const pendingToolCalls = new Map<number, PendingToolCall>();
     let finishReason: string | null = null;
     let roundContent = "";
+    // Thinking that runs on past a thinking_token_budget cut is moved back into
+    // reasoning (chat/budgetLeak.ts). Decided at the round's first content delta.
+    let roundReasoning = "";
+    let leakGate: BudgetLeakGate | null = null;
 
     try {
       const stream = await streamChatCompletion(body, signal, endpoint);
@@ -575,12 +602,25 @@ export async function* runConversationTurn(
         const reasoningDelta = delta.reasoning ?? delta.reasoning_content;
         if (reasoningDelta) {
           reasoning += reasoningDelta;
+          roundReasoning += reasoningDelta;
           yield { type: "reasoning", delta: reasoningDelta };
         }
         if (delta.content) {
-          content += delta.content;
-          roundContent += delta.content;
-          yield { type: "content", delta: delta.content };
+          leakGate ??= new BudgetLeakGate({
+            budgetSet: "thinking_token_budget" in body,
+            reasoning: roundReasoning,
+            question: lastUserText(conversation),
+          });
+          const routed = leakGate.feed(delta.content);
+          if (routed.reasoning) {
+            reasoning += routed.reasoning;
+            yield { type: "reasoning", delta: routed.reasoning };
+          }
+          if (routed.content) {
+            content += routed.content;
+            roundContent += routed.content;
+            yield { type: "content", delta: routed.content };
+          }
         }
         if (Array.isArray(delta.tool_calls)) {
           for (const fragment of delta.tool_calls) {
@@ -593,6 +633,16 @@ export async function* runConversationTurn(
           }
         }
         if (choice.finish_reason) finishReason = choice.finish_reason;
+      }
+      const rest = leakGate?.end();
+      if (rest?.reasoning) {
+        reasoning += rest.reasoning;
+        yield { type: "reasoning", delta: rest.reasoning };
+      }
+      if (rest?.content) {
+        content += rest.content;
+        roundContent += rest.content;
+        yield { type: "content", delta: rest.content };
       }
     } catch (err) {
       if (isAbortError(err)) {
@@ -727,6 +777,13 @@ export async function* runConversationTurn(
         }
       }
       allToolResults.push(resultRecord);
+      // 키가 없어 거절된 도구는 모델의 말과 별개로 화면에 직접 알린다(도구마다 한 번).
+      if (!resultRecord.ok && isMissingKeyError(resultRecord.error) && !missingKeyNoticed.has(name)) {
+        missingKeyNoticed.add(name);
+        yield* noticeEvent(
+          `API 키가 등록되어 있지 않아 ${displayToolName(name)} 도구를 사용할 수 없습니다. 설정 › 개인 키 (API 키·토큰)에서 본인 키를 등록하면 사용할 수 있습니다.`,
+        );
+      }
       roundToolResults.push(resultRecord);
       const preview = JSON.stringify(resultRecord.ok ? resultRecord.result : { error: resultRecord.error }).slice(0, 500);
       yield { type: "tool_result", id, name, ok: resultRecord.ok, durationMs: resultRecord.durationMs, preview };
@@ -920,4 +977,19 @@ async function* wrapUpWithFallback(
     console.warn("[chat] 도구 결과를 넣은 마무리 답변이 실패해, 결과 없이 다시 시도합니다:", err);
     yield* streamWrapUpAnswer({ ...args, baseMessages: withoutResults });
   }
+}
+
+/** The question this turn answers — the gate compares its script with the reasoning's. */
+function lastUserText(conversation: Conversation): string {
+  for (let i = conversation.messages.length - 1; i >= 0; i--) {
+    const message = conversation.messages[i]!;
+    if (message.role === "user") return message.content;
+  }
+  return "";
+}
+
+/** "mcp__alphavantage__GLOBAL_QUOTE" → "alphavantage(GLOBAL_QUOTE)", builtins as they are. */
+function displayToolName(name: string): string {
+  const match = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name);
+  return match ? `${match[1]}(${match[2]})` : name;
 }

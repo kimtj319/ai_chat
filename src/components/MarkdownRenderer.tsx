@@ -118,7 +118,13 @@ export function MarkdownRenderer({ content, citations }: MarkdownRendererProps) 
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const cite = href?.startsWith("#cite-") ? byNumber.get(Number(href.slice(6))) : undefined;
         if (cite) return <CitationLink source={cite} />;
-        return <a href={href}>{children}</a>;
+        // 답변 속 링크는 늘 새 탭으로 — 누르면 대화가 사라지던 것. 같은 답변 안의 각주(#…)만 제자리.
+        if (href?.startsWith("#")) return <a href={href}>{children}</a>;
+        return (
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            {children}
+          </a>
+        );
       },
     }),
     [byNumber],

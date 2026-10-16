@@ -36,10 +36,14 @@ import type { VllmMessage } from "./historyBuilder.js";
  * completion token 713-725, and the last of 12 at 490-502 — about 37 tokens per
  * fact plus ~86 of preamble (32-run sweep, 2026-09-11). 3/3 runs at 2048
  * retained 18/18 facts, the same as 4096, whose median latency was 80.2s; every
- * token past ~725 was paid-for silence. 2048 leaves room for roughly 50 facts
- * and roughly halves the worst-case stall.
+ * token past ~725 was paid-for silence. 2048 left room for roughly 50 facts.
+ *
+ * Raised to 4096 (2026-10-16): Qwen3.8-Flash-Next writes a far longer section 2
+ * than the 27B the numbers above were measured on, and in production it hit 2048 in
+ * nearly every compaction (finish_reason=length, 3,300-5,500 chars), so every
+ * report was discarded and every such turn ended with tools stopped.
  */
-const SUMMARY_MAX_TOKENS = 2048;
+const SUMMARY_MAX_TOKENS = 4096;
 /** Copying findings out of the context is transcription, not creative writing. */
 const SUMMARY_TEMPERATURE = 0.2;
 /**
@@ -123,6 +127,8 @@ export interface CompactionInput {
   contextWindow: number | null;
   /** The turn's abort signal, so Stop cancels the summarisation too. */
   signal: AbortSignal;
+  /** 0..1 as the report streams in; first called with 0 when the model call starts. */
+  onProgress?: (fraction: number) => void;
 }
 
 export interface CompactionResult {
@@ -190,6 +196,11 @@ const SUMMARY_LATER_SECTION = /^[ \t]*(?:[-*>#]+[ \t]*)?(?:\*\*)?[ \t]*[34][ \t]
  * the ladder, which shreds the same tool results into 600-char excerpts.
  */
 const SUMMARY_LATER_HEADING = /이미 확인한 것|확인이 필요한 것/;
+/** Below this a report that never left section 2 is a stub, not research. */
+const MIN_TRUNCATED_REPORT_CHARS = 400;
+/** Appended to a kept report that stopped early, so the model knows to re-check. */
+const TRUNCATED_NOTE =
+  "(이 보고는 길이 제한으로 중간에 끊겼습니다. 빠진 내용이 필요하면 도구로 다시 확인하세요.)";
 
 /**
  * Is this report worth keeping?
@@ -306,6 +317,7 @@ export async function compactResearchContext(input: CompactionInput): Promise<Co
   let summary = "";
   let finishReason: string | null = null;
   const usage = { promptTokens: 0, completionTokens: 0 };
+  input.onProgress?.(0);
   const stream = await streamChatCompletion(body, input.signal, input.endpoint);
   for await (const chunk of stream) {
     if (input.signal.aborted) throw new Error("aborted-by-user");
@@ -315,16 +327,31 @@ export async function compactResearchContext(input: CompactionInput): Promise<Co
     }
     // Reasoning deltas are ignored: only the report survives this call.
     const choice = chunk.choices?.[0];
-    if (choice?.delta?.content) summary += choice.delta.content;
+    if (choice?.delta?.content) {
+      summary += choice.delta.content;
+      // Reports measured 3,300-5,500 chars; past that the bar waits near the end.
+      input.onProgress?.(Math.min(0.95, summary.length / 6_000));
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
   }
   if (summary.trim().length === 0) throw new Error("summarisation returned no content");
+  // A report cut off at the cap is kept: it still replaces the raw results with
+  // their facts, and discarding it meant the ladder stopped tools for the rest
+  // of the turn — the failure users actually saw. Only a stub is refused.
+  let truncated = false;
   if (!isSubstantiveSummary(summary)) {
+    if (summary.trim().length < MIN_TRUNCATED_REPORT_CHARS) {
+      console.warn(
+        `[compact] discarding a stub summary (finish_reason=${finishReason}, ` +
+          `${usage.completionTokens} completion tokens, ${summary.length} chars)`,
+      );
+      throw new Error("summarisation never reached the later sections of the report");
+    }
+    truncated = true;
     console.warn(
-      `[compact] discarding a degenerate summary: it never reached section 3 or 4 of the report ` +
+      `[compact] keeping a report that stopped inside section 2 ` +
         `(finish_reason=${finishReason}, ${usage.completionTokens} completion tokens, ${summary.length} chars)`,
     );
-    throw new Error("summarisation never reached the later sections of the report");
   }
 
   // … user -> assistant(report) -> user(continue) -> the kept exchanges in their
@@ -333,7 +360,8 @@ export async function compactResearchContext(input: CompactionInput): Promise<Co
   // assistant(tool_calls) and carries its own tool results, so the rebuilt list
   // has no orphan on either side.
   const header = keptMessages.length > 0 ? SUMMARY_HEADER_RECENT_KEPT : SUMMARY_HEADER_ALL_DROPPED;
-  const report: VllmMessage = { role: "assistant", content: `${header}\n\n${summary.trim()}` };
+  const note = truncated ? `\n\n${TRUNCATED_NOTE}` : "";
+  const report: VllmMessage = { role: "assistant", content: `${header}\n\n${summary.trim()}${note}` };
   const continuation: VllmMessage = { role: "user", content: CONTINUATION_INSTRUCTION };
   return {
     messages: [...input.baseMessages, report, continuation, ...keptMessages],

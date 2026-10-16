@@ -66,7 +66,8 @@ function longEnoughConversation(overrides: Partial<Record<string, unknown>> = {}
 }
 
 const WINDOW = 100_000;
-const RATIO = config.contextToolStopRatio; // 기본 0.8 — 값 자체가 아니라 관계를 검사한다.
+// 기본 0.5(CONTEXT_HISTORY_SUMMARY_RATIO) — 값 자체가 아니라 관계를 검사한다.
+const RATIO = Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio);
 const desiredOutput = DEFAULT_SETTINGS.maxTokens;
 // SAFETY_MARGIN_TOKENS 는 contextBudget.ts 에 있지만 여기서 다시 import 하지
 // 않는다 — 하드 플로어 자체의 정확한 위치가 아니라 "비율 임계값이 하드
@@ -113,9 +114,9 @@ const desiredOutput = DEFAULT_SETTINGS.maxTokens;
 }
 
 {
-  // couldSummarise 가 거짓인 경우: 새 메시지가 최소치(2)에 못 미친다.
+  // couldSummarise 가 거짓인 경우: 이번 질문 앞에 접을 메시지가 없다(첫 질문).
   const conv = longEnoughConversation({
-    messages: Array.from({ length: 4 }, (_, i) => ({
+    messages: Array.from({ length: 1 }, (_, i) => ({
       id: `m${i}`,
       role: i % 2 === 0 ? "user" : "assistant",
       content: `메시지 ${i}`,
@@ -133,8 +134,8 @@ const desiredOutput = DEFAULT_SETTINGS.maxTokens;
   const conv = longEnoughConversation({
     historySummary: {
       text: "이전 요약",
-      throughMessageId: "m5",
-      coveredMessages: 6,
+      throughMessageId: "m7",
+      coveredMessages: 8,
       createdAt: new Date().toISOString(),
     },
   });
@@ -227,8 +228,40 @@ function longTextConversation(fillerCharsOnFirstMessage: number) {
     contextWindow: WINDOW,
     signal: new AbortController().signal,
   });
-  check("창을 실제로 넘기면 /tokenize 를 부른다(안전장치가 살아있다)", tokenizeCalls === 1, String(tokenizeCalls));
+  // 요약 전 한 번 + 최근 메시지를 남긴 요약 뒤 아직도 넘치는지 한 번.
+  check("창을 실제로 넘기면 /tokenize 를 부른다(안전장치가 살아있다)", tokenizeCalls === 2, String(tokenizeCalls));
   check("그리고 실제로 요약이 일어난다", history.notice !== undefined, String(history.notice));
+
+  // 다이소 대화(운영, 2026-10-16)의 모양: 메시지는 다섯 개뿐인데 최근 답변 자체가 크다.
+  // 최근 두 교환을 남기는 요약으로는 접을 것이 없으니, 이번 질문 앞을 전부 접어야 한다.
+  {
+    tokenizeCalls = 0;
+    const huge = "y".repeat(WINDOW * 2);
+    const daiso = longEnoughConversation({
+      id: "conv-daiso",
+      messages: [
+        { id: "d0", role: "user", content: "다이소 갈색 강아지 인형 찾아줘", createdAt: new Date().toISOString() },
+        { id: "d1", role: "assistant", content: huge, createdAt: new Date().toISOString() },
+        { id: "d2", role: "user", content: "가격도 알려줘", createdAt: new Date().toISOString() },
+        { id: "d3", role: "assistant", content: huge, createdAt: new Date().toISOString() },
+        { id: "d4", role: "user", content: "비슷한 제품도", createdAt: new Date().toISOString() },
+      ],
+    });
+    const progress: number[] = [];
+    const folded = await buildTurnHistory({
+      conversation: daiso,
+      ownerId: "owner-1",
+      model: "m",
+      endpoint,
+      contextWindow: WINDOW,
+      signal: new AbortController().signal,
+      onProgress: (f) => progress.push(f),
+    });
+    check("최근 답변이 큰 짧은 대화도 이번 질문 앞을 전부 요약한다", daiso.historySummary?.coveredMessages === 4, JSON.stringify(daiso.historySummary));
+    const last = folded.messages[folded.messages.length - 1];
+    check("…남는 것은 요약과 이번 질문뿐", folded.messages.filter((m) => m.role !== "system").length === 2 && last?.content === "비슷한 제품도");
+    check("…진행률은 0 에서 시작해 늘어난다", progress[0] === 0 && progress[progress.length - 1]! > 0, JSON.stringify(progress));
+  }
   globalThis.fetch = originalFetch;
 }
 

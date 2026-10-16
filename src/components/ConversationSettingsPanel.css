@@ -36,3 +36,44 @@
   width: 100%;
   accent-color: var(--primary);
 }
+
+.settings-prohibitions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.settings-prohibitions-text {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
+.settings-prohibitions .btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings-prohibitions-badge {
+  min-width: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  line-height: 18px;
+  text-align: center;
+  font-weight: var(--weight-semibold);
+  color: var(--on-primary-container);
+  background: var(--primary-container);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+  .settings-prohibitions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

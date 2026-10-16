@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useTools } from "../hooks/useTools";
+import { MISSING_KEY_NOTICE, missingKey, useMyAccess } from "../hooks/useMyAccess";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useStore } from "../state/StoreContext";
 import type { JsonSchemaNode, ToolDefinition } from "../api/types";
 import type { ActiveConversation } from "../state/StoreContext";
+import { MasterDetail } from "./MasterDetail";
 import { Modal } from "./Modal";
+import { ToggleSwitch } from "./ToggleSwitch";
 import "./ToolsPanel.css";
 
 interface ToolsPanelProps {
@@ -130,14 +133,6 @@ function toolCopy(tool: ToolDefinition): { short: string; long: string } {
   return TOOL_COPY[tool.name] ?? { short: tool.description, long: tool.description };
 }
 
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  );
-}
-
 function typeLabel(node: JsonSchemaNode): string {
   if (Array.isArray(node.type)) return node.type.join(" | ");
   return node.type ?? "any";
@@ -170,45 +165,12 @@ function SchemaFields({ node, depth = 0 }: { node: JsonSchemaNode; depth?: numbe
   );
 }
 
-function ToolCard({ tool, enabled, onToggle }: { tool: ToolDefinition; enabled: boolean; onToggle: () => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const copy = toolCopy(tool);
-
-  return (
-    <li className="tool-card">
-      <div className="tool-card-head">
-        <code className="tool-card-name">{tool.name}</code>
-        <label className="tool-card-switch">
-          <input type="checkbox" checked={enabled} onChange={onToggle} aria-label={`${tool.name} 사용`} />
-        </label>
-      </div>
-      <p className="tool-card-short">{copy.short}</p>
-      <button
-        type="button"
-        className="tool-card-disclosure"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-      >
-        <span className={`tool-card-chevron${expanded ? " open" : ""}`}>
-          <ChevronIcon />
-        </span>
-        <span>자세히</span>
-      </button>
-      <div className={`tool-card-collapse${expanded ? " expanded" : ""}`}>
-        <div className="tool-card-detail">
-          <p className="tool-card-long">{copy.long}</p>
-          <p className="tool-schema-heading">매개변수</p>
-          <SchemaFields node={tool.parameters} />
-        </div>
-      </div>
-    </li>
-  );
-}
-
 export function ToolsPanel({ conversation, onClose }: ToolsPanelProps) {
   const { updateEnabledTools } = useStore();
   const { tools, loading, error } = useTools();
+  const access = useMyAccess();
   const [enabledTools, setEnabledTools] = useState<string[]>(conversation.enabledTools);
+  const [selected, setSelected] = useState<string | null>(null);
   const saveStatus = useDebouncedSave(enabledTools, updateEnabledTools, 400);
 
   function toggle(name: string) {
@@ -221,6 +183,8 @@ export function ToolsPanel({ conversation, onClose }: ToolsPanelProps) {
     list.push(tool);
     categories.set(tool.category, list);
   }
+  // 처음 열면 첫 도구의 설명이 오른쪽에 보인다 — 빈 칸으로 시작하지 않는다.
+  const shown = selected ?? tools[0]?.name ?? null;
 
   return (
     <Modal title="도구 설정" onClose={onClose} size="wide">
@@ -233,16 +197,58 @@ export function ToolsPanel({ conversation, onClose }: ToolsPanelProps) {
       {loading && <p className="tool-schema-empty">도구 목록을 불러오는 중…</p>}
       {error && <p className="message-error">{error}</p>}
 
-      {[...categories.entries()].map(([category, categoryTools]) => (
-        <section key={category} className="tools-category">
-          <h3 className="panel-subheading">{category}</h3>
-          <ul className="tools-grid">
-            {categoryTools.map((tool) => (
-              <ToolCard key={tool.name} tool={tool} enabled={enabledTools.includes(tool.name)} onToggle={() => toggle(tool.name)} />
-            ))}
-          </ul>
-        </section>
-      ))}
+      {tools.length > 0 && (
+        <MasterDetail
+          className="tools-master-detail"
+          groups={[...categories.entries()].map(([category, items]) => ({ key: category, title: category, items }))}
+          idOf={(tool) => tool.name}
+          selectedId={shown}
+          onSelect={setSelected}
+          renderRow={(tool) => (
+            <>
+              <span className="md-row-name">
+                <code className="tool-row-name">{tool.name}</code>
+                {missingKey(access, { tool: tool.name }) && (
+                  <span className="md-badge" data-tone="warning">
+                    키 필요
+                  </span>
+                )}
+              </span>
+              <span className="md-row-desc">{toolCopy(tool).short}</span>
+            </>
+          )}
+          renderTrailing={(tool) => (
+            <ToggleSwitch
+              on={enabledTools.includes(tool.name)}
+              label={`${tool.name} 사용`}
+              onToggle={() => toggle(tool.name)}
+            />
+          )}
+          renderDetail={(tool) => <ToolDetail tool={tool} keyMissing={missingKey(access, { tool: tool.name }) !== null} enabled={enabledTools.includes(tool.name)} />}
+          placeholder="왼쪽에서 도구를 고르면 자세한 설명이 여기에 보입니다."
+        />
+      )}
     </Modal>
+  );
+}
+
+function ToolDetail({ tool, keyMissing, enabled }: { tool: ToolDefinition; keyMissing: boolean; enabled: boolean }) {
+  const copy = toolCopy(tool);
+  return (
+    <div className="tool-detail">
+      <div className="tool-detail-head">
+        <code className="tool-detail-name">{tool.name}</code>
+        <span className="md-badge">{enabled ? "이 대화에서 켜짐" : "꺼짐"}</span>
+      </div>
+      <p className="tool-detail-short">{copy.short}</p>
+      {keyMissing && (
+        <p className="tool-detail-warning" role="note">
+          {MISSING_KEY_NOTICE}
+        </p>
+      )}
+      <p className="tool-detail-long">{copy.long}</p>
+      <p className="tool-schema-heading">매개변수</p>
+      <SchemaFields node={tool.parameters} />
+    </div>
   );
 }

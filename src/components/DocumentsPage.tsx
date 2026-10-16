@@ -249,7 +249,7 @@ export function DocumentsPage({ onBack }: Props) {
             {loading ? "불러오는 중…" : `내 문서 ${documents.length}개${sharedCount > 0 ? ` · 전체 공개 ${sharedCount}개` : ""}`}
           </p>
         </div>
-        {documents.length > 3 && (
+        {documents.length + shared.length > 3 && (
           <input
             type="search"
             className="documents-filter"
@@ -355,46 +355,9 @@ export function DocumentsPage({ onBack }: Props) {
           </div>
         ) : (
           <>
-            <div className="documents-toolbar" data-active={chosen.length > 0 || undefined}>
-              <label className="documents-check">
-                <input
-                  type="checkbox"
-                  checked={allVisibleChosen}
-                  ref={(el) => {
-                    // 일부만 골랐을 때는 '부분' 상태로 보여 준다 — 전체 선택을
-                    // 누르면 무슨 일이 일어날지가 체크박스 모양으로 읽혀야 한다.
-                    if (el) el.indeterminate = !allVisibleChosen && visible.some((d) => selected.has(d.id));
-                  }}
-                  onChange={toggleAll}
-                  aria-label="보이는 문서 전체 선택"
-                />
-                <span>
-                  {chosen.length > 0 ? `${chosen.length}개 선택됨` : `${visible.length}개${filter ? " (걸러짐)" : ""}`}
-                </span>
-              </label>
-              {chosen.length > 0 && (
-                <div className="documents-toolbar-actions">
-                  <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "shared")}>
-                    모두에게 공개
-                  </button>
-                  <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "private")}>
-                    나만 보기로
-                  </button>
-                  {/* 실패한 문서를 되살릴 때만 쓰는 버튼이 아니다. 청킹 방식이
-                      바뀌면(예: 경계를 모델이 고르게 되면) 멀쩡한 문서도 다시
-                      잘라야 하고, 그때 쓸 수단이 여기 말고는 없다. */}
-                  <button type="button" className="btn documents-action" disabled={working} onClick={() => void retry(chosen)}>
-                    다시 색인
-                  </button>
-                  <button type="button" className="btn btn-danger documents-action" disabled={working} onClick={() => setConfirming(chosen)}>
-                    지우기
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {visibleShared.length > 0 && (
-              <section className="documents-section">
+            {/* 왼쪽은 모두의 전체 공개 문서, 오른쪽은 내가 올린 문서. 선택·동작 막대는 내 문서에만 걸린다. */}
+            <div className="documents-columns">
+              <section className="documents-section documents-column" aria-label="전체 공개 문서">
                 <h3 className="documents-section-title">
                   전체 공개 문서 <span className="documents-section-count">{visibleShared.length}</span>
                 </h3>
@@ -426,58 +389,99 @@ export function DocumentsPage({ onBack }: Props) {
                       </span>
                     </li>
                   ))}
+                  {visibleShared.length === 0 && (
+                    <li className="documents-row-empty">
+                      {filter.trim() ? "이름이 맞는 문서가 없습니다." : "전체 공개된 문서가 아직 없습니다."}
+                    </li>
+                  )}
                 </ul>
               </section>
-            )}
-
-            <section className="documents-section">
-              <h3 className="documents-section-title">
-                내 문서 <span className="documents-section-count">{visible.length}</span>
-              </h3>
-              <ul className="documents-list">
-              {visible.map((doc) => (
-                <li
-                  key={doc.id}
-                  className="documents-row"
-                  data-status={doc.status}
-                  data-selected={selected.has(doc.id) || undefined}
-                  data-busy={busy.has(doc.id) || undefined}
-                >
-                  <input
-                    type="checkbox"
-                    className="documents-row-check"
-                    checked={selected.has(doc.id)}
-                    onChange={() => toggle(doc.id)}
-                    aria-label={`${doc.name} 선택`}
-                  />
-                  <button type="button" className="documents-row-name" onClick={() => setViewing(doc)} title="원본 보기">
-                    {doc.name}
-                  </button>
-                  <span className="documents-badge" data-scope={doc.scope}>
-                    {doc.scope === "shared" ? "전체 공개" : "나만"}
-                  </span>
-                  {doc.status === "failed" && (
-                    <span className="documents-badge" data-tone="danger" title={doc.error ?? ""}>
-                      색인 실패
+              <section className="documents-section documents-column" aria-label="내 문서">
+                <h3 className="documents-section-title">
+                  내 문서 <span className="documents-section-count">{visible.length}</span>
+                </h3>
+                <div className="documents-toolbar" data-active={chosen.length > 0 || undefined}>
+                  <label className="documents-check">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleChosen}
+                      ref={(el) => {
+                        // 일부만 골랐을 때는 '부분' 상태로 보여 준다 — 전체 선택을
+                        // 누르면 무슨 일이 일어날지가 체크박스 모양으로 읽혀야 한다.
+                        if (el) el.indeterminate = !allVisibleChosen && visible.some((d) => selected.has(d.id));
+                      }}
+                      onChange={toggleAll}
+                      aria-label="보이는 문서 전체 선택"
+                    />
+                    <span>
+                      {chosen.length > 0 ? `${chosen.length}개 선택됨` : `${visible.length}개${filter ? " (걸러짐)" : ""}`}
                     </span>
+                  </label>
+                  {chosen.length > 0 && (
+                    <div className="documents-toolbar-actions">
+                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "shared")}>
+                        모두에게 공개
+                      </button>
+                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "private")}>
+                        나만 보기로
+                      </button>
+                      {/* 실패한 문서를 되살릴 때만 쓰는 버튼이 아니다. 청킹 방식이
+                          바뀌면(예: 경계를 모델이 고르게 되면) 멀쩡한 문서도 다시
+                          잘라야 하고, 그때 쓸 수단이 여기 말고는 없다. */}
+                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void retry(chosen)}>
+                        다시 색인
+                      </button>
+                      <button type="button" className="btn btn-danger documents-action" disabled={working} onClick={() => setConfirming(chosen)}>
+                        지우기
+                      </button>
+                    </div>
                   )}
-                  {doc.chunkedBy === "llm" && (
-                    <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
-                      모델 청킹
+                </div>
+                <ul className="documents-list">
+                {visible.map((doc) => (
+                  <li
+                    key={doc.id}
+                    className="documents-row"
+                    data-status={doc.status}
+                    data-selected={selected.has(doc.id) || undefined}
+                    data-busy={busy.has(doc.id) || undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      className="documents-row-check"
+                      checked={selected.has(doc.id)}
+                      onChange={() => toggle(doc.id)}
+                      aria-label={`${doc.name} 선택`}
+                    />
+                    <button type="button" className="documents-row-name" onClick={() => setViewing(doc)} title="원본 보기">
+                      {doc.name}
+                    </button>
+                    <span className="documents-badge" data-scope={doc.scope}>
+                      {doc.scope === "shared" ? "전체 공개" : "나만"}
                     </span>
-                  )}
-                  <span className="documents-row-meta">
-                    {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
-                  </span>
-                </li>
-              ))}
-              {visible.length === 0 && (
-                <li className="documents-row-empty">
-                  {filter.trim() ? "이름이 맞는 문서가 없습니다." : "아직 올린 문서가 없습니다."}
-                </li>
-              )}
-              </ul>
-            </section>
+                    {doc.status === "failed" && (
+                      <span className="documents-badge" data-tone="danger" title={doc.error ?? ""}>
+                        색인 실패
+                      </span>
+                    )}
+                    {doc.chunkedBy === "llm" && (
+                      <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
+                        모델 청킹
+                      </span>
+                    )}
+                    <span className="documents-row-meta">
+                      {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
+                    </span>
+                  </li>
+                ))}
+                {visible.length === 0 && (
+                  <li className="documents-row-empty">
+                    {filter.trim() ? "이름이 맞는 문서가 없습니다." : "아직 올린 문서가 없습니다."}
+                  </li>
+                )}
+                </ul>
+              </section>
+            </div>
           </>
         )}
       </div>

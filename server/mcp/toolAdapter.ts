@@ -5,6 +5,7 @@ import { ALPHAVANTAGE_MCP_URL, ALPHAVANTAGE_SLUG, GITLAB_SLUG, listServers } fro
 import { config } from "../config.js";
 import { isPrivilegedOwner } from "../auth/privilege.js";
 import { getPersonalKey, type PersonalKeyName } from "../storage/personalKeys.js";
+import { missingKeyMessage } from "../tools/missingKey.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { McpServerRecord, McpToolSummary } from "../types.js";
 
@@ -262,13 +263,13 @@ const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () =>
     key: "gitlab",
     shared: () => config.gitlabToken,
     url: (key) => `${config.gitlabMcpUrl}?token=${encodeURIComponent(key)}`,
-    missing: "wisenut 이슈를 검색하려면 본인 GitLab 토큰(read_api 권한)이 필요합니다. 설정 › 개인 키에서 등록하세요.",
+    missing: missingKeyMessage("GitLab(wisenut 이슈)", "GitLab 액세스 토큰, read_api 권한"),
   },
   [ALPHAVANTAGE_SLUG]: {
     key: "alphavantage",
     shared: () => config.alphavantageApiKey,
     url: (key) => `${ALPHAVANTAGE_MCP_URL}?apikey=${encodeURIComponent(key)}`,
-    missing: "Alpha Vantage 를 쓰려면 본인 API 키가 필요합니다. 설정 › 개인 키에서 등록하세요(alphavantage.co 에서 무료 발급).",
+    missing: missingKeyMessage("Alpha Vantage", "alphavantage.co 에서 무료 발급"),
   },
 };
 
@@ -280,7 +281,7 @@ export async function callUrlFor(server: McpServerRecord, ownerId: string): Prom
   const spec = server.origin === "builtin" ? PERSONAL_KEY_SERVERS[server.slug] : undefined;
   if (!spec) return server.url;
   const key = (await getPersonalKey(ownerId, spec.key)) ?? ((await isPrivilegedOwner(ownerId)) ? spec.shared() : "");
-  if (!key) throw new McpToolReportedError(`${spec.missing} Tell the user this in Korean; do not retry.`);
+  if (!key) throw new McpToolReportedError(spec.missing);
   return spec.url(key);
 }
 

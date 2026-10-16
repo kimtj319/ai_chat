@@ -181,7 +181,7 @@ async function call(as: string, method: string, p: string, body?: unknown): Prom
   } catch (err) {
     error = err as Error;
   }
-  check("토큰 없는 일반 계정은 도구 결과로 거절", error?.name === "McpToolReportedError" && error.message.includes("GitLab 토큰"), String(error));
+  check("토큰 없는 일반 계정은 도구 결과로 거절", error?.name === "McpToolReportedError" && error.message.includes("[API 키 미등록]") && error.message.includes("GitLab"), String(error));
   check("AI Product 는 공용 토큰", (await callUrlFor(gitlab, "aip1")) === "http://mock-gitlab/mcp?token=shared-gitlab-token");
   await setPersonalKey("carol", "gitlab", "glpat-carol/own+token");
   check("개인 토큰을 실어 보낸다(URL 인코딩)", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken");

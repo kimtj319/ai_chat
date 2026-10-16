@@ -580,21 +580,6 @@
   }
 }
 
-/* 검토 대기 개수. 메뉴 항목 오른쪽 끝에 붙는다. */
-.sidebar-settings-badge {
-  margin-left: auto;
-  min-width: 18px;
-  padding: 0 var(--space-2);
-  border-radius: 999px;
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  font-variant-numeric: tabular-nums;
-  line-height: 18px;
-  text-align: center;
-}
-
 /* ---- 설정 화면: 사이드바 전체를 바꿔 끼운다 ----
    메뉴·대화 목록은 왼쪽으로 조금 밀리며 사라지고, 설정 화면이 오른쪽에서 들어온다.
    유리판(사이드바 배경)은 그대로 두고 그 위의 내용만 갈아 끼우므로, 화면 전체가

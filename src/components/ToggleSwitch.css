@@ -1,0 +1,55 @@
+/* 트랙 배경색과 손잡이 위치가 함께 바뀌어 켜짐/꺼짐이 색만이 아니라 모양으로도 구별된다. */
+.toggle-switch {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-full);
+}
+
+.toggle-switch:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.toggle-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.toggle-switch-track {
+  display: inline-flex;
+  align-items: center;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--outline-variant);
+  transition: background-color 0.2s ease;
+}
+
+.toggle-switch[data-on="true"] .toggle-switch-track {
+  background: var(--primary);
+}
+
+.toggle-switch-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 손잡이가 끝으로 미끄러진다(예전에는 justify-content 로 순간 이동했다). */
+.toggle-switch[data-on="true"] .toggle-switch-thumb {
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle-switch-track,
+  .toggle-switch-thumb {
+    transition: none;
+  }
+}

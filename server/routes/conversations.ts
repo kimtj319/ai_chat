@@ -18,6 +18,7 @@ import { attachmentBudget, describeCost } from "../attachments/budget.js";
 import { resolveModel } from "../vllm/client.js";
 import { modelAccessFor, modelIsForbidden } from "../vllm/access.js";
 import { runConversationTurn } from "../chat/toolLoop.js";
+import { compactionSettled, compactionStatus } from "../chat/compactionProgress.js";
 import { summariseConversationTitle } from "../chat/titleSummary.js";
 import { detectProhibition } from "../chat/prohibitionDetect.js";
 import { appendPending } from "../storage/prohibitionsStore.js";
@@ -153,6 +154,21 @@ conversationsRouter.get("/conversations/:id", async (req, res, next) => {
     const conv = await getConversation(req.ownerId, req.params.id);
     if (!conv) return res.status(404).json({ error: "Not found" });
     res.json(withKind(conv));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /conversations/:id/compaction — the compaction running for this
+ * conversation, or { active: false }. A page opened (or reloaded) mid-compaction
+ * polls this to show the progress bar and keep the composer locked.
+ */
+conversationsRouter.get("/conversations/:id/compaction", async (req, res, next) => {
+  try {
+    if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
+    const status = compactionStatus(req.ownerId, req.params.id);
+    res.json(status ? { active: true, ...status } : { active: false });
   } catch (err) {
     next(err);
   }
@@ -581,8 +597,20 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   // "close" when the connection actually goes away. It also emits it when we
   // end the response ourselves, hence the guard: by then `finally` has already
   // removed this controller from activeStreams, so a completed turn is a no-op.
+  let leftDuringCompaction = false;
   res.on("close", () => {
-    if (activeStreams.get(id)?.has(controller)) controller.abort();
+    if (!activeStreams.get(id)?.has(controller)) return;
+    // A compaction in progress is let finish, so the summary it is writing is
+    // saved and the page finds a smaller conversation when it comes back; the
+    // turn itself still ends once it does. Stop (POST …/stop) is unaffected.
+    const settled = compactionSettled(id);
+    if (settled) {
+      leftDuringCompaction = true;
+      console.log(`[conversations] client left ${id} during compaction; finishing the compaction first`);
+      void settled.then(() => controller.abort());
+      return;
+    }
+    controller.abort();
   });
 
   // Runs beside the answer, not before it: the row is already in the sidebar
@@ -671,7 +699,14 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
         ...(result.toolCalls.length ? { toolCalls: result.toolCalls } : {}),
         ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
         usage: result.usage,
-        ...(result.error ? { error: result.error } : {}),
+        ...(result.error
+          ? {
+              error:
+                leftDuringCompaction && result.error === "Cancelled by client."
+                  ? "답변 도중 페이지를 떠나 이 답변은 중단되었습니다. 컨텍스트 압축은 끝까지 진행되어 저장되었으니 다시 질문해 주세요."
+                  : result.error,
+            }
+          : {}),
         ...(result.notice ? { notice: result.notice } : {}),
         ...(result.contentPromotedFromReasoning ? { contentPromotedFromReasoning: true } : {}),
         durationMs: Date.now() - startedAt,

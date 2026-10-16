@@ -2,6 +2,7 @@ import type { ToolContext, ToolDefinition } from "./types.js";
 import { config } from "../config.js";
 import { isPrivilegedOwner } from "../auth/privilege.js";
 import { getPersonalKey } from "../storage/personalKeys.js";
+import { missingKeyMessage } from "./missingKey.js";
 
 const MAX_RESULTS_CAP = 10;
 const SNIPPET_CHARS = 1_200;
@@ -108,8 +109,7 @@ export const webSearchTool: ToolDefinition = {
       throw new Error(
         ctx && (await isPrivilegedOwner(ctx.ownerId))
           ? "Web search is not configured: set TAVILY_API_KEY in the server environment."
-          : "웹 검색을 쓰려면 본인 Tavily API 키가 필요합니다. 설정 › 개인 키에서 등록하세요(app.tavily.com 에서 무료 발급). " +
-              "Tell the user this in Korean; do not retry.",
+          : missingKeyMessage("웹 검색(Tavily)", "app.tavily.com 에서 무료 발급"),
       );
     }
 

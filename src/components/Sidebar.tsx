@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { pushOverlay } from "../ui/overlayStack";
-import { getProhibitions } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useModels } from "../hooks/useModels";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
@@ -9,7 +8,6 @@ import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { CapabilityIcon } from "./CapabilityIcon";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
-import { ProhibitionsDialog } from "./ProhibitionsDialog";
 import { PersonalKeysDialog } from "./PersonalKeysDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { showErrorToast, showToast } from "./Toast";
@@ -144,15 +142,6 @@ function CloseIcon() {
   );
 }
 
-function NoEntryIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M5.6 5.6l12.8 12.8" />
-    </svg>
-  );
-}
-
 function KeyIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -189,6 +178,8 @@ interface SidebarProps {
   libraryOpen: boolean;
   documentsOpen: boolean;
   boardOpen: boolean;
+  /** 계정 관리 화면 — 사이드바 항목은 없지만 "새 대화" 가 선택된 것처럼 보이면 안 된다. */
+  adminOpen?: boolean;
   onOpenConversationSettings: () => void;
   onOpenToolsPanel: () => void;
   onOpenLibrary: () => void;
@@ -211,6 +202,7 @@ export function Sidebar({
   libraryOpen,
   documentsOpen,
   boardOpen,
+  adminOpen = false,
   onOpenConversationSettings,
   onOpenToolsPanel,
   onOpenLibrary,
@@ -255,11 +247,7 @@ export function Sidebar({
 
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const [prohibitionsOpen, setProhibitionsOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
-  // 메뉴를 열 때마다 새로 센다. 검토 대기는 대화 도중 서버가 보태므로, 앱을 연
-  // 시점의 값은 금방 낡는다.
-  const [prohibitionsPending, setProhibitionsPending] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   // 폰에서는 서랍 전체가 스크롤된다(Sidebar.css). 설정 화면은 서랍을 덮는 칸이라
@@ -287,19 +275,6 @@ export function Sidebar({
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settingsOpen]);
-
-  useEffect(() => {
-    if (!settingsOpen) return;
-    let alive = true;
-    getProhibitions()
-      .then((res) => alive && setProhibitionsPending(res.pendingCount))
-      .catch(() => {
-        // 개수를 못 세도 메뉴는 그대로 쓸 수 있다.
-      });
-    return () => {
-      alive = false;
     };
   }, [settingsOpen]);
 
@@ -395,22 +370,6 @@ export function Sidebar({
         className="sidebar-settings-action"
         onClick={() => {
           setSettingsOpen(false);
-          setProhibitionsOpen(true);
-        }}
-      >
-        <NoEntryIcon />
-        <span>하지 말 것 목록</span>
-        {prohibitionsPending > 0 && (
-          <span className="sidebar-settings-badge" aria-label={`검토 대기 ${prohibitionsPending}건`}>
-            {prohibitionsPending}
-          </span>
-        )}
-      </button>
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
           setKeysOpen(true);
         }}
       >
@@ -481,7 +440,6 @@ export function Sidebar({
     <>
       {endpointsOpen && <ModelEndpointDialog onClose={() => setEndpointsOpen(false)} />}
       {passwordOpen && <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />}
-      {prohibitionsOpen && <ProhibitionsDialog onClose={() => setProhibitionsOpen(false)} />}
       {keysOpen && <PersonalKeysDialog onClose={() => setKeysOpen(false)} />}
     {confirmLogout && (
       <ConfirmDialog
@@ -611,7 +569,8 @@ export function Sidebar({
     !toolsPanelOpen &&
     !libraryOpen &&
     !documentsOpen &&
-    !boardOpen;
+    !boardOpen &&
+    !adminOpen;
 
   return (
     <aside ref={asideRef} className={`sidebar${settingsOpen ? " settings-open" : ""}`}>

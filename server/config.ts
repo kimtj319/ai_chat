@@ -240,7 +240,16 @@ export const config = {
    * is spent the prompt grows monotonically again, crosses
    * contextToolStopRatio, and tools are dropped (see chat/toolLoop.ts).
    */
-  contextMaxCompactions: toInt(process.env.CONTEXT_MAX_COMPACTIONS, 2),
+  contextMaxCompactions: toInt(process.env.CONTEXT_MAX_COMPACTIONS, 4),
+  /**
+   * When a turn's starting history (system + earlier turns, earlier turns' tool
+   * results included) passes this fraction of the window, earlier turns are
+   * folded into the stored conversation summary before the turn runs
+   * (chat/historySummary.ts). Half the window, so the turn opens with room for
+   * its own tool results: at the old trigger (contextToolStopRatio, 0.8) a long
+   * research conversation opened every turn with tools already stopped.
+   */
+  contextHistorySummaryRatio: toRatio(process.env.CONTEXT_HISTORY_SUMMARY_RATIO, 0.5),
   /**
    * "Normal" reasoning mode's SAFETY NET: past this, the turn is stopped and
    * asked to write its answer from the reasoning it already produced

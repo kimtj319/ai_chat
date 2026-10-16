@@ -32,4 +32,6 @@ export interface LiveToolResult {
 export interface ClientChatMessage extends ChatMessage {
   streaming?: boolean;
   liveToolResults?: LiveToolResult[];
+  /** 진행 중인 컨텍스트 압축(진행률 막대). 끝나면 지운다. */
+  compaction?: { kind: import("../api/types").CompactionKind; progress: number };
 }

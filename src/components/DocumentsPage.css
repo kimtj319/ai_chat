@@ -47,11 +47,44 @@
 
 .documents-body {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 980px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 var(--space-10) var(--space-11);
+  padding: 0 var(--space-10) var(--space-10);
+}
+
+/* 가운데를 기준으로 왼쪽은 전체 공개 문서, 오른쪽은 내 문서. 칸마다 따로 스크롤된다 —
+   한쪽이 길어도 다른 쪽 머리가 화면 밖으로 밀려나지 않는다. */
+.documents-columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-8);
+}
+
+.documents-column {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-7);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-container) 55%, transparent);
+}
+
+/* 두 칸은 나란히 서므로 위아래 섹션 사이 여백(.documents-section + .documents-section)이 필요 없다. */
+.documents-columns > .documents-section.documents-column {
+  margin-top: 0;
+}
+
+.documents-column > .documents-section-title {
+  margin-top: 0;
+}
+
+.documents-column .documents-list {
+  margin-top: var(--space-4);
 }
 
 /* 전용 영역 대신 본문 전체가 받는다. 아홉 줄짜리 목록 위에 큰 빈 상자를
@@ -267,6 +300,23 @@
 .documents-badge[data-tone="model"] {
   background: transparent;
   border: 1px solid var(--outline-variant);
+}
+
+/* 좁은 화면에서는 위아래로: 내 문서를 먼저(손댈 수 있는 쪽), 본문 하나가 통째로 스크롤된다. */
+@media (max-width: 860px) {
+  .documents-body {
+    overflow-y: auto;
+    display: block;
+  }
+
+  .documents-columns {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+
+  .documents-column {
+    overflow: visible;
+  }
 }
 
 @media (max-width: 720px) {

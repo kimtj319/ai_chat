@@ -378,6 +378,8 @@ export type ServerEvent =
   | { type: "browser_action"; callId: string; toolCallId: string; name: string; arguments: unknown }
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
   | { type: "notice"; message: string }
+  /** 컨텍스트 압축 진행률. 시작부터 끝까지 입력을 막는다. */
+  | { type: "compaction"; kind: CompactionKind; phase: "start" | "progress" | "end"; progress: number; ok?: boolean }
   /** The conversation was renamed from a summary of the request that opened it. */
   | { type: "title"; title: string }
   | { type: "done"; message: ChatMessage }
@@ -677,3 +679,11 @@ export interface MyAccess {
   privileged: boolean;
   keys: Record<PersonalKeyName, PersonalKeyState>;
 }
+
+/** "history": 이전 대화를 요약. "research": 이번 답변의 도구 결과를 정리. */
+export type CompactionKind = "history" | "research";
+
+/** `GET /api/conversations/:id/compaction` */
+export type CompactionStatusResponse =
+  | { active: false }
+  | { active: true; kind: CompactionKind; progress: number; startedAt: string };

@@ -14,8 +14,11 @@ import {
   shortToolName,
   type McpServerDraft,
 } from "../mcp/rules";
+import { MISSING_KEY_NOTICE, missingKey, useMyAccess } from "../hooks/useMyAccess";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { MasterDetail } from "./MasterDetail";
 import { McpServerForm } from "./McpServerForm";
+import { ToggleSwitch } from "./ToggleSwitch";
 import "./LibraryPage.css";
 
 function BackIcon() {
@@ -51,42 +54,6 @@ function formatDateTime(value: string): string {
 function originLabel(server: McpServerSummary, owned: boolean): string {
   if (server.origin === "builtin") return "기본 제공";
   return owned ? "내가 등록" : "채택함";
-}
-
-/**
- * 대화·피커에서 이 서버를 켜고 끄는 스위치. "공유됨" 구역의 담기 체크박스와는
- * 뜻이 다르다 — 담기는 라이브러리에 들어오는 것이고, 이 스위치는 이미 들어온
- * 서버를 지금 켜 둘지를 정한다(라벨에 "대화에서 사용"을 넣어 구분한다).
- * <button role="switch"> 라서 Enter·Space 는 네이티브 클릭으로 이미 동작하고,
- * 켜짐/꺼짐은 손잡이 위치로도 구별되어 색에만 기대지 않는다.
- */
-function LibrarySwitch({
-  on,
-  disabled,
-  label,
-  onToggle,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  label: string;
-  onToggle: (next: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      disabled={disabled}
-      className="library-switch"
-      data-on={on}
-      onClick={() => onToggle(!on)}
-    >
-      <span className="library-switch-track" aria-hidden="true">
-        <span className="library-switch-thumb" />
-      </span>
-    </button>
-  );
 }
 
 function HealthLine({ health }: { health: McpHealth }) {
@@ -138,7 +105,8 @@ interface LibraryCardProps {
   owned: boolean;
   /** !hidden — whether this server's tools are on in the picker and the prompt. */
   enabled: boolean;
-  onToggleEnabled: (next: boolean) => void;
+  /** True when this account has no key for a server that needs one. */
+  keyMissing: boolean;
   busy: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -156,7 +124,7 @@ function LibraryCard({
   server,
   owned,
   enabled,
-  onToggleEnabled,
+  keyMissing,
   busy,
   onEdit,
   onDelete,
@@ -170,7 +138,7 @@ function LibraryCard({
   const needsCredential = server.requiresCredential && !server.hasCredential;
 
   return (
-    <li className="library-card">
+    <div className="library-detail">
       <div className="library-card-head">
         <h3 className="library-card-name">{server.name}</h3>
         <span className="library-badge" data-origin={server.origin}>
@@ -181,13 +149,13 @@ function LibraryCard({
             관리자 비활성화
           </span>
         )}
-        <LibrarySwitch
-          on={enabled}
-          disabled={busy}
-          label={`${server.name} 대화에서 사용`}
-          onToggle={onToggleEnabled}
-        />
+        <span className="library-badge">{enabled ? "대화에서 켜짐" : "꺼짐"}</span>
       </div>
+      {keyMissing && (
+        <p className="library-warning" role="note">
+          {MISSING_KEY_NOTICE}
+        </p>
+      )}
 
       <p className="library-card-description">{server.description}</p>
       <ServerMeta server={server} />
@@ -285,31 +253,23 @@ function LibraryCard({
           </button>
         )}
       </div>
-    </li>
+    </div>
   );
 }
+
+/** 왼쪽 목록의 한 줄: 내 라이브러리의 서버, 또는 다른 사람이 공유한 서버. */
+type LibraryEntry = { kind: "mine" | "shared"; server: McpServerSummary };
 
 interface SharedCardProps {
   server: McpServerSummary;
   adopted: boolean;
   busy: boolean;
-  onToggleAdoption: (adopted: boolean) => void;
   onAdminSetStatus: ((disabled: boolean) => void) | null;
 }
 
-function SharedCard({ server, adopted, busy, onToggleAdoption, onAdminSetStatus }: SharedCardProps) {
+function SharedCard({ server, adopted, busy, onAdminSetStatus }: SharedCardProps) {
   return (
-    <li className="library-shared-card">
-      <label className="library-adopt">
-        <input
-          type="checkbox"
-          checked={adopted}
-          disabled={busy}
-          onChange={(event) => onToggleAdoption(event.target.checked)}
-        />
-        <span className="visually-hidden">{server.name} 채택</span>
-      </label>
-
+    <div className="library-detail">
       <div className="library-shared-body">
         <div className="library-card-head">
           <h3 className="library-card-name">{server.name}</h3>
@@ -365,7 +325,7 @@ function SharedCard({ server, adopted, busy, onToggleAdoption, onAdminSetStatus 
           </div>
         )}
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -397,6 +357,9 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formFor, setFormFor] = useState<McpServerSummary | "new" | null>(null);
   const [pendingDelete, setPendingDelete] = useState<McpServerSummary | null>(null);
+  /** "mine:<id>" 또는 "shared:<id>" — 채택한 서버는 두 목록에 다 있어서 id 만으로는 어느 줄인지 모른다. */
+  const [selected, setSelected] = useState<string | null>(null);
+  const access = useMyAccess();
 
   /** Every write goes through here so one failure path serves them all. */
   async function run(id: string, doneMessage: string, work: () => Promise<unknown>): Promise<boolean> {
@@ -481,37 +444,110 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
           </p>
         )}
 
-        <section className="library-section">
-          <h2 className="library-section-title">내 라이브러리</h2>
-          <p className="library-section-hint">
-            기본 제공 서버와 내가 등록하거나 채택한 서버입니다. 이 중 스위치를 켠 서버만 채팅 입력창의 MCP
-            도구 선택(+)에 나타나고, 모델에게도 그 서버의 도구가 전달됩니다.
-          </p>
-
-          {loading ? (
-            <p className="library-empty">불러오는 중…</p>
-          ) : mine.length === 0 ? (
-            <p className="library-empty">라이브러리가 비어 있습니다. 서버를 등록하거나 아래에서 공유된 서버를 채택해보세요.</p>
-          ) : (
-            <ul className="library-card-list">
-              {mine.map((server) => {
-                const owned = server.origin === "user" && server.createdBy === meId;
-                // 채택 해제는 남이 등록한 서버를 라이브러리 밖으로 완전히 빼는
-                // 조작이다 — 기본 제공이나 내가 등록한 서버에는 뜻이 없다(둘 다
-                // adopted 와 무관하게 항상 멤버라 채택 해제해도 그대로 남는다).
-                // 그런 경우 끄고 켜는 일은 위 스위치 하나로 충분하다.
-                const canUnadopt = server.origin !== "builtin" && !owned;
-                return (
-                <LibraryCard
-                  key={server.id}
-                  server={server}
-                  owned={owned}
-                  enabled={!hiddenIds.has(server.id)}
-                  onToggleEnabled={(next) =>
+        {loading ? (
+          <p className="library-empty">불러오는 중…</p>
+        ) : (
+          <MasterDetail
+            className="library-master-detail"
+            groups={[
+              {
+                key: "mine",
+                title: "내 라이브러리",
+                hint: "기본 제공 서버와 내가 등록하거나 채택한 서버입니다. 스위치를 켠 서버만 채팅 입력창의 MCP 도구 선택(+)에 나타나고, 모델에게도 그 서버의 도구가 전달됩니다.",
+                items: mine.map((server): LibraryEntry => ({ kind: "mine", server })),
+                empty: "라이브러리가 비어 있습니다. 서버를 등록하거나 아래에서 공유된 서버를 채택해보세요.",
+              },
+              {
+                key: "shared",
+                title: "다른 사용자가 공유하는 라이브러리",
+                hint: "스위치를 켜면 내 라이브러리에 추가됩니다. 켜기 전에는 내 대화에서 어떤 것도 실행되지 않습니다.",
+                items: shared.map((server): LibraryEntry => ({ kind: "shared", server })),
+                empty: "다른 사용자가 공유한 서버가 없습니다.",
+              },
+            ]}
+            idOf={(entry) => `${entry.kind}:${entry.server.id}`}
+            selectedId={selected ?? (mine[0] ? `mine:${mine[0].id}` : shared[0] ? `shared:${shared[0].id}` : null)}
+            onSelect={setSelected}
+            renderRow={({ kind, server }) => {
+              const owned = server.origin === "user" && server.createdBy === meId;
+              return (
+                <>
+                  <span className="md-row-name">
+                    {server.name}
+                    <span className="library-badge" data-origin={server.origin}>
+                      {kind === "mine" ? originLabel(server, owned) : `${server.createdBy} 님`}
+                    </span>
+                    {server.status === "disabled" && (
+                      <span className="library-badge" data-tone="danger">
+                        관리자 비활성화
+                      </span>
+                    )}
+                    {kind === "mine" && missingKey(access, { mcpSlug: server.slug, builtin: server.origin === "builtin" }) && (
+                      <span className="md-badge" data-tone="warning">
+                        키 필요
+                      </span>
+                    )}
+                  </span>
+                  <span className="md-row-desc">{server.description}</span>
+                </>
+              );
+            }}
+            renderTrailing={({ kind, server }) =>
+              kind === "mine" ? (
+                <ToggleSwitch
+                  on={!hiddenIds.has(server.id)}
+                  disabled={busyId === server.id}
+                  label={`${server.name} 대화에서 사용`}
+                  onToggle={(next) =>
                     void run(server.id, next ? `${server.name} 서버를 켰습니다.` : `${server.name} 서버를 껐습니다.`, () =>
                       api.setMcpHidden(server.id, !next),
                     )
                   }
+                />
+              ) : (
+                <ToggleSwitch
+                  on={adoptedIds.has(server.id)}
+                  disabled={busyId === server.id}
+                  label={`${server.name} 내 라이브러리에 추가`}
+                  onToggle={(next) =>
+                    void run(
+                      server.id,
+                      next ? `${server.name} 서버를 내 라이브러리에 추가했습니다.` : `${server.name} 서버를 뺐습니다.`,
+                      () => api.setMcpAdoption(server.id, next),
+                    )
+                  }
+                />
+              )
+            }
+            renderDetail={({ kind, server }) => {
+              const adminSetStatus = onAdminSetStatus
+                ? (disabled: boolean) =>
+                    void run(server.id, disabled ? `${server.name} 서버를 비활성화했습니다.` : `${server.name} 서버를 활성화했습니다.`, () =>
+                      onAdminSetStatus(server.id, disabled),
+                    )
+                : null;
+              if (kind === "shared") {
+                return (
+                  <SharedCard
+                    server={server}
+                    adopted={adoptedIds.has(server.id)}
+                    busy={busyId === server.id}
+                    onAdminSetStatus={adminSetStatus}
+                  />
+                );
+              }
+              const owned = server.origin === "user" && server.createdBy === meId;
+              // 채택 해제는 남이 등록한 서버를 라이브러리 밖으로 완전히 빼는
+              // 조작이다 — 기본 제공이나 내가 등록한 서버에는 뜻이 없다(둘 다
+              // adopted 와 무관하게 항상 멤버라 채택 해제해도 그대로 남는다).
+              // 그런 경우 끄고 켜는 일은 줄의 스위치 하나로 충분하다.
+              const canUnadopt = server.origin !== "builtin" && !owned;
+              return (
+                <LibraryCard
+                  server={server}
+                  owned={owned}
+                  enabled={!hiddenIds.has(server.id)}
+                  keyMissing={missingKey(access, { mcpSlug: server.slug, builtin: server.origin === "builtin" }) !== null}
                   busy={busyId === server.id}
                   onEdit={() => setFormFor(server)}
                   onDelete={() => setPendingDelete(server)}
@@ -538,59 +574,13 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                       () => api.setMcpCredential(server.id, credential),
                     )
                   }
-                  onAdminSetStatus={
-                    onAdminSetStatus
-                      ? (disabled) =>
-                          void run(server.id, disabled ? `${server.name} 서버를 비활성화했습니다.` : `${server.name} 서버를 활성화했습니다.`, () =>
-                            onAdminSetStatus(server.id, disabled),
-                          )
-                      : null
-                  }
+                  onAdminSetStatus={adminSetStatus}
                 />
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <section className="library-section">
-          <h2 className="library-section-title">다른 사용자가 공유하는 라이브러리</h2>
-          <p className="library-section-hint">
-            체크하면 내 라이브러리에 추가됩니다. 체크하기 전에는 내 대화에서 어떤 것도 실행되지 않습니다.
-          </p>
-
-          {loading ? (
-            <p className="library-empty">불러오는 중…</p>
-          ) : shared.length === 0 ? (
-            <p className="library-empty">다른 사용자가 공유한 서버가 없습니다.</p>
-          ) : (
-            <ul className="library-card-list">
-              {shared.map((server) => (
-                <SharedCard
-                  key={server.id}
-                  server={server}
-                  adopted={adoptedIds.has(server.id)}
-                  busy={busyId === server.id}
-                  onToggleAdoption={(next) =>
-                    void run(
-                      server.id,
-                      next ? `${server.name} 서버를 내 라이브러리에 추가했습니다.` : `${server.name} 서버를 뺐습니다.`,
-                      () => api.setMcpAdoption(server.id, next),
-                    )
-                  }
-                  onAdminSetStatus={
-                    onAdminSetStatus
-                      ? (disabled) =>
-                          void run(server.id, disabled ? `${server.name} 서버를 비활성화했습니다.` : `${server.name} 서버를 활성화했습니다.`, () =>
-                            onAdminSetStatus(server.id, disabled),
-                          )
-                      : null
-                  }
-                />
-              ))}
-            </ul>
-          )}
-        </section>
+              );
+            }}
+            placeholder="왼쪽에서 서버를 고르면 자세한 설명이 여기에 보입니다."
+          />
+        )}
       </div>
 
       {formFor && (

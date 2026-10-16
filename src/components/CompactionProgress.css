@@ -1,0 +1,54 @@
+.compaction-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+
+.compaction-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.compaction-progress-label {
+  font-size: var(--text-sm);
+  color: var(--on-surface);
+}
+
+.compaction-progress-percent {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.compaction-progress-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--outline-variant);
+  overflow: hidden;
+}
+
+.compaction-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+
+.compaction-progress-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compaction-progress-fill {
+    transition: none;
+  }
+}

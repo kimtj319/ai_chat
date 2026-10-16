@@ -18,6 +18,8 @@ import "./Composer.css";
 const MIN_COMPOSER_HEIGHT = 40;
 const MAX_COMPOSER_HEIGHT = 220;
 
+const COMPACTING_PLACEHOLDER = "컨텍스트를 압축하는 중입니다. 끝나면 다시 입력할 수 있습니다.";
+
 /** Past this share of the per-message budget the total stops being neutral. */
 const WARN_SHARE = 0.3;
 
@@ -28,6 +30,8 @@ interface ComposerProps {
   /** Whether this conversation's model ignores the reasoning controls. */
   reasoningFixed: boolean;
   isStreaming: boolean;
+  /** 컨텍스트 압축 중 — 입력과 보내기를 막는다. 끝나면 풀린다. */
+  compacting: boolean;
   attachments: AttachmentDraft;
   onSend: (text: string, attachmentIds: string[]) => void;
   onStop: () => void;
@@ -71,6 +75,7 @@ export function Composer({
   kind,
   reasoningFixed,
   isStreaming,
+  compacting,
   attachments,
   onSend,
   onStop,
@@ -138,7 +143,7 @@ export function Composer({
   }
 
   function submit() {
-    if (isStreaming || !canSend) return;
+    if (isStreaming || compacting || !canSend) return;
     if (hasFailed) {
       attachments.reportSubmitBlocked();
       return;
@@ -255,7 +260,8 @@ export function Composer({
         <textarea
           ref={textareaRef}
           className="composer-textarea"
-          placeholder={composerPlaceholder(kind, touch)}
+          placeholder={compacting ? COMPACTING_PLACEHOLDER : composerPlaceholder(kind, touch)}
+          disabled={compacting}
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -294,7 +300,18 @@ export function Composer({
               onBudgetChange={setBudget}
             />
           )}
-          {isStreaming ? (
+          {compacting ? (
+            // 압축 중에는 멈추기도 보내기도 받지 않는다 — 압축은 끝까지 가서 저장된다.
+            <button
+              type="button"
+              className="btn btn-primary composer-send composer-send-waiting"
+              disabled
+              aria-label={COMPACTING_PLACEHOLDER}
+              data-tooltip={COMPACTING_PLACEHOLDER}
+            >
+              <span className="composer-send-spinner" aria-hidden="true" />
+            </button>
+          ) : isStreaming ? (
             <button
               type="button"
               className="btn btn-danger composer-send"

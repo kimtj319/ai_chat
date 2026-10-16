@@ -24,9 +24,11 @@ import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
 import { shortModelName } from "./ModelSelector";
 import { useModels } from "../hooks/useModels";
+import { useRemoteCompaction } from "../hooks/useRemoteCompaction";
 import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
 import { ToolsPanel } from "./ToolsPanel";
+import { CompactionProgress } from "./CompactionProgress";
 import "./ChatView.css";
 
 /** How close to the end still counts as "at the bottom".
@@ -47,15 +49,6 @@ interface ChatViewProps {
   onOpenLibrary: () => void;
   /** Opens the 문의 게시판 page, from the header. */
   onOpenBoard: () => void;
-}
-
-function ComposeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  );
 }
 
 /* 말풍선 안에 줄 두 개 — 게시판은 결국 오가는 말이다. 방패(관리)·연필(새 대화)과
@@ -151,7 +144,7 @@ export function ChatView({
   onOpenLibrary,
   onOpenBoard,
 }: ChatViewProps) {
-  const { createConversation } = useStore();
+  const { createConversation, selectConversation } = useStore();
   // 메시지를 그리는 쪽이라 흐르는 값을 직접 읽는다 — 토큰마다 다시 그려지는 것이 여기서는 제 일이다.
   const { activeConversation, activeConversationLoading, activeConversationError } = useActiveConversation();
   // A conversation with an empty `model` uses whatever the server defaults to,
@@ -159,6 +152,12 @@ export function ChatView({
   const { models, catalog, current } = useModels();
   const { isStreaming, sendMessage, stopGeneration, turnStartedAt, answerNowAfterMs, answerNowState, answerStreaming, requestAnswerNow } =
     chatStream;
+  const activeId = activeConversation?.id ?? null;
+  // 이 페이지가 흘려 받지 않는 압축(새로 고침·다시 열기)은 서버에 묻는다. 끝나면 요약된 대화를 다시 불러온다.
+  const remoteCompaction = useRemoteCompaction(activeId, chatStream.streamingId !== activeId, () => {
+    if (activeId) void selectConversation(activeId);
+  });
+  const compacting = (activeId !== null && chatStream.compactingId === activeId) || remoteCompaction !== null;
   const { status, recheck } = useHealthCheck();
   const listRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -462,15 +461,6 @@ export function ChatView({
             <button
               type="button"
               className="btn-icon"
-              data-tooltip="새 대화 시작"
-              aria-label="새 대화 시작"
-              onClick={() => void createConversation()}
-            >
-              <ComposeIcon />
-            </button>
-            <button
-              type="button"
-              className="btn-icon"
               data-tooltip="문의 게시판"
               aria-label="문의 게시판"
               onClick={onOpenBoard}
@@ -513,6 +503,14 @@ export function ChatView({
               <MessageItem key={message.id} conversationId={activeConversation.id} message={message} />
             ))
           )}
+          {remoteCompaction && (
+            <div className="message-row assistant">
+              <span className="message-avatar waiting" aria-hidden="true" />
+              <div className="message-bubble">
+                <CompactionProgress kind={remoteCompaction.kind} progress={remoteCompaction.progress} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -542,6 +540,7 @@ export function ChatView({
           kind={kind}
           reasoningFixed={selectedEntry?.reasoningFixed === true}
           isStreaming={isStreaming}
+          compacting={compacting}
           attachments={attachments}
           onSend={(text, attachmentIds) => {
             // Sending is a deliberate move to the end of the transcript, not a

@@ -7,8 +7,9 @@ import "./PersonalKeysDialog.css";
 /**
  * 개인 키: 웹 검색(Tavily)·wisenut 이슈(GitLab)·Alpha Vantage 를 본인 키로 쓰기 위한 화면.
  *
- * 공용 키를 쓸 수 있는 계정(관리자·AI Product 팀)은 등록하지 않아도 되고, 등록하면
+ * 공용 키를 쓸 수 있는 계정(auth/privilege.ts)은 등록하지 않아도 되고, 등록하면
  * 본인 키가 먼저 쓰인다. 그 밖의 계정은 여기서 등록해야 그 기능이 동작한다.
+ * 화면 문구는 모두에게 같다 — 어느 팀이 공용 키를 쓰는지는 알리지 않는다.
  * 서버는 키 값을 돌려주지 않는다 — 등록 여부와 끝 네 자리만 보인다.
  */
 const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: string }> = [
@@ -53,9 +54,7 @@ export function PersonalKeysDialog({ onClose }: { onClose: () => void }) {
     <Modal title="개인 키" onClose={onClose} width={480}>
       {access && (
         <p className="keys-scope" role="note">
-          {access.privileged
-            ? "AI Product 팀 계정은 공용 키를 쓸 수 있어 등록하지 않아도 됩니다. 등록하면 본인 키가 먼저 쓰입니다."
-            : "웹 검색·wisenut 이슈·Alpha Vantage 는 본인 키를 등록해야 쓸 수 있습니다. 키는 이 계정에서만 쓰이며 다시 보여 주지 않습니다."}
+          등록한 키는 이 계정의 웹 검색·wisenut 이슈·Alpha Vantage 호출에만 쓰이며, 저장한 뒤에는 다시 보여 주지 않습니다.
         </p>
       )}
       {loadError && <p className="message-error">{loadError}</p>}

@@ -104,22 +104,18 @@ export default function App() {
   // the chat shell and would otherwise have nowhere to put a message.
   return (
     <>
-      {view === "admin" && isAdmin ? (
-        <AdminPage onBack={() => navigate("chat")} />
-      ) : (
-        // Mounted only once signed in, so its bootstrap never fires against a
-        // session that does not exist — and unmounted on logout, which drops
-        // every conversation the previous user had loaded.
-        <StoreProvider>
-          {/* The library keeps the sidebar, so unlike the admin page it swaps
-              the body inside the shell rather than replacing it. */}
-          <ChatShell
-            view={view}
-            onOpenAdmin={isAdmin ? () => navigate("admin") : null}
-            onAdminSetMcpStatus={isAdmin ? setMcpServerStatus : null}
-          />
-        </StoreProvider>
-      )}
+      {/* Mounted only once signed in, so its bootstrap never fires against a
+          session that does not exist — and unmounted on logout, which drops
+          every conversation the previous user had loaded. Every page,
+          the admin page included, swaps the body inside the shell and keeps
+          the sidebar, so moving between them reads as one app. */}
+      <StoreProvider>
+        <ChatShell
+          view={view === "admin" && !isAdmin ? "chat" : view}
+          onOpenAdmin={isAdmin ? () => navigate("admin") : null}
+          onAdminSetMcpStatus={isAdmin ? setMcpServerStatus : null}
+        />
+      </StoreProvider>
       <BrowserConfirmHost />
       <ToastHost />
       <TooltipLayer />
@@ -241,6 +237,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   const showLibrary = view === "library";
   const showDocuments = view === "documents";
   const showBoard = view === "board";
+  const showAdmin = view === "admin" && onOpenAdmin !== null;
 
   const sourceOpen = useOpenSource() !== null;
   useEffect(() => {
@@ -285,6 +282,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         libraryOpen={showLibrary}
         documentsOpen={showDocuments}
         boardOpen={showBoard}
+        adminOpen={showAdmin}
         // Both panels live in ChatView, so opening one has to bring the chat
         // back with it when the library is the thing on screen.
         onOpenConversationSettings={() => {
@@ -301,7 +299,9 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         onOpenAdmin={onOpenAdmin && (() => navigateFromDrawer("admin"))}
         onCloseDrawer={narrow ? () => setDrawerOpen(false) : undefined}
       />
-      {showLibrary ? (
+      {showAdmin ? (
+        <AdminPage onBack={() => navigate("chat")} />
+      ) : showLibrary ? (
         <LibraryPage onBack={() => navigate("chat")} onAdminSetStatus={onAdminSetMcpStatus} />
       ) : showDocuments ? (
         <DocumentsPage onBack={() => navigate("chat")} />
@@ -320,7 +320,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         />
       )}
       {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
-      {!showLibrary && !showDocuments && !showBoard && <SourcePanel />}
+      {!showLibrary && !showDocuments && !showBoard && !showAdmin && <SourcePanel />}
     </div>
   );
 }

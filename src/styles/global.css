@@ -95,18 +95,25 @@ button:disabled {
   background: transparent;
 }
 
-/* Transparent until the area is actually being scrolled (see
-   useScrollbarFade). Styling this pseudo-element at all opts out of Chrome's
-   own fading overlay scrollbar, so the fade has to be put back by hand; only
-   the colour changes, so the gutter never moves. */
-::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: var(--radius-full);
-  transition: background-color 0.3s ease;
+/* Transparent until the area is actually being scrolled: useScrollbarFade
+   animates --sb-alpha on the scrolling element from 0 to 1 and back. Styling
+   this pseudo-element at all opts out of Chrome's own fading overlay
+   scrollbar, so the fade has to be put back by hand; only the colour changes,
+   so the gutter never moves. Registered so it can be animated, and reset on
+   every element so a nested area does not inherit its parent's bar. */
+@property --sb-alpha {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
 }
 
-[data-scrolling="true"]::-webkit-scrollbar-thumb {
-  background: var(--outline-variant);
+* {
+  --sb-alpha: 0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--outline-variant) calc(var(--sb-alpha) * 100%), transparent);
+  border-radius: var(--radius-full);
 }
 
 a {

@@ -40,6 +40,10 @@ export function useChatStream() {
   // 다시 거짓이 된다 — 도구 사이에 끼는 짧은 말("찾아보겠습니다") 뒤에 다시
   // 일하러 가면 "지금 답변하기" 가 되살아나야 하기 때문이다.
   const [answerStreaming, setAnswerStreaming] = useState(false);
+  // 컨텍스트를 압축하는 중인 대화. 그동안 입력창을 막는다(Composer).
+  const [compactingId, setCompactingId] = useState<string | null>(null);
+  // 지금 흘려 받는 대화 — 그 대화의 압축은 스트림이 알려 주므로 서버에 따로 묻지 않는다.
+  const [streamingId, setStreamingId] = useState<string | null>(null);
 
   const sendMessage = useCallback(
     (conversationId: string, text: string, attachmentIds: string[] = [], options: SendOptions = {}) => {
@@ -61,6 +65,7 @@ export function useChatStream() {
       abortRef.current = controller;
       streamingIdRef.current = conversationId;
       setIsStreaming(true);
+      setStreamingId(conversationId);
       // 새 턴이다 — 이전 턴의 "지금 답변하기" 상태를 물려받지 않는다.
       setTurnStartedAt(null);
       setAnswerNowState("idle");
@@ -96,6 +101,8 @@ export function useChatStream() {
         setTurnStartedAt(null);
         setAnswerNowState("idle");
       setAnswerStreaming(false);
+        setCompactingId(null);
+        setStreamingId(null);
       }
 
       const body = {
@@ -181,6 +188,18 @@ export function useChatStream() {
             case "browser_action":
               void runBrowserAction(conversationId, event, controller.signal);
               break;
+
+            case "compaction": {
+              const id = ensurePlaceholder();
+              if (event.phase === "end") {
+                setCompactingId(null);
+                patchMessage(conversationId, id, { compaction: undefined });
+              } else {
+                setCompactingId(conversationId);
+                patchMessage(conversationId, id, { compaction: { kind: event.kind, progress: event.progress } });
+              }
+              break;
+            }
 
             case "usage": {
               const id = ensurePlaceholder();
@@ -273,6 +292,8 @@ export function useChatStream() {
 
   return {
     isStreaming,
+    streamingId,
+    compactingId,
     sendMessage,
     stopGeneration,
     turnStartedAt,

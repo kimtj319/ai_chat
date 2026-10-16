@@ -173,12 +173,22 @@ interface Coverage {
   previous: HistorySummary | null;
 }
 
-function planCoverage(conversation: Conversation): Coverage | null {
+/**
+ * "recent" keeps the last KEEP_RECENT_MESSAGES verbatim; "all" covers every
+ * message before the newest user message (the one this turn answers). "all" is
+ * for a conversation whose few recent messages are themselves the problem: a
+ * research answer replays its tool results in full (historyBuilder), so two
+ * exchanges can carry 150-290K characters (measured in production, 2026-10-16) and a
+ * "recent" plan either covers nothing or leaves the window full.
+ */
+export type CoverageMode = "recent" | "all";
+
+function planCoverage(conversation: Conversation, mode: CoverageMode = "recent"): Coverage | null {
   const messages = conversation.messages;
   // The tail must start at a user message: cutting between a question and its
   // answer leaves an assistant message whose question exists only in the
   // summary — the same "orphan half of an exchange" the budget ladder avoids.
-  let to = messages.length - KEEP_RECENT_MESSAGES;
+  let to = mode === "all" ? messages.length - 1 : messages.length - KEEP_RECENT_MESSAGES;
   while (to > 0 && messages[to]?.role !== "user") to--;
   const active = activeSummary(conversation);
   const from = active ? active.index + 1 : 0;
@@ -192,7 +202,7 @@ function planCoverage(conversation: Conversation): Coverage | null {
  * (a mean of 2,769ms on a 232k-token list — see vllm/client.ts).
  */
 export function couldSummarise(conversation: Conversation): boolean {
-  return planCoverage(conversation) !== null;
+  return planCoverage(conversation, "all") !== null;
 }
 
 /**
@@ -247,7 +257,7 @@ export function needsSummary(
   if (!couldSummarise(conversation)) return false;
   const desiredOutput = conversation.settings?.maxTokens ?? DEFAULT_SETTINGS.maxTokens;
   if (promptTokens + desiredOutput + SAFETY_MARGIN_TOKENS > contextWindow) return true;
-  return promptTokens > contextWindow * config.contextToolStopRatio;
+  return promptTokens > contextWindow * Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio);
 }
 
 /** The summary as the model sees it: one assistant message, ahead of the tail. */
@@ -283,6 +293,9 @@ export interface HistorySummaryInput {
   endpoint: VllmEndpoint;
   /** The turn's abort signal, so Stop cancels the summarisation too. */
   signal: AbortSignal;
+  mode?: CoverageMode;
+  /** 0..1 as the summary streams in; first called with 0 when the model call starts. */
+  onProgress?: (fraction: number) => void;
 }
 
 /**
@@ -293,12 +306,13 @@ export interface HistorySummaryInput {
  * exactly what happened before this existed.
  */
 export async function summariseHistory(input: HistorySummaryInput): Promise<HistorySummary | null> {
-  const plan = planCoverage(input.conversation);
+  const plan = planCoverage(input.conversation, input.mode);
   if (!plan) return null;
   const through = input.conversation.messages[plan.to - 1];
   if (!through) return null;
 
   const startedAt = Date.now();
+  input.onProgress?.(0);
   try {
     const body: ChatCompletionRequestBody = {
       model: input.model,
@@ -330,7 +344,11 @@ export async function summariseHistory(input: HistorySummaryInput): Promise<Hist
       if (chunk.usage) completionTokens += chunk.usage.completion_tokens ?? 0;
       const choice = chunk.choices?.[0];
       // Reasoning deltas are ignored: only the summary survives this call.
-      if (choice?.delta?.content) text += choice.delta.content;
+      if (choice?.delta?.content) {
+        text += choice.delta.content;
+        // The measured summaries ran ~1,300 characters; past that the bar waits near the end.
+        input.onProgress?.(Math.min(0.95, text.length / 1_400));
+      }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
 
@@ -373,6 +391,8 @@ export interface TurnHistoryInput {
   /** The model's context window (catalog value); null disables summarisation. */
   contextWindow: number | null;
   signal: AbortSignal;
+  /** Progress of a summarisation, when one runs (0 = started). Not called otherwise. */
+  onProgress?: (fraction: number) => void;
 }
 
 export interface TurnHistory {
@@ -431,27 +451,43 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
     return { messages, summaryMessage };
   }
 
-  const summary = await summariseHistory({
-    conversation,
-    model: input.model,
-    endpoint: input.endpoint,
-    signal: input.signal,
-  });
-  if (!summary) return { messages, summaryMessage };
+  // "recent" first, so the last exchanges stay verbatim when that is enough;
+  // "all" when there is nothing older to fold, or when the kept tail alone still
+  // fills the window — at most two summarisation calls per turn.
+  let summary: HistorySummary | null = null;
+  const modes: CoverageMode[] = planCoverage(conversation, "recent") ? ["recent", "all"] : ["all"];
+  for (const [i, mode] of modes.entries()) {
+    // Two passes share one bar: the first fills it to half, the second the rest.
+    const share = modes.length === 1 ? 1 : 0.5;
+    const next = await summariseHistory({
+      conversation,
+      model: input.model,
+      endpoint: input.endpoint,
+      signal: input.signal,
+      mode,
+      onProgress: input.onProgress && ((f) => input.onProgress!(i * 0.5 + f * share)),
+    });
+    if (!next) break;
+    summary = next;
 
-  // Persisted before it is used, so a restart — or the next turn — sees the same
-  // summary rather than paying for another one. A write failure is survivable:
-  // the turn still runs on the summary, the next one summarises again.
-  try {
-    await saveHistorySummary(ownerId, conversation.id, summary);
-  } catch (err) {
-    console.warn(`[history] could not persist the summary for conversation ${conversation.id}:`, err);
+    // Persisted before it is used, so a restart — or the next turn — sees the same
+    // summary rather than paying for another one. A write failure is survivable:
+    // the turn still runs on the summary, the next one summarises again.
+    try {
+      await saveHistorySummary(ownerId, conversation.id, summary);
+    } catch (err) {
+      console.warn(`[history] could not persist the summary for conversation ${conversation.id}:`, err);
+    }
+    // The route's own snapshot, so the rest of this turn builds from the summary too.
+    conversation.historySummary = summary;
+    options = historyBuildOptions(conversation);
+    messages = await buildHistoryMessages(conversation, ownerId, options);
+    summaryMessage = options?.prelude;
+    if (i === modes.length - 1) break;
+    const after = await countPromptTokens(input.endpoint, input.model, messages, undefined, input.signal).catch(() => null);
+    if (!after || !needsSummary(conversation, after.tokens, input.contextWindow)) break;
   }
-  // The route's own snapshot, so the rest of this turn builds from the summary too.
-  conversation.historySummary = summary;
-  options = historyBuildOptions(conversation);
-  messages = await buildHistoryMessages(conversation, ownerId, options);
-  summaryMessage = options?.prelude;
+  if (!summary) return { messages, summaryMessage };
   return { messages, summaryMessage, notice: summaryNotice(summary) };
 }
 
