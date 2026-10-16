@@ -227,3 +227,54 @@
     0 1px 2px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 var(--glass-card-highlight);
 }
+
+/* ---- Refinements chosen by the design vote (2026-10-16) ----
+   Seven candidates were rendered and ranked by five reviewers (glass design,
+   accessibility, daily use, aesthetics, product UX), then a final round put the
+   current design against the two best merges. The current design kept its
+   place; what every reviewer agreed on is below. */
+
+/* The amber notice was the loudest thing on every screen. Tinted glass with
+   text that still reads (>= 4.5:1) and a thin accent edge to mark it. */
+.message-note {
+  color: color-mix(in srgb, var(--warning) 62%, var(--on-surface));
+  background: color-mix(in srgb, var(--warning) 7%, var(--glass-control));
+  border: 1px solid color-mix(in srgb, var(--warning) 16%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--warning) 60%, transparent);
+}
+
+/* An off switch has to read as a switch, not as an empty slot. */
+.toggle-switch:not([data-on="true"]) .toggle-switch-track {
+  background: color-mix(in srgb, var(--on-surface-variant) 46%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Tool names on a library card: outlined, so they sit back from the actions. */
+.library-tool-chips code {
+  background: transparent;
+  border: 1px solid var(--outline-variant);
+}
+
+/* The thinking/tool panels and table headers were flat grey bars beside glass
+   cards; they take the same light fill. */
+:is(.thinking-panel, .tool-usage-panel) {
+  background: var(--glass-control);
+}
+
+.markdown-body th {
+  background: var(--glass-control);
+}
+
+/* The tool list scrolls under the page header; fade its edges instead of
+   cutting a row in half. Room is left so the first title is never faded. */
+.md-list {
+  padding-block: var(--space-4) var(--space-8);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--space-4), #000 calc(100% - var(--space-8)), transparent);
+}
+
+@media (max-width: 860px) {
+  .md-list {
+    padding-block: 0;
+    mask-image: none;
+  }
+}
