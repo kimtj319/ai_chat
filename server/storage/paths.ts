@@ -223,3 +223,8 @@ export function shareFile(token: string): string {
 export function shareAttachmentsDir(token: string): string {
   return path.join(shareDir(token), "attachments");
 }
+
+/** 계정마다 하나: 예약 작업 목록(chat/scheduleRunner.ts). */
+export function ownerSchedulesFile(ownerId: string): string {
+  return path.join(ownerDir(ownerId), "schedules.json");
+}

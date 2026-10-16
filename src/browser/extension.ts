@@ -65,6 +65,9 @@ function onMessage(event: MessageEvent) {
   if (data.type === "hello") {
     state = { available: true, enabled: data.enabled === true, version: String(data.version ?? "") };
     emit();
+  } else if (data.type === "wake") {
+    // 확장의 알람이 예약 시각 직전에 깨웠다(browser/scheduler.ts 가 듣는다).
+    window.dispatchEvent(new Event("aic-schedule-wake"));
   } else if (data.type === "result" && data.requestId) {
     waiting.get(data.requestId)?.(data.response ?? { ok: false, error: "확장 프로그램이 빈 응답을 보냈습니다." });
     waiting.delete(data.requestId);

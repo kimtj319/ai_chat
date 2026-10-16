@@ -22,4 +22,6 @@ export interface ToolDefinition {
 export interface ToolContext {
   ownerId: string;
   conversationId: string;
+  /** 이 턴에 크롬 제어가 켜져 있다 — 예약 도구가 크롬 작업인지 정할 때 쓴다. */
+  browserControl?: boolean;
 }

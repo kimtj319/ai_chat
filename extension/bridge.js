@@ -40,6 +40,11 @@
       }
     });
 
+    // 확장의 예약 알람이 깨운다 — 페이지가 예약 목록을 다시 받고 타이머를 새로 건다.
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.kind === "wake") post({ type: "wake" });
+    });
+
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.enabled) hello();
     });

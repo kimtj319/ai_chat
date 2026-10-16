@@ -25,6 +25,7 @@ import { MessageItem } from "./MessageItem";
 import { shortModelName } from "./ModelSelector";
 import { useModels } from "../hooks/useModels";
 import { StatusBanner } from "./StatusBanner";
+import { ScheduleBanner } from "./ScheduleBanner";
 import { ToolsPanel } from "./ToolsPanel";
 import "./ChatView.css";
 
@@ -530,6 +531,7 @@ export function ChatView({
             <ArrowDownIcon />
           </button>
         )}
+        <ScheduleBanner conversationId={activeConversation.id} />
         <AnswerNowButton
           show={showAnswerNowIdle || answerNowPending}
           pending={answerNowPending}

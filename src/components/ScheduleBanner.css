@@ -1,0 +1,71 @@
+.schedule-banner {
+  list-style: none;
+  margin: 0 auto var(--space-3);
+  padding: 0;
+  max-width: 830px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.schedule-banner li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--composer-surface) 88%, transparent);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.schedule-banner-time {
+  flex: none;
+  font-weight: var(--weight-semibold);
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-banner li[data-status="running"] .schedule-banner-time {
+  animation: schedule-banner-blink 1s ease-in-out infinite;
+}
+
+@keyframes schedule-banner-blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.schedule-banner-kind {
+  flex: none;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-container);
+}
+
+.schedule-banner-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--on-surface);
+}
+
+.schedule-banner-cancel {
+  flex: none;
+  padding: 0 var(--space-3);
+  border: none;
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-banner li[data-status="running"] .schedule-banner-time {
+    animation: none;
+  }
+}

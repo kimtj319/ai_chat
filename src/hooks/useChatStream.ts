@@ -14,6 +14,13 @@ import type { ClientChatMessage, LiveToolResult } from "../state/types";
  */
 const DEFAULT_ANSWER_NOW_AFTER_MS = 3 * 60 * 1000;
 
+export interface SendOptions {
+  /** 입력창 스위치와 상관없이 이 턴의 크롬 제어를 켠다/끈다(예약 작업이 쓴다). */
+  browserControl?: boolean;
+  /** 턴이 끝나면(답·오류·중지) 한 번 불린다. */
+  onSettled?: (ok: boolean, note?: string) => void;
+}
+
 export function useChatStream() {
   const { appendMessage, patchMessage, replaceMessage, refreshConversations } = useStore();
   const [isStreaming, setIsStreaming] = useState(false);
@@ -35,11 +42,20 @@ export function useChatStream() {
   const [answerStreaming, setAnswerStreaming] = useState(false);
 
   const sendMessage = useCallback(
-    (conversationId: string, text: string, attachmentIds: string[] = []) => {
+    (conversationId: string, text: string, attachmentIds: string[] = [], options: SendOptions = {}) => {
       const trimmed = text.trim();
       // An attachment with no text is a complete turn, so the guard widens to
       // "nothing at all to send" rather than "no text".
-      if ((trimmed.length === 0 && attachmentIds.length === 0) || isStreaming) return;
+      if ((trimmed.length === 0 && attachmentIds.length === 0) || isStreaming) {
+        options.onSettled?.(false, "다른 답변이 진행 중이라 보내지 못했습니다.");
+        return;
+      }
+      let settled = false;
+      const settle = (ok: boolean, note?: string) => {
+        if (settled) return;
+        settled = true;
+        options.onSettled?.(ok, note);
+      };
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -86,7 +102,7 @@ export function useChatStream() {
         content: trimmed,
         ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
         // 보내는 순간의 상태로 정한다 — 턴 중간에 스위치를 바꿔도 이번 턴의 도구는 그대로다.
-        ...(browserControlActive() ? { browserControl: true } : {}),
+        ...((options.browserControl ?? browserControlActive()) ? { browserControl: true } : {}),
       };
       void postMessage(conversationId, body, controller.signal, {
         onEvent: (event) => {
@@ -196,6 +212,7 @@ export function useChatStream() {
               }
               void refreshConversations();
               stopStreamingFlag();
+              settle(!(event.message as ChatMessage).error, (event.message as ChatMessage).error);
               break;
             }
 
@@ -203,6 +220,7 @@ export function useChatStream() {
               const id = ensurePlaceholder();
               patchMessage(conversationId, id, { error: event.message, streaming: false });
               stopStreamingFlag();
+              settle(false, event.message);
               break;
             }
 
@@ -218,11 +236,13 @@ export function useChatStream() {
             patchMessage(conversationId, assistantId, { streaming: false });
           }
           stopStreamingFlag();
+          settle(false, "답변이 끝나기 전에 중지되었습니다.");
         },
         onError: (message) => {
           const id = ensurePlaceholder();
           patchMessage(conversationId, id, { error: message, streaming: false });
           stopStreamingFlag();
+          settle(false, message);
         },
       });
     },

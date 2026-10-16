@@ -26,6 +26,7 @@ import { cidrCalcTool } from "./cidrCalc.js";
 import { cronDescribeTool } from "./cronDescribe.js";
 import { urlParseTool } from "./urlParse.js";
 import { readAttachmentTool } from "./readAttachment.js";
+import { SCHEDULE_TOOLS } from "./schedule.js";
 
 // Registering a new tool = write a file exporting a ToolDefinition, then add it here.
 // See README.md "Adding a tool" for the full walkthrough.
@@ -56,6 +57,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   cidrCalcTool,
   cronDescribeTool,
   urlParseTool,
+  ...SCHEDULE_TOOLS,
 ];
 
 /**

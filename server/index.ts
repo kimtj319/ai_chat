@@ -10,6 +10,7 @@ import { sweepEmptyConversations } from "./storage/conversationStore.js";
 import { ensureAdminFromEnv } from "./auth/bootstrap.js";
 import { seedBuiltinServers } from "./mcp/registryStore.js";
 import { warm as warmMcpDiscovery } from "./mcp/discovery.js";
+import { startScheduleRunner } from "./chat/scheduleRunner.js";
 
 // 무엇이든 기록되기 전에 건다 — 기동 중의 경고도 파일에 남아야 한다.
 if (config.logDir) startFileLogging(config.logDir);
@@ -49,6 +50,10 @@ const server = app.listen(config.port, () => {
       }
     })
     .catch((err) => console.warn("[server] endpoint probe failed:", err));
+
+  // 예약 작업(chat/scheduleRunner.ts). 크롬이 필요 없는 예약은 여기서 실행되고, 크롬 예약은
+  // 아무도 맡지 않으면 여기서 "놓침" 으로 정리된다.
+  startScheduleRunner();
 
   // MCP: seed the builtin servers into DATA_DIR (once ever — a builtin someone
   // deleted stays deleted), then discover tools for the servers people actually

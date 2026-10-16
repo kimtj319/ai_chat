@@ -130,6 +130,9 @@ async function handleCommand(command, sender) {
     // 모델의 도구가 아니다 — AI Console 화면의 "작업 창 보기" 단추.
     case "focus_agent_window":
       return focusAgentWindow();
+    // 모델의 도구가 아니다 — AI Console 이 크롬 예약의 시각을 알려 준다.
+    case "sync_schedules":
+      return syncScheduleAlarms(args.tasks);
     default:
       return { ok: false, error: `알 수 없는 브라우저 명령: ${name}` };
   }
@@ -764,4 +767,56 @@ function drawOverlay(spec) {
   clearTimeout(window.__aicOverlayTimer);
   window.__aicOverlayTimer = setTimeout(() => host.remove(), 8000);
   return true;
+}
+
+// ---------------------------------------------------------------- 예약 작업 깨우기
+
+// 크롬 예약은 AI Console 탭이 시각에 맞춰 실행한다(src/browser/scheduler.ts). 그런데 백그라운드
+// 탭의 타이머는 크롬이 최대 1분까지 늦추고, 탭이 닫혀 있으면 아무도 실행하지 않는다. 그래서
+// 확장의 알람(늦춰지지 않는다)이 1분 전과 그 시각에 AI Console 탭을 깨운다. 탭이 없으면 연다.
+const ALARM_PREFIX = "aic-schedule:";
+const WAKE_AHEAD_MS = 60_000;
+
+async function syncScheduleAlarms(list) {
+  const wanted = new Map();
+  for (const task of Array.isArray(list) ? list : []) {
+    if (typeof task?.id !== "string" || !Number.isFinite(task.at)) continue;
+    wanted.set(`${ALARM_PREFIX}${task.id}:early`, task.at - WAKE_AHEAD_MS);
+    wanted.set(`${ALARM_PREFIX}${task.id}:due`, task.at);
+  }
+  for (const alarm of await chrome.alarms.getAll()) {
+    if (alarm.name.startsWith(ALARM_PREFIX) && !wanted.has(alarm.name)) await chrome.alarms.clear(alarm.name);
+  }
+  const now = Date.now();
+  for (const [name, when] of wanted) {
+    if (when <= now) continue;
+    const existing = await chrome.alarms.get(name);
+    if (!existing || Math.abs(existing.scheduledTime - when) > 1000) await chrome.alarms.create(name, { when });
+  }
+  return { ok: true, result: `예약 알람 ${wanted.size}개` };
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith(ALARM_PREFIX)) void wakeAppTabs();
+});
+
+async function wakeAppTabs() {
+  const { appOrigin, enabled } = await getSettings();
+  if (!appOrigin || !enabled) return;
+  let tabs = (await chrome.tabs.query({ url: matchPatternFor(appOrigin) })).filter((t) => {
+    try {
+      return new URL(t.url ?? "").origin === appOrigin;
+    } catch {
+      return false;
+    }
+  });
+  if (tabs.length === 0) {
+    // AI Console 이 닫혀 있다 — 뒤에서 하나 연다. 열리면 스스로 예약을 집는다.
+    const tab = await chrome.tabs.create({ url: `${appOrigin}/`, active: false }).catch(() => null);
+    if (tab) tabs = [tab];
+    return;
+  }
+  for (const tab of tabs) {
+    if (tab.id !== undefined) chrome.tabs.sendMessage(tab.id, { kind: "wake" }).catch(() => {});
+  }
 }

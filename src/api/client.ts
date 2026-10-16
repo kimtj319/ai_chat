@@ -861,3 +861,34 @@ export async function postBrowserActionResult(
     body: JSON.stringify(outcome),
   });
 }
+
+/** 예약 작업. 서버 storage/scheduleStore.ts 와 같은 모양. */
+export interface ScheduledTask {
+  id: string;
+  conversationId: string;
+  instruction: string;
+  runAt: string;
+  useBrowser: boolean;
+  status: "pending" | "running" | "done" | "failed" | "missed" | "cancelled";
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  note?: string;
+}
+
+export function listSchedules(): Promise<{ now: string; tasks: ScheduledTask[] }> {
+  return request(`/schedules`);
+}
+
+export function cancelSchedule(id: string): Promise<{ task: ScheduledTask }> {
+  return request(`/schedules/${id}/cancel`, { method: "POST" });
+}
+
+/** 크롬 예약을 이 탭이 맡는다. 다른 탭이 먼저 맡았으면 409(ApiError). */
+export function claimSchedule(id: string): Promise<{ task: ScheduledTask; prompt: string }> {
+  return request(`/schedules/${id}/claim`, { method: "POST" });
+}
+
+export function finishSchedule(id: string, ok: boolean, note?: string): Promise<{ task: ScheduledTask }> {
+  return request(`/schedules/${id}/finish`, { method: "POST", body: JSON.stringify({ ok, ...(note ? { note } : {}) }) });
+}

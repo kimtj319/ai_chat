@@ -17,6 +17,7 @@ import { BrowserConfirmHost } from "./components/BrowserConfirmHost";
 import { TooltipLayer } from "./components/TooltipLayer";
 import { useAuth } from "./auth/AuthContext";
 import { useChatStream } from "./hooks/useChatStream";
+import { useScheduleRunner } from "./browser/scheduler";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useMediaQuery } from "./hooks/useMediaQuery";
 import { useScrollbarFade } from "./hooks/useScrollbarFade";
@@ -144,8 +145,10 @@ interface ChatShellProps {
 }
 
 function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
-  const { ui, createConversation, session, conversationsLoading, activeConversationId } = useStore();
+  const { ui, createConversation, session, conversationsLoading, activeConversationId, selectConversation } = useStore();
   const chatStream = useChatStream();
+  // 예약 작업: 시각이 되면 그 대화를 열고 지시를 보낸다(browser/scheduler.ts).
+  useScheduleRunner({ isStreaming: chatStream.isStreaming, sendMessage: chatStream.sendMessage, selectConversation });
 
   // On a fresh load (or a hard refresh) nothing is selected, which used to
   // show a "선택된 대화가 없습니다" placeholder. Open a conversation

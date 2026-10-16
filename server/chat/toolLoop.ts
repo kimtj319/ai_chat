@@ -23,6 +23,7 @@ import crypto from "node:crypto";
 import { getTool, readAttachmentTool } from "../tools/index.js";
 import { runTool, truncateToolResult } from "../tools/runner.js";
 import { BROWSER_TOOLS, isBrowserTool } from "../tools/browser.js";
+import { SCHEDULE_TOOLS } from "../tools/schedule.js";
 import { startBrowserAction } from "./browserBridge.js";
 import { mcpToolsForOwner } from "../mcp/toolAdapter.js";
 import type { ToolDefinition } from "../tools/types.js";
@@ -275,7 +276,12 @@ export async function* runConversationTurn(
   const mcpTools = await mcpToolsPromise;
   snapshotTools.push(...mcpTools.tools.filter((t) => enabledNames.has(t.name)));
   // 크롬 도구는 대화 설정이 아니라 이 턴을 보낸 브라우저가 정한다(tools/browser.ts).
-  if (options.browserControl) snapshotTools.push(...BROWSER_TOOLS);
+  if (options.browserControl) {
+    snapshotTools.push(...BROWSER_TOOLS);
+    // "11시에 …해 줘" 는 크롬을 켠 사람이 가장 흔히 하는 말이다. 도구 설정에서 예약 도구를
+    // 켜 두지 않은 대화(이 기능 이전에 만든 대화 등)에서도 크롬 제어와 함께 쓸 수 있게 싣는다.
+    for (const tool of SCHEDULE_TOOLS) if (!snapshotTools.some((t) => t.name === tool.name)) snapshotTools.push(tool);
+  }
   const maxToolCallsThisTurn = options.browserControl ? MAX_TOOL_CALLS_PER_BROWSER_TURN : MAX_TOOL_CALLS_PER_TURN;
   /**
    * The same objects the array was built from. Resolving a call through this
@@ -709,7 +715,11 @@ export async function* runConversationTurn(
         } else {
           // The context is what scopes read_attachment to this conversation's
           // own files; every other tool ignores it.
-          const run = await runTool(tool, parsedArgs, { ownerId, conversationId: conversation.id });
+          const run = await runTool(tool, parsedArgs, {
+            ownerId,
+            conversationId: conversation.id,
+            browserControl: options.browserControl === true,
+          });
           resultRecord = { id, name, ok: run.ok, result: run.result, error: run.error, durationMs: run.durationMs };
         }
       }

@@ -29,6 +29,8 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
       "title, address, visible text, and a numbered list of elements you can act on, like [e12]. " +
       "The user is signed in to their own accounts there, so do only what the user asked for. " +
       "Opens a background tab unless new_tab is false. The first visit to a site asks the user for permission; " +
+      "Use it only for work to do NOW: if the user's request names a time (\"11시에 …\", \"30분 뒤에 …\"), " +
+      "call schedule_task instead and do not open anything now. " +
       "if they refuse you get an error — do not try that site again.",
     parameters: {
       type: "object",
