@@ -69,6 +69,13 @@
   border-radius: var(--radius-sm);
 }
 
+.sidebar-rail-divider {
+  width: 24px;
+  height: 1px;
+  margin: var(--space-2) 0;
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+}
+
 .sidebar-rail-item svg {
   width: 20px;
   height: 20px;
@@ -199,10 +206,27 @@
   font-weight: var(--weight-semibold);
 }
 
+.sidebar-nav-divider {
+  height: 1px;
+  margin: var(--space-4) var(--space-6);
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+}
+
+/* 지금 대화의 속성(대화 설정·도구 설정): 목적지보다 한 단계 작게. */
+.sidebar-nav-item-secondary {
+  padding-block: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.sidebar-nav-item-secondary svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* ---- Recent conversations ---- */
 
 .sidebar-section-label {
-  margin: var(--space-7) var(--space-8) var(--space-3);
+  margin: var(--space-10) var(--space-8) var(--space-3);
   font-size: var(--text-xs);
   color: var(--on-surface-variant);
   letter-spacing: 0.02em;

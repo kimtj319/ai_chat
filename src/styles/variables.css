@@ -36,11 +36,12 @@
 
   /* ---- Primitives: muted text ----
      Secondary lines (the token/duration footer, sidebar titles, hints) are the
-     smallest type in the app at 12.5px, so they were also the first to go soft.
-     Raised to 7.99:1 light and 9.29:1 dark, from 6.05:1 and 7.31:1; the dark
-     value is ChatGPT's secondary grey. ---- */
-  --p-muted-light: #4d5156;
-  --p-muted-dark: #b7bcc2;
+     smallest type in the app (13px), so they were also the first to go soft.
+     8.67:1 light and 10.44:1 dark (2026-10-16, from 7.99:1 and 9.29:1): on the
+     tinted glass and the coloured canvas edges the effective ratio is one to
+     two points lower, so the margin above 7:1 is spent there. ---- */
+  --p-muted-light: #474c52;
+  --p-muted-dark: #c2c7cc;
 
   /* ---- Primitives: brand blue ---- */
   --p-blue-10: #041e49;
@@ -170,8 +171,8 @@
      else is named relative to it rather than to its old pixel value, so a
      "meta" label and a "small UI" label both read as clearly bigger than
      before even though their old pixel values differed slightly. */
-  --text-2xs: 11px;
-  --text-xs: 12.5px;
+  --text-2xs: 12px;
+  --text-xs: 13px;
   --text-sm: 14px;
   --text-base: 15px;
   --text-md: 16.5px;

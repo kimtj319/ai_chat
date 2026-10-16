@@ -4,11 +4,12 @@ import { normalizeReasoningLevel, normalizeReasoningMode, type ReasoningLevel, t
 import { MAX_THINKING_TOKEN_BUDGET, MIN_THINKING_TOKEN_BUDGET } from "../state/defaults";
 import "./ReasoningControl.css";
 
+// 라벨은 한국어로 — 영어 라벨에 한국어 힌트를 붙이면 한 줄을 두 번 읽게 됐다.
 const LEVELS: Array<{ value: ReasoningLevel; label: string; hint: string }> = [
-  { value: "off", label: "Off", hint: "생각 없이 바로" },
-  { value: "low", label: "Low", hint: "짧게" },
-  { value: "medium", label: "Medium", hint: "보통" },
-  { value: "xhigh", label: "xHigh", hint: "가장 길게" },
+  { value: "off", label: "끔", hint: "생각 없이 바로 답합니다" },
+  { value: "low", label: "짧게", hint: "잠깐 생각합니다" },
+  { value: "medium", label: "보통", hint: "충분히 생각합니다" },
+  { value: "xhigh", label: "길게", hint: "가장 오래 생각합니다" },
 ];
 
 /* Measured against the deployed endpoints (139 runs, 2026-09-12):
@@ -23,8 +24,8 @@ const FIXED_LEVEL_NOTE = "이 모델은 추론을 조절할 수 없습니다. �
 // 누르고 두면 무엇이 다른지만 말한다: external 은 끝까지 기다리고, normal 은
 // 잊고 켜 둔 탭을 위한 30분 안전 상한이 있다(server/config.ts 참고).
 const MODES: Array<{ value: ReasoningMode; label: string; hint: string }> = [
-  { value: "external", label: "External", hint: "제한 없음" },
-  { value: "normal", label: "Normal", hint: "30분 후 자동 정리" },
+  { value: "external", label: "제한 없음", hint: "끝까지 기다립니다" },
+  { value: "normal", label: "30분 제한", hint: "30분이 지나면 자동으로 정리합니다" },
 ];
 
 function ChevronDownIcon() {

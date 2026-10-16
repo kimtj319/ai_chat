@@ -132,6 +132,7 @@ function LibraryCard({
 }: LibraryCardProps) {
   const [credentialOpen, setCredentialOpen] = useState(false);
   const [credential, setCredential] = useState("");
+  const [toolsShown, setToolsShown] = useState(false);
   const needsCredential = server.requiresCredential && !server.hasCredential;
 
   return (
@@ -149,7 +150,19 @@ function LibraryCard({
         <p className="library-warning">이 서버는 개인 자격 증명이 필요합니다. 입력하기 전에는 도구가 실행되지 않습니다.</p>
       )}
 
+      {/* 도구 이름 칩은 접어 둔다. 펼친 카드 한 장에 칩이 서너 줄 깔리면 설명·상태·버튼을
+          모두 밀어내 카드가 화면의 3분의 1을 차지했다. 전체 목록과 설명은 도구 설정에도 있다. */}
       {server.tools.length > 0 && (
+        <button
+          type="button"
+          className="library-tools-toggle"
+          aria-expanded={toolsShown}
+          onClick={() => setToolsShown((shown) => !shown)}
+        >
+          {toolsShown ? "도구 목록 접기" : `도구 ${server.tools.length}개 보기`}
+        </button>
+      )}
+      {server.tools.length > 0 && toolsShown && (
         <ul className="library-tool-chips">
           {server.tools.map((tool) => (
             <li key={tool.name}>

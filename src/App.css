@@ -126,12 +126,6 @@
     overflow-wrap: break-word;
   }
 
-  /* 토큰 사용량은 답변마다 아래에 같은 정보가 있다. 폰 헤더에 두면 오른쪽
-     아이콘들과 겹친다. */
-  .chat-header-usage {
-    display: none;
-  }
-
   /* 헤더 아이콘 위아래를 같은 간격으로 둔다. 아래 여백이 없으면 스크롤한 본문이
      아이콘 바로 밑에서 잘리고, 맨 위에서는 목록 위 여백(24px)만큼 벌어져 위쪽
      간격(16px)과 어긋나 보인다. 목록 위 여백은 이 헤더 여백이 대신한다. */
@@ -252,6 +246,12 @@
   .sidebar-settings-popover {
     max-width: calc(100vw - var(--space-6) * 2);
     min-width: 0;
+  }
+
+  /* "+" 메뉴는 입력창 왼쪽 단추(화면 왼쪽에서 약 34px)에 붙어 열린다. 화면 폭만큼을
+     상한으로 두면 그 오프셋만큼 오른쪽이 화면 밖으로 나간다. */
+  .mcp-picker-popover {
+    max-width: calc(100vw - var(--space-11) * 2);
   }
 }
 

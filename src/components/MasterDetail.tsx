@@ -57,31 +57,35 @@ export function MasterDetail<T>({
             {group.title && <h3 className="md-group-title">{group.title}</h3>}
             {group.hint && <p className="md-group-hint">{group.hint}</p>}
             {group.items.length === 0 && group.empty && <p className="md-group-empty">{group.empty}</p>}
-            {group.items.map((item) => {
-              const id = idOf(item);
-              const isSelected = id === selectedId;
-              return (
-                <div key={id} className="md-row" data-selected={isSelected || undefined}>
-                  <div className="md-row-head">
-                    <button
-                      type="button"
-                      className="md-row-main"
-                      aria-expanded={narrow ? isSelected : undefined}
-                      aria-pressed={narrow ? undefined : isSelected}
-                      onClick={() => onSelect(id)}
-                    >
-                      {renderRow(item)}
-                    </button>
-                    {renderTrailing && <div className="md-row-trailing">{renderTrailing(item)}</div>}
-                  </div>
-                  {narrow && isSelected && (
-                    <div className="md-inline-detail" key={id}>
-                      {renderDetail(item)}
+            {group.items.length > 0 && (
+              <div className="md-group-rows">
+                {group.items.map((item) => {
+                  const id = idOf(item);
+                  const isSelected = id === selectedId;
+                  return (
+                    <div key={id} className="md-row" data-selected={isSelected || undefined}>
+                      <div className="md-row-head">
+                        <button
+                          type="button"
+                          className="md-row-main"
+                          aria-expanded={narrow ? isSelected : undefined}
+                          aria-pressed={narrow ? undefined : isSelected}
+                          onClick={() => onSelect(id)}
+                        >
+                          {renderRow(item)}
+                        </button>
+                        {renderTrailing && <div className="md-row-trailing">{renderTrailing(item)}</div>}
+                      </div>
+                      {narrow && isSelected && (
+                        <div className="md-inline-detail" key={id}>
+                          {renderDetail(item)}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </section>
         ))}
       </div>

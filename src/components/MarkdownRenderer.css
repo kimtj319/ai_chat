@@ -1,7 +1,14 @@
+/* 한국어는 기본값이면 어절 한가운데서 줄이 바뀐다("어떻 / 게"). 답변 본문은
+   낱말 단위로 끊고, URL 처럼 끊을 곳이 없는 것만 쪼갠다. 표 칸과 코드는 아래에서 되돌린다. */
 .markdown-body {
   font-size: var(--text-base);
-  line-height: 1.7;
-  word-wrap: break-word;
+  line-height: 1.75;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.markdown-body :is(td, th, pre, code) {
+  word-break: normal;
 }
 
 .markdown-body > *:first-child {
@@ -12,71 +19,83 @@
   margin-bottom: 0;
 }
 
+/* 문단 사이는 글자 크기에 비례해 둔다(15px 본문에 약 14px). */
 .markdown-body p {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 0.9em;
 }
 
 .markdown-body ul,
 .markdown-body ol {
-  margin: 0 0 var(--space-5);
-  padding-left: 1.4em;
+  margin: 0 0 0.9em;
+  padding-left: 1.5em;
 }
 
 .markdown-body li {
-  margin-bottom: var(--space-2);
+  margin-bottom: 0.35em;
 }
 
+/* 제목은 위를 넓게, 아래를 좁게 — 제목이 뒤 내용에 붙어야 섹션이 생긴다. 예전에는
+   h3 가 본문보다 1.5px 컸을 뿐이라 굵은 문단처럼 읽혔다. */
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,
 .markdown-body h4 {
-  margin: 18px 0 var(--space-4);
+  margin: 28px 0 var(--space-4);
   font-weight: var(--weight-bold);
-  line-height: 1.3;
+  line-height: 1.35;
 }
 
 .markdown-body h1 {
-  font-size: 1.4em;
+  font-size: 1.55em;
 }
 
 .markdown-body h2 {
-  font-size: 1.25em;
+  font-size: 1.32em;
 }
 
 .markdown-body h3 {
-  font-size: 1.1em;
+  margin-top: 22px;
+  font-size: 1.15em;
 }
 
+.markdown-body h4 {
+  margin-top: 22px;
+}
+
+/* 인용은 '팁' 같은 본문의 일부다. 보조색으로 흐리게 두면 주 본문보다 약해 보였다. */
 .markdown-body blockquote {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 0.9em;
   padding: var(--space-2) var(--space-6);
-  border-left: 3px solid var(--outline-variant);
-  color: var(--on-surface-variant);
+  border-left: 4px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  color: color-mix(in srgb, var(--on-surface) 86%, transparent);
 }
 
 .markdown-body table {
   border-collapse: collapse;
-  margin: 0 0 var(--space-6);
+  margin: var(--space-3) 0 var(--space-8);
   width: 100%;
   overflow-x: auto;
   display: block;
 }
 
+/* 표·가로줄의 선은 outline-variant(흰 바탕 약 1.7:1)로는 행이 흐려 보였다. */
 .markdown-body th,
 .markdown-body td {
-  border-bottom: 1px solid var(--outline-variant);
+  border-bottom: 1px solid color-mix(in srgb, var(--on-surface) 18%, transparent);
   padding: var(--space-3) var(--space-5);
   text-align: left;
 }
 
 .markdown-body th {
   background: var(--surface-container);
+  font-weight: var(--weight-semibold);
+  border-bottom-color: color-mix(in srgb, var(--on-surface) 30%, transparent);
 }
 
 .markdown-body hr {
   border: none;
-  border-top: 1px solid var(--outline-variant);
-  margin: var(--space-7) 0;
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 16%, transparent);
+  margin: var(--space-10) 0;
 }
 
 .markdown-body img {
@@ -257,7 +276,7 @@
   border-radius: 0.4em;
   background: var(--primary-container);
   color: var(--on-primary-container);
-  font-size: 0.72em;
+  font-size: 0.8em;
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -274,4 +293,11 @@
 .markdown-body .citation-link:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
+}
+
+/* 폰에서는 h1 이 두 줄로 꺾이지 않게 한 단계 작게 둔다. */
+@media (max-width: 600px) {
+  .markdown-body h1 {
+    font-size: 1.4em;
+  }
 }

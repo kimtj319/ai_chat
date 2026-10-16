@@ -403,6 +403,21 @@ export function Sidebar({
         <span>모델 연동</span>
       </button>
 
+      <p className="sidebar-settings-heading">대화</p>
+      {/* 파일 입력(fileInputRef)은 메뉴 쪽에 그대로 있다 — 설정 화면은 그 위에 덮일 뿐이라
+          닫혀도 입력이 사라지지 않고, 파일 창이 닫힌 뒤의 onChange 를 받는다. */}
+      <button
+        type="button"
+        className="sidebar-settings-action"
+        onClick={() => {
+          setSettingsOpen(false);
+          handleImportClick();
+        }}
+      >
+        <UploadIcon />
+        <span>대화 가져오기 (JSON)</span>
+      </button>
+
       <p className="sidebar-settings-heading">테마</p>
       <div className="sidebar-theme">
         {(["system", "light", "dark"] as const).map((mode) => (
@@ -457,7 +472,7 @@ export function Sidebar({
   );
 
   if (ui.sidebarCollapsed) {
-    // Collapsed rail: the five actions stay reachable as icons (labels move
+    // Collapsed rail: the menu's actions stay reachable as icons (labels move
     // into the tooltip/aria-label); only the conversation list is hidden.
     return (
       <aside className="sidebar sidebar-collapsed">
@@ -483,26 +498,6 @@ export function Sidebar({
           </button>
           <button
             type="button"
-            className="btn-icon sidebar-rail-item"
-            data-tooltip="대화 설정"
-            aria-label="대화 설정"
-            disabled={!activeConversation}
-            onClick={onOpenConversationSettings}
-          >
-            <SlidersIcon />
-          </button>
-          <button
-            type="button"
-            className="btn-icon sidebar-rail-item"
-            data-tooltip="도구 설정"
-            aria-label="도구 설정"
-            disabled={!activeConversation}
-            onClick={onOpenToolsPanel}
-          >
-            <WrenchIcon />
-          </button>
-          <button
-            type="button"
             className={`btn-icon sidebar-rail-item${libraryOpen ? " selected" : ""}`}
             data-tooltip="라이브러리"
             aria-label="라이브러리"
@@ -521,14 +516,26 @@ export function Sidebar({
           >
             <DocumentIcon />
           </button>
+          <div className="sidebar-rail-divider" role="presentation" />
           <button
             type="button"
             className="btn-icon sidebar-rail-item"
-            data-tooltip="가져오기"
-            aria-label="가져오기"
-            onClick={handleImportClick}
+            data-tooltip="대화 설정"
+            aria-label="대화 설정"
+            disabled={!activeConversation}
+            onClick={onOpenConversationSettings}
           >
-            <UploadIcon />
+            <SlidersIcon />
+          </button>
+          <button
+            type="button"
+            className="btn-icon sidebar-rail-item"
+            data-tooltip="도구 설정"
+            aria-label="도구 설정"
+            disabled={!activeConversation}
+            onClick={onOpenToolsPanel}
+          >
+            <WrenchIcon />
           </button>
           <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={(e) => void handleImportFile(e)} />
         </nav>
@@ -623,26 +630,6 @@ export function Sidebar({
         </button>
         <button
           type="button"
-          className={`sidebar-nav-item${conversationSettingsOpen ? " selected" : ""}`}
-          aria-current={conversationSettingsOpen ? "true" : undefined}
-          disabled={!activeConversation}
-          onClick={onOpenConversationSettings}
-        >
-          <SlidersIcon />
-          <span>대화 설정</span>
-        </button>
-        <button
-          type="button"
-          className={`sidebar-nav-item${toolsPanelOpen ? " selected" : ""}`}
-          aria-current={toolsPanelOpen ? "true" : undefined}
-          disabled={!activeConversation}
-          onClick={onOpenToolsPanel}
-        >
-          <WrenchIcon />
-          <span>도구 설정</span>
-        </button>
-        <button
-          type="button"
           className={`sidebar-nav-item${libraryOpen ? " selected" : ""}`}
           aria-current={libraryOpen ? "true" : undefined}
           onClick={onOpenLibrary}
@@ -659,9 +646,28 @@ export function Sidebar({
           <DocumentIcon />
           <span>문서</span>
         </button>
-        <button type="button" className="sidebar-nav-item" onClick={handleImportClick}>
-          <UploadIcon />
-          <span>가져오기</span>
+        {/* 아래 둘은 갈 곳이 아니라 지금 대화의 속성이다. 같은 무게로 여섯 줄을 늘어놓으면
+            목적지와 속성이 섞여 메뉴가 꽉 차 보였다. 선 하나 아래 작게 둔다. 가져오기는 설정 화면으로. */}
+        <div className="sidebar-nav-divider" role="presentation" />
+        <button
+          type="button"
+          className={`sidebar-nav-item sidebar-nav-item-secondary${conversationSettingsOpen ? " selected" : ""}`}
+          aria-current={conversationSettingsOpen ? "true" : undefined}
+          disabled={!activeConversation}
+          onClick={onOpenConversationSettings}
+        >
+          <SlidersIcon />
+          <span>대화 설정</span>
+        </button>
+        <button
+          type="button"
+          className={`sidebar-nav-item sidebar-nav-item-secondary${toolsPanelOpen ? " selected" : ""}`}
+          aria-current={toolsPanelOpen ? "true" : undefined}
+          disabled={!activeConversation}
+          onClick={onOpenToolsPanel}
+        >
+          <WrenchIcon />
+          <span>도구 설정</span>
         </button>
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={(e) => void handleImportFile(e)} />
       </nav>
@@ -748,13 +754,13 @@ export function Sidebar({
             an ellipsis nobody could read without hovering. */}
         <div className="sidebar-bottom-model">
           <ModelSelector />
-          <span
-            className="sidebar-bottom-subtitle"
-            data-tone={endpoint.unreachable ? "danger" : undefined}
-            data-tooltip={endpoint.title}
-          >
-            {endpoint.text}
-          </span>
+          {/* 서버 주소는 늘 띄우지 않는다 — 모델 목록의 각 줄에 이미 있고, 사이드바 바닥의 둘째
+              줄은 평소엔 읽을 일이 없는 글자였다. 연결이 끊겼을 때만 여기서 알린다. */}
+          {endpoint.unreachable && (
+            <span className="sidebar-bottom-subtitle" data-tone="danger" data-tooltip={endpoint.title}>
+              {endpoint.text}
+            </span>
+          )}
         </div>
 
         {/* Carries its name rather than being an icon nobody can name, and uses

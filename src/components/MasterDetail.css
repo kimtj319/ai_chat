@@ -11,7 +11,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-8);
+  gap: var(--space-11);
   padding-right: var(--space-2);
 }
 
@@ -38,24 +38,55 @@
   color: var(--on-surface-variant);
 }
 
-/* 가로로 긴 직사각형 한 줄. 고르면 배경과 테두리가 함께 바뀐다. */
+/* 묶음 하나가 글래스 판 한 장이고, 줄은 그 안의 칸이다. 예전에는 줄마다 카드였는데
+   도구가 29개라 한 화면에 카드 테두리가 열 몇 겹 겹쳐 꽉 차 보였다. 판의 안쪽 여백(4px)은
+   고른 줄의 3px 테두리 고리가 판 가장자리에서 잘리지 않을 자리다. */
+.md-group-rows {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-container);
+}
+
+/* 판 안의 한 줄. 줄 사이는 머리카락 선 하나로 가르고, 가리킨 줄과 고른 줄 곁의 선은
+   지운다 — 채움이 생긴 칸 옆에 선이 또 있으면 이중으로 갈라 보인다. */
 .md-row {
+  position: relative;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--surface-container);
+  background: transparent;
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
     box-shadow 0.2s ease;
 }
 
+.md-row + .md-row::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: var(--space-6);
+  right: var(--space-6);
+  height: 1px;
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+  pointer-events: none;
+}
+
+.md-row:hover::before,
+.md-row:hover + .md-row::before,
+.md-row[data-selected]::before,
+.md-row[data-selected] + .md-row::before {
+  opacity: 0;
+}
+
 .md-row:hover {
-  background: var(--surface-container-high);
+  background: var(--glass-control-hover);
 }
 
 .md-row[data-selected] {
   border-color: var(--primary);
-  background: var(--surface-container-high);
+  background: var(--glass-control);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
@@ -73,7 +104,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
-  padding: var(--space-5) var(--space-6);
+  padding: var(--space-6) var(--space-7);
   border: none;
   background: none;
   color: inherit;

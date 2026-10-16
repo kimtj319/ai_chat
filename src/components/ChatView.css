@@ -56,11 +56,6 @@
   flex-shrink: 0;
 }
 
-.chat-header-usage {
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-  white-space: nowrap;
-}
 
 .chat-message-list {
   position: relative;
@@ -187,6 +182,19 @@
   background: linear-gradient(to bottom, transparent 55%, color-mix(in srgb, var(--app-canvas) 55%, transparent));
 }
 
+/* 사이드바가 칸으로 서 있으면 dock 의 왼쪽 끝이 곧 사이드바 칸의 경계다. 흐림과 바탕색이
+   그 선에서 딱 시작하면 사이드바 판의 그림자가 그 선에서 잘려, 판 아래쪽 뒤로 세로 경계가
+   보였다. 왼쪽 끝에서는 아무것도 깔지 않고 96px 에 걸쳐 들어오게 한다. */
+.app-shell:not([data-narrow]) .chat-view.has-messages .composer-dock::before {
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%), linear-gradient(to right, transparent, #000 96px);
+  mask-composite: intersect;
+}
+
+.app-shell:not([data-narrow]) .chat-view.has-messages .composer-dock::after {
+  mask-image: linear-gradient(to bottom, transparent 35%, #000 90%), linear-gradient(to right, transparent, #000 96px);
+  mask-composite: intersect;
+}
+
 /* Anchored to the dock's top edge rather than to the view's bottom, so a
    composer grown to several lines carries the button up with it instead of
    being overlapped by it. It cannot live inside the transcript: that scrolls,
@@ -311,11 +319,22 @@
   right: 0;
   z-index: 30;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface-container-high);
   box-shadow: var(--shadow-lg);
+}
+
+.chat-download-usage {
+  flex-basis: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .chat-download-option {

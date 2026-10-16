@@ -163,7 +163,7 @@
 }
 
 .message-note {
-  margin: var(--space-4) 0 0;
+  margin: var(--space-6) 0 0;
   /* Several notices in one turn are joined with "\n"; keep those breaks. */
   white-space: pre-line;
   font-size: var(--text-xs);

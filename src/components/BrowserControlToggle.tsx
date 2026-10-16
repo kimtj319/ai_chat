@@ -4,6 +4,7 @@ import { useBrowserExtension } from "../browser/extension";
 import { appPath } from "../api/base";
 import { copyText } from "../state/clipboard";
 import { Modal } from "./Modal";
+import { ToggleSwitch } from "./ToggleSwitch";
 import { showToast } from "./Toast";
 import "./BrowserControlToggle.css";
 
@@ -22,7 +23,18 @@ function CursorIcon() {
  * 크롬을 읽고 조작할 수 있다. 확장 프로그램이 없으면 설치 안내를 연다.
  * 폰에서는 그리지 않는다(Composer) — 모바일 크롬에는 확장 프로그램이 없다.
  */
-export function BrowserControlToggle() {
+/** 크롬 제어가 지금 실제로 켜져 있는가(확장 연결 + 사용자 켬). */
+export function useBrowserControlActive(): boolean {
+  const ext = useBrowserExtension();
+  const on = useBrowserControl();
+  return on && ext.available && ext.enabled;
+}
+
+/**
+ * variant="row" 는 입력창 "+" 메뉴 안의 한 줄(이름·한 줄 설명·스위치)이다. 기본(icon)은
+ * 입력창의 아이콘 단추로, 켜져 있는 동안에만 입력창에 남아 상태를 보이고 바로 끄게 한다.
+ */
+export function BrowserControlToggle({ variant = "icon" }: { variant?: "icon" | "row" }) {
   const ext = useBrowserExtension();
   const on = useBrowserControl();
   const [guideOpen, setGuideOpen] = useState(false);
@@ -42,6 +54,29 @@ export function BrowserControlToggle() {
   }
 
   const label = !ext.available ? "크롬 제어 연결하기" : active ? "크롬 제어 끄기" : "크롬 제어 켜기";
+  if (variant === "row") {
+    return (
+      <>
+        <div className="mcp-picker-action">
+          <CursorIcon />
+          <span className="mcp-picker-action-text">
+            <span className="mcp-picker-action-name">크롬 제어</span>
+            <span className="mcp-picker-action-hint">
+              {ext.available ? "모델이 이 컴퓨터의 크롬을 읽고 조작합니다" : "확장 프로그램을 연결하면 쓸 수 있습니다"}
+            </span>
+          </span>
+          {ext.available ? (
+            <ToggleSwitch on={active} label={label} onToggle={handleClick} />
+          ) : (
+            <button type="button" className="mcp-picker-clear" onClick={handleClick}>
+              연결하기
+            </button>
+          )}
+        </div>
+        {guideOpen && <BrowserControlGuide onClose={() => setGuideOpen(false)} />}
+      </>
+    );
+  }
   return (
     <>
       <button

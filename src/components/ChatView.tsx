@@ -44,6 +44,7 @@ interface ChatViewProps {
   onCloseConversationSettings: () => void;
   /** Opens the 라이브러리 page, from the composer's MCP picker. */
   onOpenLibrary: () => void;
+  onOpenTools: () => void;
   /** Opens the 문의 게시판 page, from the header. */
   onOpenBoard: () => void;
 }
@@ -137,6 +138,7 @@ export function ChatView({
   showConversationSettings,
   onCloseConversationSettings,
   onOpenLibrary,
+  onOpenTools,
   onOpenBoard,
 }: ChatViewProps) {
   const { createConversation, selectConversation } = useStore();
@@ -374,14 +376,9 @@ export function ChatView({
 
       <header className="chat-header">
         <div className="chat-header-inner">
-          <div className="chat-header-left">
-            {totals.totalTokens > 0 && (
-              <span className="chat-header-usage">
-                프롬프트 {totals.promptTokens.toLocaleString()} · 완성 {totals.completionTokens.toLocaleString()} · 합계{" "}
-                {totals.totalTokens.toLocaleString()} 토큰
-              </span>
-            )}
-          </div>
+          {/* 대화 합계 토큰은 머리에 늘 띄우지 않는다 — 답변마다 아래에 같은 숫자가 있어
+              화면 위쪽에 떠 있는 알약 하나가 둘째 사본이었다. 합계는 저장 메뉴 아래에 둔다. */}
+          <div className="chat-header-left" />
           <div className="chat-header-right">
             {/* Disabled until there is something to save, so pressing it on a
                 fresh conversation cannot write an empty file. */}
@@ -439,6 +436,12 @@ export function ChatView({
                     <span className="chat-download-format">PDF</span>
                     <span className="chat-download-hint">화면과 같은 모습</span>
                   </button>
+                  {totals.totalTokens > 0 && (
+                    <p className="chat-download-usage">
+                      이 대화 합계 {totals.totalTokens.toLocaleString()} 토큰 (프롬프트 {totals.promptTokens.toLocaleString()} · 완성{" "}
+                      {totals.completionTokens.toLocaleString()})
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -546,6 +549,7 @@ export function ChatView({
           }}
           onStop={stopGeneration}
           onOpenLibrary={onOpenLibrary}
+          onOpenTools={onOpenTools}
         />
       </div>
       <div className="composer-spacer" aria-hidden="true" />

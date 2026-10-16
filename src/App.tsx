@@ -314,6 +314,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
           showConversationSettings={showConversationSettings}
           onCloseConversationSettings={() => setShowConversationSettings(false)}
           onOpenLibrary={() => navigate("library")}
+          onOpenTools={() => navigate("tools")}
           onOpenBoard={() => navigate("board")}
         />
       )}

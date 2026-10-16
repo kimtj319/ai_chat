@@ -171,9 +171,25 @@
   text-align: left;
 }
 
+.mcp-picker-server-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .mcp-picker-server-name {
   font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
+}
+
+/* 서버가 무엇을 하는지 한 줄. 이름만으로는 "DeepWiki" 와 "Context7" 이 무엇이 다른지 모른다. */
+.mcp-picker-server-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
 }
 
 /* Timed off the press tokens, which the app blanks under reduced motion. */
@@ -258,4 +274,72 @@
 .mcp-picker-link:active {
   opacity: var(--press-opacity);
   transition-duration: var(--press-in);
+}
+
+/* 메뉴의 묶음(올리기 / 서버 / 크롬 / 링크) 사이를 가르는 선. */
+.mcp-picker-divider {
+  height: 1px;
+  margin: 0 var(--space-4);
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+}
+
+/* 이름 + 한 줄 설명 + (스위치) 줄: 파일 올리기, 크롬 제어. */
+.mcp-picker-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  padding: var(--space-3) var(--space-6);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  text-align: left;
+}
+
+button.mcp-picker-action {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+button.mcp-picker-action:hover {
+  background: var(--surface-container-highest);
+}
+
+.mcp-picker-action > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+}
+
+.mcp-picker-action-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mcp-picker-action-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.mcp-picker-action-hint {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.mcp-picker-links {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 0 var(--space-6);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.mcp-picker-links .mcp-picker-link {
+  padding: 0;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { pushOverlay } from "../ui/overlayStack";
 import { useAuth } from "../auth/AuthContext";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
@@ -22,6 +22,14 @@ function PlusIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </svg>
   );
 }
@@ -110,10 +118,23 @@ function visibleServers(servers: McpServerSummary[], query: string): VisibleServ
 interface McpPickerProps {
   conversation: ActiveConversation;
   onOpenLibrary: () => void;
+  /** 도구 설정 페이지로. 없으면 아래쪽 링크에서 빠진다. */
+  onOpenTools?: () => void;
+  /** 있으면 맨 위에 "파일 올리기" 줄을 둔다(입력창의 클립 단추를 대신한다). */
+  onAttach?: () => void;
+  /** 서버 목록 아래에 붙는 줄(크롬 제어). */
+  extraRows?: ReactNode;
 }
 
+/** 서버가 이만큼은 되어야 검색창이 자리를 값한다. */
+const SEARCH_FROM = 6;
+
 /**
- * The composer's plus button: which MCP tools are live in THIS conversation.
+ * The composer's plus button: which MCP tools are live in THIS conversation —
+ * and, Gemini-style, the one place the composer's other add-ons live too:
+ * uploading a file on top, the Chrome control below the servers, links to the
+ * management pages at the foot. Before, each of those was its own icon on the
+ * composer's right, which is what made the input row read as crowded.
  *
  * It writes the same `conversation.enabledTools` array the 도구 설정 panel
  * writes, with the same debounce — the two are two views of one list, not two
@@ -125,7 +146,7 @@ interface McpPickerProps {
  * exception: one server that ships 11 tools would otherwise bury the other
  * three in a scroll.
  */
-export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
+export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, extraRows }: McpPickerProps) {
   const { updateEnabledTools } = useStore();
   const { me } = useAuth();
   const { servers, adopted, hidden, loading, unavailable } = useMcpLibrary();
@@ -163,6 +184,9 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
     if (!open) return;
 
     function handlePointerDown(event: MouseEvent) {
+      // A dialog opened from inside the menu (the Chrome setup guide) is
+      // portalled to <body>; a click in it is not a click away from the menu.
+      if ((event.target as Element).closest?.('[role="dialog"]')) return;
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
@@ -218,8 +242,8 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
         className="btn-icon mcp-picker-trigger"
         aria-haspopup="true"
         aria-expanded={open}
-        data-tooltip="MCP 도구 선택"
-        aria-label="MCP 도구 선택"
+        data-tooltip="도구와 파일"
+        aria-label="도구와 파일"
         onClick={() => setOpen((value) => !value)}
         onKeyDown={handleTriggerKeyDown}
       >
@@ -228,7 +252,26 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
       </button>
 
       {open && (
-        <div className="mcp-picker-popover" aria-label="MCP 도구">
+        <div className="mcp-picker-popover" aria-label="도구와 파일">
+          {onAttach && (
+            <>
+              <button
+                type="button"
+                className="mcp-picker-action"
+                onClick={() => {
+                  setOpen(false);
+                  onAttach();
+                }}
+              >
+                <PaperclipIcon />
+                <span className="mcp-picker-action-text">
+                  <span className="mcp-picker-action-name">파일 올리기</span>
+                  <span className="mcp-picker-action-hint">끌어 놓거나 붙여 넣어도 됩니다</span>
+                </span>
+              </button>
+              <div className="mcp-picker-divider" role="presentation" />
+            </>
+          )}
           <div className="mcp-picker-head">
             <p className="mcp-picker-title">MCP 도구</p>
             {saveStatus === "saving" && <span className="mcp-picker-status">저장 중…</span>}
@@ -237,7 +280,7 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
           </div>
 
           {/* Nothing to narrow while the library is loading, missing or empty. */}
-          {!loading && !unavailable && mine.length > 0 && (
+          {!loading && !unavailable && mine.length >= SEARCH_FROM && (
             <>
               <label className="visually-hidden" htmlFor={searchId}>
                 서버·도구 검색
@@ -302,7 +345,10 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
                         aria-label={`${server.name} 도구 목록`}
                         onClick={() => toggleExpanded(server.id)}
                       >
-                        <span className="mcp-picker-server-name">{server.name}</span>
+                        <span className="mcp-picker-server-text">
+                          <span className="mcp-picker-server-name">{server.name}</span>
+                          {server.description && <span className="mcp-picker-server-desc">{server.description}</span>}
+                        </span>
                         <span className="mcp-picker-server-count">{toolNames.length}</span>
                         <span className={`mcp-picker-chevron${expanded ? " open" : ""}`}>
                           <ChevronIcon />
@@ -343,16 +389,41 @@ export function McpPicker({ conversation, onOpenLibrary }: McpPickerProps) {
             )}
           </div>
 
-          <button
-            type="button"
-            className="mcp-picker-link"
-            onClick={() => {
-              setOpen(false);
-              onOpenLibrary();
-            }}
-          >
-            라이브러리에서 서버 관리
-          </button>
+          {extraRows && (
+            <>
+              <div className="mcp-picker-divider" role="presentation" />
+              {extraRows}
+            </>
+          )}
+
+          <div className="mcp-picker-divider" role="presentation" />
+          <div className="mcp-picker-links">
+            {onOpenTools && (
+              <>
+                <button
+                  type="button"
+                  className="mcp-picker-link"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenTools();
+                  }}
+                >
+                  도구 설정
+                </button>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+            <button
+              type="button"
+              className="mcp-picker-link"
+              onClick={() => {
+                setOpen(false);
+                onOpenLibrary();
+              }}
+            >
+              라이브러리 관리
+            </button>
+          </div>
         </div>
       )}
     </div>

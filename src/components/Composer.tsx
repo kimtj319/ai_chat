@@ -11,7 +11,7 @@ import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentPreview, type PreviewTarget } from "./AttachmentPreview";
 import { McpPicker } from "./McpPicker";
 import { ReasoningControl } from "./ReasoningControl";
-import { BrowserControlToggle } from "./BrowserControlToggle";
+import { BrowserControlToggle, useBrowserControlActive } from "./BrowserControlToggle";
 import "./Composer.css";
 
 /** Match .composer-textarea's min/max-height in Composer.css. */
@@ -37,6 +37,7 @@ interface ComposerProps {
   onStop: () => void;
   /** Where the MCP picker's footer link goes. */
   onOpenLibrary: () => void;
+  onOpenTools?: () => void;
 }
 
 function SendIcon() {
@@ -80,6 +81,7 @@ export function Composer({
   onSend,
   onStop,
   onOpenLibrary,
+  onOpenTools,
 }: ComposerProps) {
   const { updateSettings, setLastReasoning, setLastReasoningMode } = useStore();
   // 손가락으로 쓰는 화면: Shift 가 없으니 Enter 는 줄바꿈, 보내기는 단추(handleKeyDown).
@@ -211,6 +213,10 @@ export function Composer({
     : attachments.notice;
 
   const isEmbedding = kind === "embedding";
+  const browserActive = useBrowserControlActive();
+  // 데스크톱에서는 첨부와 크롬 제어가 "+" 메뉴 안으로 들어간다. 폰은 메뉴를 한 번 더 여는
+  // 것이 손가락에 멀어 클립을 그대로 두고, 임베딩 대화는 "+" 자체가 없어 클립이 남는다.
+  const attachInMenu = !isEmbedding && !touch;
 
   return (
     <div className="composer">
@@ -254,7 +260,13 @@ export function Composer({
             hidden there. */}
         {!isEmbedding && (
           <div className="composer-leading">
-            <McpPicker conversation={conversation} onOpenLibrary={onOpenLibrary} />
+            <McpPicker
+              conversation={conversation}
+              onOpenLibrary={onOpenLibrary}
+              onOpenTools={onOpenTools}
+              onAttach={attachInMenu ? () => fileInputRef.current?.click() : undefined}
+              extraRows={attachInMenu ? <BrowserControlToggle variant="row" /> : undefined}
+            />
           </div>
         )}
         <textarea
@@ -270,17 +282,20 @@ export function Composer({
           rows={1}
         />
         <div className="composer-trailing">
-          {/* 크롬 확장은 데스크톱 크롬에만 있다. 임베딩 턴은 도구를 부르지 않는다. */}
-          {!isEmbedding && !touch && <BrowserControlToggle />}
-          <button
-            type="button"
-            className="btn-icon composer-attach"
-            onClick={() => fileInputRef.current?.click()}
-            data-tooltip="파일 첨부"
-            aria-label="파일 첨부"
-          >
-            <PaperclipIcon />
-          </button>
+          {/* 크롬 제어는 "+" 메뉴에서 켜고, 켜져 있는 동안만 여기 아이콘이 남는다 — 모델이
+              사용자의 브라우저를 만질 수 있는 상태는 메뉴를 열지 않아도 보여야 한다. */}
+          {attachInMenu && browserActive && <BrowserControlToggle />}
+          {!attachInMenu && (
+            <button
+              type="button"
+              className="btn-icon composer-attach"
+              onClick={() => fileInputRef.current?.click()}
+              data-tooltip="파일 첨부"
+              aria-label="파일 첨부"
+            >
+              <PaperclipIcon />
+            </button>
+          )}
           {/* No `accept` filter: the one validator decides, and a filtered
               picker would hide the very files whose refusal carries the
               workaround (a PDF can never be picked to be told to screenshot

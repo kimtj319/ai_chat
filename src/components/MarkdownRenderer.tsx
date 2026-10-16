@@ -1,7 +1,7 @@
 import { Component, isValidElement, useLayoutEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { gfm } from "./markdownGfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import type { CitationSource } from "../state/citations";
@@ -133,7 +133,7 @@ export function MarkdownRenderer({ content: raw, citations, streaming = false }:
   const content = streaming ? stableStreamingMarkdown(raw) : raw;
   const byNumber = useMemo(() => new Map((citations ?? []).map((c) => [c.n, c])), [citations]);
   const remarkPlugins = useMemo(
-    () => (byNumber.size > 0 ? [remarkGfm, remarkMath, remarkCitations(new Set(byNumber.keys()))] : [remarkGfm, remarkMath]),
+    () => (byNumber.size > 0 ? [gfm, remarkMath, remarkCitations(new Set(byNumber.keys()))] : [gfm, remarkMath]),
     [byNumber],
   );
   const components = useMemo(
