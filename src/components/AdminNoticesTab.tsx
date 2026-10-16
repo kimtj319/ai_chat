@@ -86,7 +86,7 @@ export function AdminNoticesTab() {
         </div>
       </section>
 
-      <section aria-label="올린 공지">
+      <section className="admin-notice-board" aria-label="올린 공지">
         <h2 className="admin-groups-title">올린 공지</h2>
         {notices === null ? (
           <p className="admin-empty">불러오는 중…</p>

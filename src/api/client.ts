@@ -3,6 +3,7 @@ import { flushSseBuffer, parseSseChunk } from "./sseParser";
 import type {
   Notice,
   NoticesResponse,
+  ProbeModelEndpointResponse,
   AddModelEndpointRequest,
   AddModelEndpointResponse,
   AdminGroup,
@@ -372,14 +373,14 @@ export class ModelEndpointError extends ApiError {
 /** Header the server accepts on endpoint mutations when it is protected. */
 const ADMIN_TOKEN_HEADER = "X-Model-Admin-Token";
 
-async function endpointMutation<T>(init: RequestInit, adminToken: string, signal?: AbortSignal): Promise<T> {
+async function endpointMutation<T>(init: RequestInit, adminToken: string, signal?: AbortSignal, subpath = ""): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   // Only sent when the operator actually supplied one.
   if (adminToken.length > 0) headers[ADMIN_TOKEN_HEADER] = adminToken;
 
   let response: Response;
   try {
-    response = await fetch(apiPath("/models/endpoints"), { credentials: "include", headers, signal, ...init });
+    response = await fetch(apiPath(`/models/endpoints${subpath}`), { credentials: "include", headers, signal, ...init });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     const message = error instanceof Error ? error.message : String(error);
@@ -417,6 +418,20 @@ export function addModelEndpoint(
     adminToken,
     signal,
   );
+}
+
+/** The models a server offers, without adding it (for the chooser). */
+export function probeModelEndpoint(
+  body: { baseUrl: string; apiKey?: string },
+  adminToken: string,
+  signal?: AbortSignal,
+): Promise<ProbeModelEndpointResponse> {
+  return endpointMutation<ProbeModelEndpointResponse>({ method: "POST", body: JSON.stringify(body) }, adminToken, signal, "/probe");
+}
+
+/** Limit an already-registered endpoint to these models ([] = all). */
+export function setModelEndpointModels(baseUrl: string, models: string[], adminToken: string): Promise<{ baseUrl: string; allowedModels: string[] | null }> {
+  return endpointMutation({ method: "PATCH", body: JSON.stringify({ baseUrl, models }) }, adminToken);
 }
 
 export async function deleteModelEndpoint(baseUrl: string, adminToken: string): Promise<void> {

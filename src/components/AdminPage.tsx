@@ -153,22 +153,26 @@ export function AdminPage({ onBack }: AdminPageProps) {
         )}
       </header>
 
+      {/* 탭은 본문 밖에 선다 — 본문을 내려도 늘 보이고, 계정 탭 안의 상태 필터(알약 모양)와
+          한 줄에 붙어 하나의 컨트롤처럼 보이지 않게 밑줄 탭으로 둔다. */}
+      <div className="admin-tabbar" role="tablist" aria-label="관리자 메뉴">
+        {TABS.map((entry) => (
+          <button
+            key={entry.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.value}
+            className="admin-tab"
+            data-active={tab === entry.value || undefined}
+            onClick={() => setTab(entry.value)}
+          >
+            {entry.label}
+            {entry.value === "accounts" && pending > 0 && <span className="admin-filter-count">{pending}</span>}
+          </button>
+        ))}
+      </div>
+
       <div className="admin-body">
-        <div className="admin-filters admin-tabs" role="tablist" aria-label="관리자 메뉴">
-          {TABS.map((entry) => (
-            <button
-              key={entry.value}
-              type="button"
-              role="tab"
-              aria-selected={tab === entry.value}
-              className={`admin-filter${tab === entry.value ? " active" : ""}`}
-              onClick={() => setTab(entry.value)}
-            >
-              {entry.label}
-              {entry.value === "accounts" && pending > 0 && <span className="admin-filter-count">{pending}</span>}
-            </button>
-          ))}
-        </div>
         {tab === "models" ? (
           <AdminModelsTab />
         ) : tab === "notices" ? (

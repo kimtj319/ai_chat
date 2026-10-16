@@ -63,12 +63,28 @@ export interface VllmEndpoint {
   label: string;
   baseUrl: string;
   apiKey: string;
+  /**
+   * The models to use from this endpoint; absent or empty means all of them.
+   * A hosted gateway such as OpenRouter lists hundreds of models, and every
+   * listed model would otherwise be probed (one small chat request each, see
+   * vllm/capability.ts) and shown in the picker.
+   */
+  models?: string[];
+}
+
+/** "a;b c" → ["a","b","c"]. `;` because VLLM_ENDPOINTS already uses commas between entries. */
+export function parseModelList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return [...new Set(raw.split(/[;\s]+/).map((s) => s.trim()).filter(Boolean))];
 }
 
 /**
  * Parse endpoint definitions: `label|baseUrl` entries, with an optional third
- * `|apiKey` field overriding VLLM_API_KEY for that one endpoint, and a bare URL
- * with no label accepted as well. Blank entries and `#` comments are skipped.
+ * `|apiKey` field overriding VLLM_API_KEY for that one endpoint, an optional
+ * fourth `|modelA;modelB` field limiting which of its models are used, and a
+ * bare URL with no label accepted as well. Blank entries and `#` comments are
+ * skipped. With a model list but no key, the key field is left empty:
+ * `label|url||modelA;modelB`.
  *
  * One parser, two sources: VLLM_ENDPOINTS splits on commas and the .model file
  * splits on newlines (vllm/endpoints.ts). They must not become two dialects —
@@ -84,10 +100,12 @@ export function parseEndpointEntries(entries: Iterable<string>, fallbackKey: str
     const label = hasLabel ? parts[0]! : "";
     const baseUrl = (hasLabel ? parts[1]! : parts[0]!).replace(/\/+$/, "");
     if (!baseUrl) continue;
+    const models = hasLabel ? parseModelList(parts[3]) : [];
     endpoints.push({
       label: label || baseUrl,
       baseUrl,
       apiKey: (hasLabel && parts[2]) || fallbackKey,
+      ...(models.length > 0 ? { models } : {}),
     });
   }
   return endpoints;

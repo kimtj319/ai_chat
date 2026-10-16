@@ -20,6 +20,7 @@
     .conv-settings-card,
     .admin-model-card,
     .admin-notice-form,
+    .admin-notice-board,
     .acc-row,
     .md-detail,
     .documents-column,
@@ -159,10 +160,8 @@
     .keys-row-input input
   ) {
   background: var(--glass-field);
-  border: 1px solid var(--glass-card-border);
-  box-shadow:
-    0 0 0 0.5px var(--glass-card-edge),
-    inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--field-border);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 /* ---- control: segmented ---- */
@@ -274,4 +273,39 @@
     padding-block: 0;
     mask-image: none;
   }
+}
+
+/* ---- Content boxes are nearly solid (2026-10-17) ----
+   The card tier above gives these their edge; the fill used to be an 8-9% tint,
+   so the backdrop's colour fields showed through form fields and paragraphs —
+   "too much glass to read", in the user's words. They now sit on an almost
+   opaque surface; popovers, the sidebar plate and controls keep the glass. */
+:is(
+    .md-group-rows,
+    .md-detail,
+    .conv-settings-card,
+    .admin-model-card,
+    .admin-notice-form,
+    .admin-notice-board,
+    .acc-row,
+    .documents-column,
+    .admin-groups,
+    .admin-table-scroll,
+    .board-detail-body
+  ) {
+  background: var(--surface-card);
+}
+
+.acc-row:hover,
+.acc-row[data-open] {
+  background: color-mix(in srgb, var(--primary) 3%, var(--surface-card));
+}
+
+/* Rows inside a solid panel: a white hover/selected fill would vanish on it. */
+.md-row:hover {
+  background: var(--surface-container);
+}
+
+.md-row[data-selected] {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
 }

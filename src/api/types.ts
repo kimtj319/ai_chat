@@ -310,7 +310,10 @@ export interface ModelEndpoint {
   /** 이 계정이 지울 수 있는가(서버가 정한다). */
   deletable?: boolean;
   reachable: boolean;
+  /** Everything the server lists right now. */
   models: string[];
+  /** The models this endpoint is limited to; null (or absent) = all of `models`. */
+  allowedModels?: string[] | null;
   maxModelLen: number;
   latencyMs: number;
 }
@@ -328,6 +331,16 @@ export interface AddModelEndpointRequest {
   baseUrl: string;
   /** The serving server's own key. Optional, and not verifiable (see the UI copy). */
   apiKey?: string;
+  /** Use only these of the server's models; absent = all. Required past 50. */
+  models?: string[];
+}
+
+export interface ProbeModelEndpointResponse {
+  baseUrl: string;
+  models: string[];
+  latencyMs: number;
+  /** True when the list is too long to be added without choosing. */
+  mustChoose: boolean;
 }
 
 export interface AddModelEndpointResponse {
@@ -344,7 +357,9 @@ export type ModelEndpointErrorCode =
   | "not_vllm"
   | "duplicate"
   | "forbidden"
-  | "write_failed";
+  | "write_failed"
+  | "models_required"
+  | "unknown_models";
 
 export interface ModelsResponse {
   models: string[];

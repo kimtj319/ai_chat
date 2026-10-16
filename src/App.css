@@ -110,6 +110,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .admin-tabbar {
+    width: calc(100% - var(--space-6) * 2);
+  }
+
   /* 헤더는 서랍 토글 자리를 계속 비워 둬야 한다 — 위 규칙이 그것을 덮어쓰지
      않도록 다시 적는다. */
   .app-shell[data-narrow] .chat-header,

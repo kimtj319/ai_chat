@@ -67,7 +67,9 @@ export function AdminModelsTab() {
       {endpoints.map((endpoint) => {
         const parts = partsOf(endpoint.baseUrl);
         const entries = catalog.filter((entry) => entry.baseUrl === endpoint.baseUrl || entry.endpoint === endpoint.label);
-        const ids = endpoint.models.length > 0 ? endpoint.models : entries.map((entry) => entry.id);
+        // 허용 목록이 있으면 그것만 — OpenRouter 처럼 수백 개를 내주는 서버를 통째로 늘어놓지 않는다.
+        const allowed = endpoint.allowedModels && endpoint.allowedModels.length > 0 ? endpoint.allowedModels : null;
+        const ids = allowed ?? (endpoint.models.length > 0 ? endpoint.models : entries.map((entry) => entry.id));
         return (
           <section key={`${endpoint.label}@${endpoint.baseUrl}`} className="admin-model-card" aria-label={endpoint.label}>
             <div className="admin-model-head">
@@ -93,6 +95,10 @@ export function AdminModelsTab() {
               <div>
                 <dt>경로</dt>
                 <dd>{parts.path}</dd>
+              </div>
+              <div>
+                <dt>사용 모델</dt>
+                <dd>{allowed ? `${allowed.length}개만 (서버 제공 ${endpoint.models.length}개)` : `전부 (${endpoint.models.length}개)`}</dd>
               </div>
               <div>
                 <dt>전체 주소</dt>

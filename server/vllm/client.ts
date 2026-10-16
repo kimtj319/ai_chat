@@ -12,7 +12,8 @@ function requestHeaders(endpoint: VllmEndpoint, json: boolean): Record<string, s
 }
 
 interface ModelsListResponse {
-  data?: Array<{ id: string; max_model_len?: number }>;
+  /** context_length is OpenRouter's name for the same number. */
+  data?: Array<{ id: string; max_model_len?: number; context_length?: number }>;
 }
 
 export interface CatalogEntry {
@@ -46,7 +47,10 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
     throw new Error(`vLLM /models responded ${res.status} ${res.statusText}`);
   }
   const body = (await res.json()) as ModelsListResponse;
-  const listed = body.data ?? [];
+  // The endpoint's allow list, applied before probing: a model left out is
+  // never asked anything and never listed (see VllmEndpoint.models).
+  const allowed = endpoint.models && endpoint.models.length > 0 ? new Set(endpoint.models) : null;
+  const listed = (body.data ?? []).filter((m) => !allowed || allowed.has(m.id));
   const verdicts = await probeModels(endpoint, listed.map((m) => m.id));
   const entries: CatalogEntry[] = [];
   for (const m of listed) {
@@ -64,7 +68,7 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
       id: m.id,
       label: endpoint.label,
       baseUrl: endpoint.baseUrl,
-      maxModelLen: typeof m.max_model_len === "number" ? m.max_model_len : null,
+      maxModelLen: typeof m.max_model_len === "number" ? m.max_model_len : typeof m.context_length === "number" ? m.context_length : null,
       reachable: true,
       capability: verdict?.capability ?? "chat",
     });

@@ -54,6 +54,10 @@ export function endpointErrorMessage(code: ModelEndpointErrorCode | null, host: 
       return "직접 등록한 서버만 제거할 수 있습니다.";
     case "write_failed":
       return "설정 파일에 저장하지 못했습니다.";
+    case "models_required":
+      return "이 서버는 모델이 많아 사용할 모델을 골라야 추가할 수 있습니다.";
+    case "unknown_models":
+      return "고른 모델 중 이 서버에 없는 것이 있습니다. 목록을 다시 불러와 주세요.";
     case "unreachable":
     default:
       // An unmapped failure is almost always the endpoint not answering.
@@ -61,8 +65,14 @@ export function endpointErrorMessage(code: ModelEndpointErrorCode | null, host: 
   }
 }
 
+/** A long model list, shortened: the first few names and how many more. */
+export function summarizeModels(models: string[], shown = 6): string {
+  if (models.length <= shown) return models.join(", ");
+  return `${models.slice(0, shown).join(", ")} 외 ${models.length - shown}개`;
+}
+
 export function connectedMessage(models: string[]): string {
-  return `연결됨: 모델 ${models.length}개 (${models.join(", ")})`;
+  return `연결됨: 모델 ${models.length}개 (${summarizeModels(models)})`;
 }
 
 export interface EndpointRow {
@@ -86,7 +96,12 @@ export function endpointRow(entry: ModelEndpoint): EndpointRow {
   return {
     host,
     label: entry.label.trim().length > 0 ? entry.label : host,
-    models: entry.models.length > 0 ? entry.models.join(", ") : "모델 없음",
+    models:
+      entry.allowedModels && entry.allowedModels.length > 0
+        ? `${summarizeModels(entry.allowedModels)} — 전체 ${entry.models.length}개 중 ${entry.allowedModels.length}개만 사용`
+        : entry.models.length > 0
+          ? summarizeModels(entry.models)
+          : "모델 없음",
     reachable: entry.reachable,
     statusText: entry.reachable ? "연결됨" : "연결할 수 없음",
     // The server decides (owner or AI Product); an older server sends no flag.

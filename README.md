@@ -39,6 +39,17 @@ VLLM_ENDPOINTS=Local|http://localhost:8000/v1,Gateway|https://gateway.example.co
 게이트웨이(LiteLLM 등)는 대개 키를 요구하며, 없으면 401 을 돌려준다. 모든
 엔드포인트에 같은 키를 쓴다면 `VLLM_API_KEY` 하나로 갈음해도 된다.
 
+네 번째 칸은 **쓸 모델 목록**이다(`;` 로 구분, 없으면 그 서버의 모든 모델). OpenRouter
+처럼 모델을 수백 개 내주는 서버에 쓴다 — 목록에 없는 모델은 모델 선택란에 오르지 않고,
+능력 확인 요청(모델마다 채팅 한 번)도 받지 않는다. 키 없이 목록만 줄 때는 키 칸을 비운다:
+
+```
+VLLM_ENDPOINTS=OpenRouter|https://openrouter.ai/api/v1|sk-or-...|anthropic/claude-sonnet-4.5;openai/gpt-4o-mini
+```
+
+화면에서는 설정 › 모델 연동에서 주소와 키를 넣고 "연결 확인"을 누르면 모델 목록이 뜨고,
+고른 모델만 붙는다. 모델이 50개를 넘는 서버는 고르지 않으면 추가되지 않는다.
+
 ### 첫 관리자 계정 — 처음 한 번만
 
 가입은 누구나 할 수 있지만 **관리자가 승인해야** 로그인된다. 그 첫 관리자는

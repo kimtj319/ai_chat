@@ -10,6 +10,7 @@ import {
   normalizeEndpointInput,
 } from "../state/modelEndpoints";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ModelChooser } from "./ModelChooser";
 import { Modal } from "./Modal";
 import "./ModelEndpointDialog.css";
 
@@ -18,6 +19,9 @@ import "./ModelEndpointDialog.css";
  * backstop against a hung request, not the expected wait.
  */
 const REQUEST_TIMEOUT_MS = 12000;
+
+/** 이만큼까지는 고르지 않고 바로 추가한다(사내 vLLM 은 보통 1~5개). */
+const SMALL_LIST = 8;
 
 type Status =
   | { kind: "idle" }
@@ -48,6 +52,13 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [adminToken, setAdminToken] = useState("");
+
+  // 이 주소로 불러온 모델 목록. 주소를 바꾸면 버린다 — 다른 서버의 목록으로 고르면 안 된다.
+  const [probed, setProbed] = useState<{ baseUrl: string; models: string[]; mustChoose: boolean } | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
+  // 이미 등록된 서버의 모델 고르기(줄 아래에 펼친다).
+  const [editing, setEditing] = useState<{ baseUrl: string; models: string[]; mustChoose: boolean; chosen: string[] } | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -83,11 +94,35 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
     setStatus({ kind: "pending" });
 
     try {
+      // 첫 단계: 이 서버가 무엇을 내주는지 본다. 몇 개뿐이면(예전처럼) 바로 추가하고,
+      // 많으면 고르는 목록을 펼친 채 멈춘다 — 수백 개를 통째로 붙이면 모델마다 확인
+      // 요청이 나가고 모델 선택란이 쓸 수 없게 된다.
+      let list = probed && probed.baseUrl === normalized.baseUrl ? probed : null;
+      if (!list) {
+        const result = await api.probeModelEndpoint(
+          { baseUrl: normalized.baseUrl, ...(apiKey.length > 0 ? { apiKey } : {}) },
+          adminToken,
+          controller.signal,
+        );
+        list = { baseUrl: normalized.baseUrl, models: result.models, mustChoose: result.mustChoose };
+        setProbed(list);
+        setChosen([]);
+        if (list.mustChoose || list.models.length > SMALL_LIST) {
+          setStatus({ kind: "ok", text: `모델 ${list.models.length}개를 불러왔습니다. 쓸 모델을 고른 뒤 추가를 누르세요.` });
+          return;
+        }
+      }
+      if (list.mustChoose && chosen.length === 0) {
+        setStatus({ kind: "error", text: endpointErrorMessage("models_required", normalized.host) });
+        return;
+      }
+
       const added = await api.addModelEndpoint(
         {
           baseUrl: normalized.baseUrl,
           ...(label.trim().length > 0 ? { label: label.trim() } : {}),
           ...(apiKey.length > 0 ? { apiKey } : {}),
+          ...(chosen.length > 0 ? { models: chosen } : {}),
         },
         adminToken,
         controller.signal,
@@ -96,6 +131,8 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
       setAddress("");
       setLabel("");
       setApiKey("");
+      setProbed(null);
+      setChosen([]);
       await load();
       // The whole point is that the new model is usable straight away.
       refreshModels();
@@ -109,6 +146,40 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
     } finally {
       clearTimeout(timer);
       abortRef.current = null;
+    }
+  }
+
+  async function startEditing(baseUrl: string, current: string[] | null | undefined) {
+    setEditBusy(true);
+    try {
+      const result = await api.probeModelEndpoint({ baseUrl }, adminToken);
+      setEditing({ baseUrl, models: result.models, mustChoose: result.mustChoose, chosen: current ?? [] });
+    } catch (error) {
+      const code = error instanceof ModelEndpointError ? error.code : null;
+      setStatus({ kind: "error", text: endpointErrorMessage(code, "") });
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function saveEditing() {
+    if (!editing) return;
+    if (editing.mustChoose && editing.chosen.length === 0) {
+      setStatus({ kind: "error", text: endpointErrorMessage("models_required", "") });
+      return;
+    }
+    setEditBusy(true);
+    try {
+      await api.setModelEndpointModels(editing.baseUrl, editing.chosen, adminToken);
+      setEditing(null);
+      setStatus({ kind: "ok", text: editing.chosen.length > 0 ? `모델 ${editing.chosen.length}개만 쓰도록 바꿨습니다.` : "모든 모델을 쓰도록 바꿨습니다." });
+      await load();
+      refreshModels();
+    } catch (error) {
+      const code = error instanceof ModelEndpointError ? error.code : null;
+      setStatus({ kind: "error", text: endpointErrorMessage(code, "") });
+    } finally {
+      setEditBusy(false);
     }
   }
 
@@ -168,6 +239,17 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
               {row.removable && (
                 <button
                   type="button"
+                  className="btn endpoint-models-button"
+                  disabled={editBusy}
+                  aria-expanded={editing?.baseUrl === entry.baseUrl}
+                  onClick={() => (editing?.baseUrl === entry.baseUrl ? setEditing(null) : void startEditing(entry.baseUrl, entry.allowedModels))}
+                >
+                  모델 고르기
+                </button>
+              )}
+              {row.removable && (
+                <button
+                  type="button"
                   className="btn-icon"
                   onClick={() => setPendingDelete(entry.baseUrl)}
                   data-tooltip="제거"
@@ -175,6 +257,24 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
                 >
                   <TrashIcon />
                 </button>
+              )}
+              {editing?.baseUrl === entry.baseUrl && (
+                <div className="endpoint-edit">
+                  <ModelChooser
+                    models={editing.models}
+                    chosen={editing.chosen}
+                    mustChoose={editing.mustChoose}
+                    onChange={(next) => setEditing({ ...editing, chosen: next })}
+                  />
+                  <div className="endpoint-edit-actions">
+                    <button type="button" className="btn btn-secondary" disabled={editBusy} onClick={() => setEditing(null)}>
+                      취소
+                    </button>
+                    <button type="button" className="btn btn-primary" disabled={editBusy} onClick={() => void saveEditing()}>
+                      저장
+                    </button>
+                  </div>
+                </div>
               )}
             </li>
           );
@@ -190,8 +290,12 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
             id="endpoint-address"
             type="text"
             value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            placeholder="10.0.0.10:8000"
+            onChange={(event) => {
+              setAddress(event.target.value);
+              setProbed(null);
+              setChosen([]);
+            }}
+            placeholder="10.0.0.10:8000 또는 https://openrouter.ai/api/v1"
             autoComplete="off"
             spellCheck={false}
             required
@@ -240,9 +344,21 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
           </div>
         )}
 
+        {probed && probed.models.length > SMALL_LIST && (
+          <ModelChooser models={probed.models} chosen={chosen} mustChoose={probed.mustChoose} onChange={setChosen} />
+        )}
+
         <div className="endpoint-actions">
-          <button type="submit" className="btn btn-primary" disabled={pending}>
-            {pending ? "연결을 확인하는 중…" : "연결 확인 후 추가"}
+          <button type="submit" className="btn btn-primary" disabled={pending || (probed !== null && probed.mustChoose && chosen.length === 0)}>
+            {pending
+              ? "연결을 확인하는 중…"
+              : !probed
+                ? "연결 확인"
+                : chosen.length > 0
+                  ? `모델 ${chosen.length}개로 추가`
+                  : probed.mustChoose
+                    ? "쓸 모델을 고르세요"
+                    : "모든 모델로 추가"}
           </button>
           {status.kind !== "idle" && status.kind !== "pending" && (
             <p className="endpoint-status" role="status" data-tone={status.kind === "ok" ? "ok" : "danger"}>

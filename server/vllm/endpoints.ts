@@ -159,7 +159,7 @@ export function writableEndpointsFile(): string {
 }
 
 const FILE_HEADER =
-  "# Serving endpoints, one per line: label|baseUrl|apiKey(optional)\n" +
+  "# Serving endpoints, one per line: label|baseUrl|apiKey(optional)|modelA;modelB(optional)\n" +
   "# '#' comments and blank lines are ignored. Merged with VLLM_ENDPOINTS.\n" +
   "# Edited by the app when an endpoint is added through /api/models/endpoints.\n";
 
@@ -178,7 +178,13 @@ export async function upsertFileEndpoint(endpoint: VllmEndpoint): Promise<void> 
       existing = FILE_HEADER;
     }
     const key = keyOf(endpoint);
-    const line = [endpoint.label, endpoint.baseUrl, ...(endpoint.apiKey ? [endpoint.apiKey] : [])].join("|");
+    const models = endpoint.models ?? [];
+    const line = [
+      endpoint.label,
+      endpoint.baseUrl,
+      ...(endpoint.apiKey || models.length > 0 ? [endpoint.apiKey ?? ""] : []),
+      ...(models.length > 0 ? [models.join(";")] : []),
+    ].join("|");
     const lines = existing.split("\n");
     let replaced = false;
     const next = lines.map((raw) => {
@@ -301,15 +307,23 @@ export async function probeEndpoint(baseUrl: string, apiKey?: string): Promise<P
   } catch {
     return { ok: false, code: "not_vllm", detail: text.slice(0, 60), models: [], maxModelLen: null, latencyMs };
   }
+  // vLLM and LiteLLM send {object:"list", data:[...]}; OpenRouter sends only
+  // {data:[...]} (measured 2026-10-17) and names the window context_length.
+  // The test that matters is a data array of objects with string ids — an
+  // HTML page or any other JSON fails it.
   const listed = body as { object?: unknown; data?: unknown };
-  const data = Array.isArray(listed.data) ? (listed.data as Array<{ id?: unknown; max_model_len?: unknown }>) : [];
-  if (listed.object !== "list" || data.length === 0 || !data.every((m) => typeof m?.id === "string")) {
+  const data = Array.isArray(listed.data)
+    ? (listed.data as Array<{ id?: unknown; max_model_len?: unknown; context_length?: unknown }>)
+    : [];
+  if ((listed.object !== undefined && listed.object !== "list") || data.length === 0 || !data.every((m) => typeof m?.id === "string")) {
     return { ok: false, code: "not_vllm", detail: text.slice(0, 60), models: [], maxModelLen: null, latencyMs };
   }
+  const first = data[0]!;
+  const window = typeof first.max_model_len === "number" ? first.max_model_len : typeof first.context_length === "number" ? first.context_length : null;
   return {
     ok: true,
     models: data.map((m) => String(m.id)),
-    maxModelLen: typeof data[0]!.max_model_len === "number" ? (data[0]!.max_model_len as number) : null,
+    maxModelLen: window as number | null,
     latencyMs,
   };
 }

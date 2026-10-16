@@ -269,7 +269,13 @@
   --glass-pop-blur: 28px;
   --glass-control: rgba(255, 255, 255, 0.58);
   --glass-control-hover: rgba(255, 255, 255, 0.86);
-  --glass-field: rgba(118, 128, 150, 0.08);
+  /* Fields and content boxes, nearly solid (2026-10-17): over the coloured
+     canvas a 8-9% tint let the gradient show through the text, and a white
+     hairline vanished against it. Popovers and the sidebar plate stay glass. */
+  --glass-field: rgba(247, 248, 251, 0.96);
+  --field-border: rgba(31, 31, 31, 0.14);
+  --surface-card: rgba(255, 255, 255, 0.86);
+  --surface-solid-sunken: rgba(240, 242, 246, 0.96);
   --backdrop-1: rgba(66, 133, 244, 0.5);
   --backdrop-2: rgba(155, 114, 203, 0.46);
   --backdrop-3: rgba(217, 101, 112, 0.34);
@@ -337,7 +343,10 @@
     --glass-pop-blur: 28px;
     --glass-control: rgba(255, 255, 255, 0.08);
     --glass-control-hover: rgba(255, 255, 255, 0.15);
-    --glass-field: rgba(0, 0, 0, 0.22);
+    --glass-field: rgba(14, 15, 18, 0.62);
+    --field-border: rgba(255, 255, 255, 0.14);
+    --surface-card: rgba(36, 38, 43, 0.88);
+    --surface-solid-sunken: rgba(16, 17, 20, 0.62);
     --backdrop-1: rgba(66, 133, 244, 0.52);
     --backdrop-2: rgba(155, 114, 203, 0.47);
     --backdrop-3: rgba(217, 101, 112, 0.36);
@@ -405,7 +414,10 @@
   --glass-pop-blur: 28px;
   --glass-control: rgba(255, 255, 255, 0.08);
   --glass-control-hover: rgba(255, 255, 255, 0.15);
-  --glass-field: rgba(0, 0, 0, 0.22);
+  --glass-field: rgba(14, 15, 18, 0.62);
+  --field-border: rgba(255, 255, 255, 0.14);
+  --surface-card: rgba(36, 38, 43, 0.88);
+  --surface-solid-sunken: rgba(16, 17, 20, 0.62);
   --backdrop-1: rgba(66, 133, 244, 0.52);
   --backdrop-2: rgba(155, 114, 203, 0.47);
   --backdrop-3: rgba(217, 101, 112, 0.36);
@@ -489,7 +501,10 @@
   --glass-pop-blur: 28px;
   --glass-control: rgba(255, 255, 255, 0.58);
   --glass-control-hover: rgba(255, 255, 255, 0.86);
-  --glass-field: rgba(118, 128, 150, 0.08);
+  --glass-field: rgba(247, 248, 251, 0.96);
+  --field-border: rgba(31, 31, 31, 0.14);
+  --surface-card: rgba(255, 255, 255, 0.86);
+  --surface-solid-sunken: rgba(240, 242, 246, 0.96);
   --backdrop-1: rgba(66, 133, 244, 0.5);
   --backdrop-2: rgba(155, 114, 203, 0.46);
   --backdrop-3: rgba(217, 101, 112, 0.34);
