@@ -13,6 +13,7 @@ import { SourcePanel } from "./components/SourcePanel";
 import { closeSource, useOpenSource } from "./state/sourcePanel";
 import { Sidebar } from "./components/Sidebar";
 import { ToastHost } from "./components/Toast";
+import { BrowserConfirmHost } from "./components/BrowserConfirmHost";
 import { TooltipLayer } from "./components/TooltipLayer";
 import { useAuth } from "./auth/AuthContext";
 import { useChatStream } from "./hooks/useChatStream";
@@ -118,6 +119,7 @@ export default function App() {
           />
         </StoreProvider>
       )}
+      <BrowserConfirmHost />
       <ToastHost />
       <TooltipLayer />
     </>

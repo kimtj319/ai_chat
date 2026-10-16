@@ -16,6 +16,7 @@ import { toolsRouter } from "./routes/tools.js";
 import { mcpRouter } from "./routes/mcp.js";
 import { prohibitionsRouter } from "./routes/prohibitions.js";
 import { shareRouter } from "./routes/share.js";
+import { browserRouter } from "./routes/browser.js";
 import { modelsRouter } from "./routes/models.js";
 import { healthRouter } from "./routes/health.js";
 
@@ -96,6 +97,7 @@ export function createApp() {
   app.use("/api", mcpRouter);
   app.use("/api", prohibitionsRouter);
   app.use("/api", shareRouter);
+  app.use("/api", browserRouter);
   app.use("/api", modelsRouter);
   app.use("/api", healthRouter);
   app.use("/api", (_req, res) => {

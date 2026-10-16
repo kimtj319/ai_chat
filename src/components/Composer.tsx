@@ -11,6 +11,7 @@ import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentPreview, type PreviewTarget } from "./AttachmentPreview";
 import { McpPicker } from "./McpPicker";
 import { ReasoningControl } from "./ReasoningControl";
+import { BrowserControlToggle } from "./BrowserControlToggle";
 import "./Composer.css";
 
 /** Match .composer-textarea's min/max-height in Composer.css. */
@@ -263,6 +264,8 @@ export function Composer({
           rows={1}
         />
         <div className="composer-trailing">
+          {/* 크롬 확장은 데스크톱 크롬에만 있다. 임베딩 턴은 도구를 부르지 않는다. */}
+          {!isEmbedding && !touch && <BrowserControlToggle />}
           <button
             type="button"
             className="btn-icon composer-attach"

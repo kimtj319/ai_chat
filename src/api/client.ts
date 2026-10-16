@@ -849,3 +849,15 @@ export function getSharedConversation(token: string): Promise<SharedConversation
 export function sharedAttachmentUrl(token: string, attachmentId: string): string {
   return apiPath(`/shared/${encodeURIComponent(token)}/attachments/${attachmentId}`);
 }
+
+/** 크롬 명령의 결과를 서버의 도구 루프에 돌려준다(server/routes/browser.ts). */
+export async function postBrowserActionResult(
+  conversationId: string,
+  callId: string,
+  outcome: { ok: boolean; result?: unknown; error?: string },
+): Promise<void> {
+  await request<void>(`/conversations/${conversationId}/browser-actions/${callId}`, {
+    method: "POST",
+    body: JSON.stringify(outcome),
+  });
+}

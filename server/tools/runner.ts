@@ -8,6 +8,12 @@ export interface ToolRunResult {
   durationMs: number;
 }
 
+/** Same cap every tool result gets, for results that arrive from elsewhere (the user's browser). */
+export function truncateToolResult(value: unknown): unknown {
+  // 빈 결과는 그대로. truncate 는 JSON 으로 셀 수 있는 값만 받는다(undefined 면 던진다).
+  return value === undefined ? undefined : truncate(value);
+}
+
 function truncate(value: unknown): unknown {
   const asString = typeof value === "string" ? value : JSON.stringify(value);
   const buf = Buffer.from(asString, "utf8");

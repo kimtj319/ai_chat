@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 import { sendMessage as postMessage, stopGeneration as postStopGeneration, answerNow as postAnswerNow } from "../api/client";
 import type { ChatMessage, ToolCall } from "../api/types";
+import { browserControlActive } from "../browser/browserControl";
+import { runBrowserAction } from "../browser/runBrowserAction";
 import { createId } from "../state/defaults";
 import { useStore } from "../state/StoreContext";
 import type { ClientChatMessage, LiveToolResult } from "../state/types";
@@ -80,7 +82,12 @@ export function useChatStream() {
       setAnswerStreaming(false);
       }
 
-      const body = attachmentIds.length > 0 ? { content: trimmed, attachmentIds } : { content: trimmed };
+      const body = {
+        content: trimmed,
+        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        // 보내는 순간의 상태로 정한다 — 턴 중간에 스위치를 바꿔도 이번 턴의 도구는 그대로다.
+        ...(browserControlActive() ? { browserControl: true } : {}),
+      };
       void postMessage(conversationId, body, controller.signal, {
         onEvent: (event) => {
           switch (event.type) {
@@ -152,6 +159,12 @@ export function useChatStream() {
               patchMessage(conversationId, id, { liveToolResults });
               break;
             }
+
+            // 서버가 사용자의 크롬에서 실행할 명령을 보냈다. 확장에 넘기고(필요하면 사용자에게
+            // 묻고) 결과를 서버에 돌려준다. 기다리지 않는다 — 스트림은 계속 흘러야 한다.
+            case "browser_action":
+              void runBrowserAction(conversationId, event, controller.signal);
+              break;
 
             case "usage": {
               const id = ensurePlaceholder();

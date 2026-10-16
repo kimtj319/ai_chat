@@ -639,7 +639,11 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
       // final message. The stream shape the client already parses is unchanged
       // (user_message -> done).
     } else {
-      const generator = runConversationTurn(afterUser, req.ownerId, controller.signal, answerNowController.signal);
+      // 크롬 제어는 이 요청을 보낸 브라우저의 사정(확장 연결 + 사용자 선택)이라 대화가
+      // 아니라 요청에 실려 온다.
+      const generator = runConversationTurn(afterUser, req.ownerId, controller.signal, answerNowController.signal, {
+        browserControl: body.browserControl === true,
+      });
       let result;
       for (;;) {
         const step = await generator.next();

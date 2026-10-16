@@ -2,6 +2,8 @@
   margin: 0 0 18px;
   color: var(--on-surface-variant);
   line-height: 1.6;
+  /* 확인 문구가 줄을 나눠 쓴 경우(크롬 제어의 확인 창) 그대로 보인다. */
+  white-space: pre-line;
 }
 
 .confirm-actions {

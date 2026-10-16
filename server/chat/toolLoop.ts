@@ -21,7 +21,9 @@ import { reasoningParamsFor } from "./reasoningProfiles.js";
 import { compactResearchContext, type CompactionResult } from "./contextCompaction.js";
 import crypto from "node:crypto";
 import { getTool, readAttachmentTool } from "../tools/index.js";
-import { runTool } from "../tools/runner.js";
+import { runTool, truncateToolResult } from "../tools/runner.js";
+import { BROWSER_TOOLS, isBrowserTool } from "../tools/browser.js";
+import { startBrowserAction } from "./browserBridge.js";
 import { mcpToolsForOwner } from "../mcp/toolAdapter.js";
 import type { ToolDefinition } from "../tools/types.js";
 import { config } from "../config.js";
@@ -41,6 +43,9 @@ export type ChatEvent =
   | { type: "content"; delta: string }
   | { type: "tool_call"; id: string; name: string; arguments: unknown }
   | { type: "tool_result"; id: string; name: string; ok: boolean; durationMs: number; preview: string }
+  // 사용자의 크롬에서 실행할 명령(tools/browser.ts). 웹페이지가 확장 프로그램에 넘겨 실행하고
+  // 결과를 /conversations/:id/browser-actions/:callId 로 돌려준다.
+  | { type: "browser_action"; callId: string; toolCallId: string; name: string; arguments: unknown }
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
   // Informational, not a failure: the turn continues in a degraded form.
   | { type: "notice"; message: string }
@@ -87,6 +92,18 @@ const MAX_IDENTICAL_TOOL_CALLS = 3;
 const MAX_TOOL_CALLS_PER_TURN = 40;
 
 /**
+ * 크롬을 다루는 턴의 한도. 페이지 하나를 다루는 데 읽기·스크롤·클릭이 여러 번 들고,
+ * 같은 "아래로 스크롤" 을 연달아 부르는 것도 정상이다. 그래도 끝없이 돌지는 않게 묶는다.
+ */
+const MAX_IDENTICAL_BROWSER_CALLS = 8;
+const MAX_TOOL_CALLS_PER_BROWSER_TURN = 80;
+
+export interface TurnOptions {
+  /** 이 턴을 보낸 브라우저에 크롬 확장이 연결돼 있고 사용자가 "크롬 제어" 를 켰다. */
+  browserControl?: boolean;
+}
+
+/**
  * Sent as a trailing user message the moment a turn stops using tools, so the
  * next request writes the answer instead of announcing one.
  *
@@ -129,6 +146,7 @@ export async function* runConversationTurn(
    * answer instead (routes/conversations.ts tracks the two independently).
    */
   answerNowSignal: AbortSignal,
+  options: TurnOptions = {},
 ): AsyncGenerator<ChatEvent, TurnResult, void> {
   // "normal" has a safety-net ceiling on how long the model may think;
   // "external" waits to its own end. Either way, "지금 답변하기" can also stop
@@ -256,6 +274,9 @@ export async function* runConversationTurn(
   const enabledNames = new Set(conversation.enabledTools ?? []);
   const mcpTools = await mcpToolsPromise;
   snapshotTools.push(...mcpTools.tools.filter((t) => enabledNames.has(t.name)));
+  // 크롬 도구는 대화 설정이 아니라 이 턴을 보낸 브라우저가 정한다(tools/browser.ts).
+  if (options.browserControl) snapshotTools.push(...BROWSER_TOOLS);
+  const maxToolCallsThisTurn = options.browserControl ? MAX_TOOL_CALLS_PER_BROWSER_TURN : MAX_TOOL_CALLS_PER_TURN;
   /**
    * The same objects the array was built from. Resolving a call through this
    * rather than through getTool() is what stops the model reaching a tool this
@@ -635,8 +656,8 @@ export async function* runConversationTurn(
       const signature = `${name}:${parseError ? pending.argsText : JSON.stringify(parsedArgs)}`;
       const seen = (toolCallSignatures.get(signature) ?? 0) + 1;
       toolCallSignatures.set(signature, seen);
-      const repeating = seen > MAX_IDENTICAL_TOOL_CALLS;
-      const tooManyCalls = allToolCalls.length > MAX_TOOL_CALLS_PER_TURN;
+      const repeating = seen > (isBrowserTool(name) ? MAX_IDENTICAL_BROWSER_CALLS : MAX_IDENTICAL_TOOL_CALLS);
+      const tooManyCalls = allToolCalls.length > maxToolCallsThisTurn;
 
       let resultRecord: ToolResultRecord;
       if (repeating || tooManyCalls) {
@@ -658,7 +679,7 @@ export async function* runConversationTurn(
           // a user message, which is where the model actually acts on it.
           error: repeating
             ? `같은 도구를 같은 인자로 ${MAX_IDENTICAL_TOOL_CALLS}번 넘게 호출하여 이 호출은 실행하지 않았습니다.`
-            : `이번 턴의 도구 호출이 ${MAX_TOOL_CALLS_PER_TURN}회를 넘어 이 호출은 실행하지 않았습니다.`,
+            : `이번 턴의 도구 호출이 ${maxToolCallsThisTurn}회를 넘어 이 호출은 실행하지 않았습니다.`,
           durationMs: 0,
         };
       } else if (parseError) {
@@ -669,6 +690,22 @@ export async function* runConversationTurn(
         const tool = turnTools.get(name);
         if (!tool) {
           resultRecord = { id, name, ok: false, error: `Unknown tool: ${name}`, durationMs: 0 };
+        } else if (isBrowserTool(name)) {
+          // 서버에서 실행할 수 없는 도구다. 웹페이지에 넘기고, 사용자의 크롬이 실행해
+          // 돌려줄 때까지 기다린다. 사용자가 확인 창에서 고민하는 시간도 여기에 든다.
+          // 중지·지금 답변하기가 오면 기다림이 바로 끝난다(chat/browserBridge.ts).
+          const startedAt = Date.now();
+          const action = startBrowserAction(ownerId, conversation.id, signal);
+          yield { type: "browser_action", callId: action.callId, toolCallId: id, name, arguments: parsedArgs };
+          const outcome = await action.result;
+          resultRecord = {
+            id,
+            name,
+            ok: outcome.ok,
+            result: outcome.ok ? truncateToolResult(outcome.result) : undefined,
+            error: outcome.ok ? undefined : outcome.error,
+            durationMs: Date.now() - startedAt,
+          };
         } else {
           // The context is what scopes read_attachment to this conversation's
           // own files; every other tool ignores it.

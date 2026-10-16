@@ -667,6 +667,28 @@ The runner (`server/tools/runner.ts`) applies the 10s timeout, 100KB
 truncation, and logging automatically — tools don't need to implement any of
 that themselves.
 
+## Chrome control (크롬 제어)
+
+모델이 **사용자 자신의 크롬**에서 페이지를 열고, 읽고, 누르고, 입력하게 하는 기능이다.
+서버는 사용자 PC 의 크롬에 닿을 수 없으므로 확장 프로그램(`extension/`)을 거친다.
+
+```
+모델 → 서버(chat/toolLoop.ts) ─browser_action 이벤트→ 웹페이지 ─postMessage→ 확장(bridge.js → background.js) → 크롬
+                         ↑────────── POST /api/conversations/:id/browser-actions/:callId ←──────── 결과
+```
+
+- 설치: 입력창의 크롬 단추(데스크톱만) → "확장 프로그램 내려받기"(빌드가 `public/ai-console-chrome.zip` 을 만든다) →
+  `chrome://extensions` 개발자 모드 → 압축해제된 확장 프로그램 로드 → 확장 창에 AI Console 주소를 저장.
+- 도구(`server/tools/browser.ts`): `browser_open`·`browser_read`·`browser_click`·`browser_type`·`browser_scroll`·`browser_back`·`browser_tabs`.
+  대화의 도구 목록에 들지 않고, 그 턴을 보낸 브라우저에 확장이 연결돼 있고 사용자가 크롬 단추를 켰을 때(`browserControl: true`)만 실린다.
+- 모델에게는 화면 그림이 아니라 글로 된 페이지(본문 + `[e12]` 번호가 붙은 조작 요소)를 준다.
+- 지키는 것(확장이 판정, 웹페이지가 사용자에게 묻는다):
+  - 처음 가는 사이트는 사용자 허용이 필요하다. 허용 목록은 확장 창에서 보고 지운다.
+  - 제출·전송·구매·삭제처럼 보이는 클릭과 GET 이 아닌 폼 제출은 매번 확인한다.
+  - 비밀번호 칸에는 입력하지 않는다. AI Console 자신·`chrome://`·크롬 웹 스토어는 다루지 않는다.
+  - 중계는 확장 창에 적은 주소의 페이지에만 붙는다 — 다른 사이트는 명령을 보낼 수 없다.
+  - 중지·지금 답변하기를 누르면 기다리던 브라우저 동작도 끝난다. 답이 없으면 5분 뒤 실패로 끝난다.
+
 ## Project structure
 
 ```

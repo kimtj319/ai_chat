@@ -220,6 +220,8 @@ export interface SendMessageRequest {
   attachmentIds?: string[];
   settings?: ConversationSettings;
   enabledTools?: string[];
+  /** 이 브라우저에 크롬 확장이 연결돼 있고 사용자가 "크롬 제어" 를 켰다. */
+  browserControl?: boolean;
 }
 
 // A JSON-Schema-ish shape, just detailed enough to render tool parameters in
@@ -365,6 +367,8 @@ export type ServerEvent =
   | { type: "content"; delta: string }
   | { type: "tool_call"; id: string; name: string; arguments: unknown }
   | { type: "tool_result"; id: string; name: string; ok: boolean; durationMs: number; preview: string }
+  /** 사용자의 크롬에서 실행할 명령. 확장 프로그램이 실행하고, 결과는 browser-actions 로 돌려준다. */
+  | { type: "browser_action"; callId: string; toolCallId: string; name: string; arguments: unknown }
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
   | { type: "notice"; message: string }
   /** The conversation was renamed from a summary of the request that opened it. */

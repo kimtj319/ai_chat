@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AI Console 크롬 연결</title>
+<style>
+  :root { --ink: #1f1f1f; --muted: #5f6368; --line: #dadce0; --accent: #1a73e8; --danger: #c5221f; --bg: #ffffff; --soft: #f1f3f4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e8eaed; --muted: #9aa0a6; --line: #3c4043; --accent: #8ab4f8; --danger: #f28b82; --bg: #202124; --soft: #2d2e31; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 340px; padding: 16px; font: 13px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; color: var(--ink); background: var(--bg); }
+  h1 { margin: 0 0 4px; font-size: 15px; }
+  p { margin: 0; color: var(--muted); }
+  section { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  label { font-weight: 600; }
+  .row { display: flex; gap: 8px; }
+  input[type=url] { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--ink); font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  button.link { border: none; background: none; padding: 0 4px; color: var(--danger); }
+  .switch { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 180px; overflow: auto; }
+  li { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-top: 1px solid var(--line); }
+  li:first-child { border-top: none; }
+  .empty { padding: 8px 10px; color: var(--muted); }
+  .status { min-height: 1.5em; color: var(--muted); }
+  .status[data-tone=error] { color: var(--danger); }
+</style>
+</head>
+<body>
+  <h1>AI Console 크롬 연결</h1>
+  <p>AI Console 의 모델이 허용한 사이트에서 이 크롬을 읽고 조작합니다. 제출·전송·구매·삭제처럼 보이는 동작은 매번 AI Console 화면에서 확인을 받습니다.</p>
+
+  <section>
+    <label for="app-origin">연결할 AI Console 주소</label>
+    <div class="row">
+      <input id="app-origin" type="url" placeholder="http://서버주소:9000" autocomplete="off">
+      <button id="save" class="primary" type="button">저장</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
+  </section>
+
+  <section>
+    <div class="switch">
+      <label for="enabled">크롬 연결 켜기</label>
+      <input id="enabled" type="checkbox">
+    </div>
+    <p>끄면 모델의 모든 브라우저 명령을 거절합니다.</p>
+  </section>
+
+  <section>
+    <div class="switch">
+      <label>허용한 사이트</label>
+      <button id="clear" class="link" type="button">모두 지우기</button>
+    </div>
+    <ul id="sites"></ul>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
