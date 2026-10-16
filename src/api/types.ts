@@ -288,6 +288,8 @@ export interface ModelCatalogEntry {
    * read as adjustable, never as fixed.
    */
   reasoningFixed?: boolean;
+  /** REASONING_PROFILES as applied to this model: "fixed" or "budget:N". */
+  reasoningProfile?: string;
   maxModelLen: number;
   /**
    * Present once the server publishes its derived ceilings. Read through
@@ -659,6 +661,26 @@ export interface BoardPostSummary {
   canManage: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Notice {
+  id: string;
+  title: string;
+  body: string;
+  authorId: string;
+  /** 계정이 지워졌으면 null — 화면은 id 를 쓴다. */
+  authorName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NoticesResponse {
+  /** 새것부터. */
+  notices: Notice[];
+  /** 이 계정이 공지 창을 마지막으로 연 때. 한 번도 안 열었으면 null. */
+  seenAt: string | null;
+  /** seenAt 뒤에 올라온 공지 수 — 머리의 알림 표시. */
+  unread: number;
 }
 
 export interface BoardListResponse {

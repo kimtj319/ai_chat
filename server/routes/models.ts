@@ -13,7 +13,7 @@ import {
 import { attachmentBudget } from "../attachments/budget.js";
 import { MAX_IMAGE_EDGE } from "../attachments/sniff.js";
 import { config } from "../config.js";
-import { reasoningIsFixed } from "../chat/reasoningProfiles.js";
+import { reasoningIsFixed, reasoningProfileLabel } from "../chat/reasoningProfiles.js";
 import { modelAccessFor } from "../vllm/access.js";
 import { modelOwnerOf, removeModelOwner, setModelOwner } from "../storage/modelOwners.js";
 
@@ -65,6 +65,8 @@ modelsRouter.get("/models", async (req, res) => {
           // wise-lloa-max held prompt_tokens at 145 across 58 runs whatever was
           // sent, and kept thinking through enable_thinking:false every time.
           reasoningFixed: reasoningIsFixed(e.id),
+          // How REASONING_PROFILES treats this model, shown on the admin page.
+          reasoningProfile: reasoningProfileLabel(e.id),
           maxModelLen: e.maxModelLen,
           attachments: {
             maxMessageTokens: budget.messageTokens,

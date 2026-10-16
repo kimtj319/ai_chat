@@ -17,6 +17,9 @@
 /* ---- card ---- */
 :is(
     .md-group-rows,
+    .conv-settings-card,
+    .admin-model-card,
+    .admin-notice-form,
     .acc-row,
     .md-detail,
     .documents-column,
@@ -64,6 +67,7 @@
     .model-switcher-popover,
     .sidebar-settings-popover,
     .chat-download-menu,
+    .notice-popover,
     .chat-jump-bottom,
     .chat-drop-card,
     .source-panel-inner,

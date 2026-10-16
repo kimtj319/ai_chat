@@ -376,9 +376,10 @@ export async function* runConversationTurn(
     );
   }
 
-  // Only on the turn that actually summarised: from the next turn on the stored
-  // summary is just part of the history, and there is nothing to announce.
-  if (history.notice) yield* noticeEvent(history.notice);
+  // The summary is not announced in the answer (2026-10-16, user request): the
+  // compaction progress bar already showed it happening, and a standing note
+  // under every summarised turn read as a warning. `history.notice` still marks
+  // the turn that summarised — it is what tells the compaction events it worked.
 
   for (let round = 1; !aborted; round++) {
     // Stop, the safety net, or "지금 답변하기" may have arrived while the

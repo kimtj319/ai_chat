@@ -66,6 +66,7 @@
 .app-shell[data-narrow] .documents-header,
 .app-shell[data-narrow] .library-header,
 .app-shell[data-narrow] .tools-page-header,
+.app-shell[data-narrow] .conv-settings-header,
 .app-shell[data-narrow] .admin-header {
   padding-left: calc(var(--space-5) + 40px + var(--space-5));
 }
@@ -92,10 +93,21 @@
   .library-body,
   .tools-page-header,
   .tools-page-body,
+  .conv-settings-header,
+  .conv-settings-body,
+  .conv-settings-actions,
   .admin-header,
   .admin-body {
     padding-left: var(--space-6);
     padding-right: var(--space-6);
+  }
+
+  .conv-settings-card {
+    padding: var(--space-8) var(--space-7);
+  }
+
+  .param-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* 헤더는 서랍 토글 자리를 계속 비워 둬야 한다 — 위 규칙이 그것을 덮어쓰지
@@ -105,6 +117,7 @@
   .app-shell[data-narrow] .documents-header,
   .app-shell[data-narrow] .library-header,
   .app-shell[data-narrow] .tools-page-header,
+  .app-shell[data-narrow] .conv-settings-header,
   .app-shell[data-narrow] .admin-header {
     padding-left: calc(var(--space-5) + 40px + var(--space-5));
   }
@@ -275,4 +288,40 @@
   display: block;
   flex-shrink: 0;
   height: env(safe-area-inset-bottom);
+}
+
+/* 사이드바에서 화면을 옮길 때: 새 화면이 살짝 올라오며 나타난다. 각 화면은 바뀔 때마다
+   새로 그려지므로(App 이 하나만 그린다) 그때마다 한 번 돈다. 같은 채팅 화면 안에서
+   대화를 바꿀 때는 다시 그려지지 않아 돌지 않는다 — 그것은 화면을 옮기는 일이 아니다. */
+.chat-view,
+.library-page,
+.documents-page,
+.tools-page,
+.conv-settings-page,
+.board-page,
+.admin-page {
+  animation: page-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-view,
+  .library-page,
+  .documents-page,
+  .tools-page,
+  .conv-settings-page,
+  .board-page,
+  .admin-page {
+    animation: none;
+  }
 }

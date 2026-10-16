@@ -178,7 +178,7 @@ interface SidebarProps {
   libraryOpen: boolean;
   documentsOpen: boolean;
   boardOpen: boolean;
-  /** 계정 관리 화면 — 사이드바 항목은 없지만 "새 대화" 가 선택된 것처럼 보이면 안 된다. */
+  /** 관리자 메뉴 화면 — 사이드바 항목은 없지만 "새 대화" 가 선택된 것처럼 보이면 안 된다. */
   adminOpen?: boolean;
   onOpenConversationSettings: () => void;
   onOpenToolsPanel: () => void;
@@ -386,7 +386,7 @@ export function Sidebar({
           }}
         >
           <ShieldIcon />
-          <span>계정 관리</span>
+          <span>관리자 메뉴</span>
         </button>
       )}
 

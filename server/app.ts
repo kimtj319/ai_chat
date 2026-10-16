@@ -10,6 +10,7 @@ import { adminRouter } from "./routes/admin.js";
 import { sessionRouter } from "./routes/session.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { boardRouter } from "./routes/board.js";
+import { noticesRouter } from "./routes/notices.js";
 import { attachmentsRouter } from "./routes/attachments.js";
 import { documentsRouter } from "./routes/documents.js";
 import { toolsRouter } from "./routes/tools.js";
@@ -95,6 +96,7 @@ export function createApp() {
   app.use("/api", sessionRouter);
   app.use("/api", conversationsRouter);
   app.use("/api", boardRouter);
+  app.use("/api", noticesRouter);
   app.use("/api", toolsRouter);
   app.use("/api", mcpRouter);
   app.use("/api", prohibitionsRouter);

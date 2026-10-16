@@ -19,7 +19,6 @@ import { showErrorToast, showToast } from "./Toast";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
 import { AnswerNowButton } from "./AnswerNowButton";
-import { ConversationSettingsPanel } from "./ConversationSettingsPanel";
 import { Composer } from "./Composer";
 import { MessageItem } from "./MessageItem";
 import { shortModelName } from "./ModelSelector";
@@ -29,6 +28,8 @@ import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
 import { CompactionProgress } from "./CompactionProgress";
 import "./ChatView.css";
+import { prefetchBoardList } from "../state/boardCache";
+import { NoticeButton } from "./NoticeButton";
 
 /** How close to the end still counts as "at the bottom".
  *  Wide enough that a chunk landing between the follow scroll and the scroll
@@ -40,8 +41,6 @@ interface ChatViewProps {
   chatStream: ReturnType<typeof useChatStream>;
   /** Null for everyone who is not an administrator, which hides the shortcut. */
   onOpenAdmin: (() => void) | null;
-  showConversationSettings: boolean;
-  onCloseConversationSettings: () => void;
   /** Opens the 라이브러리 page, from the composer's MCP picker. */
   onOpenLibrary: () => void;
   onOpenTools: () => void;
@@ -135,8 +134,6 @@ function toExportableMessage(message: ClientChatMessage): ChatMessage {
 export function ChatView({
   chatStream,
   onOpenAdmin,
-  showConversationSettings,
-  onCloseConversationSettings,
   onOpenLibrary,
   onOpenTools,
   onOpenBoard,
@@ -456,11 +453,14 @@ export function ChatView({
             >
               <ShareIcon />
             </button>
+            <NoticeButton />
             <button
               type="button"
               className="btn-icon"
               data-tooltip="문의 게시판"
               aria-label="문의 게시판"
+              onPointerEnter={prefetchBoardList}
+              onFocus={prefetchBoardList}
               onClick={onOpenBoard}
             >
               <BoardIcon />
@@ -469,8 +469,8 @@ export function ChatView({
               <button
                 type="button"
                 className="btn-icon"
-                data-tooltip="계정 관리"
-                aria-label="계정 관리"
+                data-tooltip="관리자 메뉴"
+                aria-label="관리자 메뉴"
                 onClick={onOpenAdmin}
               >
                 <ShieldIcon />
@@ -554,9 +554,6 @@ export function ChatView({
       </div>
       <div className="composer-spacer" aria-hidden="true" />
 
-      {showConversationSettings && (
-        <ConversationSettingsPanel conversation={activeConversation} onClose={onCloseConversationSettings} />
-      )}
     </div>
   );
 }

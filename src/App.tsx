@@ -5,6 +5,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { AppBackdrop } from "./components/AppBackdrop";
 import { BrandMark } from "./components/BrandMark";
 import { BoardPage } from "./components/BoardPage";
+import { ConversationSettingsPage } from "./components/ConversationSettingsPage";
 import { ChatView } from "./components/ChatView";
 import { LibraryPage } from "./components/LibraryPage";
 import { ToolsPage } from "./components/ToolsPage";
@@ -169,11 +170,6 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
       });
   }, [session, conversationsLoading, activeConversationId, createConversation]);
 
-  // Panel-open flags live here (rather than inside ChatView) purely so the
-  // sidebar's icon-nav rows can trigger and reflect them too — no store/logic
-  // change, just where this presentational on/off state is held.
-  const [showConversationSettings, setShowConversationSettings] = useState(false);
-
   // 좁은 화면에서는 사이드바가 붙박이 칸을 그만두고 떠 있는 서랍이 된다.
   // 기준점은 CSS 와 같은 1024px 이다 — 여기서 구조가 바뀌고(스크림·Esc·자동
   // 닫기), 저기서 모양이 바뀐다.
@@ -239,6 +235,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   const showBoard = view === "board";
   const showAdmin = view === "admin" && onOpenAdmin !== null;
   const showTools = view === "tools";
+  const showSettings = view === "settings";
 
   const sourceOpen = useOpenSource() !== null;
   useEffect(() => {
@@ -278,18 +275,13 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
       )}
 
       <Sidebar
-        conversationSettingsOpen={showConversationSettings}
+        conversationSettingsOpen={showSettings}
         toolsPanelOpen={showTools}
         libraryOpen={showLibrary}
         documentsOpen={showDocuments}
         boardOpen={showBoard}
         adminOpen={showAdmin}
-        // Both panels live in ChatView, so opening one has to bring the chat
-        // back with it when the library is the thing on screen.
-        onOpenConversationSettings={() => {
-          navigate("chat");
-          setShowConversationSettings(true);
-        }}
+        onOpenConversationSettings={() => navigateFromDrawer("settings")}
         onOpenToolsPanel={() => navigateFromDrawer("tools")}
         onOpenLibrary={() => navigateFromDrawer("library")}
         onOpenDocuments={() => navigateFromDrawer("documents")}
@@ -301,6 +293,8 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         <AdminPage onBack={() => navigate("chat")} />
       ) : showTools ? (
         <ToolsPage onBack={() => navigate("chat")} />
+      ) : showSettings ? (
+        <ConversationSettingsPage onBack={() => navigate("chat")} />
       ) : showLibrary ? (
         <LibraryPage onBack={() => navigate("chat")} onAdminSetStatus={onAdminSetMcpStatus} />
       ) : showDocuments ? (
@@ -311,15 +305,13 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         <ChatView
           chatStream={chatStream}
           onOpenAdmin={onOpenAdmin}
-          showConversationSettings={showConversationSettings}
-          onCloseConversationSettings={() => setShowConversationSettings(false)}
           onOpenLibrary={() => navigate("library")}
           onOpenTools={() => navigate("tools")}
           onOpenBoard={() => navigate("board")}
         />
       )}
       {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
-      {!showLibrary && !showDocuments && !showBoard && !showAdmin && !showTools && <SourcePanel />}
+      {!showLibrary && !showDocuments && !showBoard && !showAdmin && !showTools && !showSettings && <SourcePanel />}
     </div>
   );
 }

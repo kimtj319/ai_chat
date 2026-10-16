@@ -17,4 +17,27 @@
   box-shadow: var(--shadow-lg);
   /* It is a label, not a target: hovering it must not keep it alive. */
   pointer-events: none;
+  /* Appears at once, but fades in over a moment so passing across a row of
+     icons does not strobe. */
+  animation: icon-tooltip-in 0.12s ease-out;
+}
+
+/* Anchored by its bottom edge to the trigger's top. */
+.icon-tooltip[data-above] {
+  transform: translate(-50%, -100%);
+}
+
+@keyframes icon-tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-tooltip {
+    animation: none;
+  }
 }

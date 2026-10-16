@@ -10,7 +10,7 @@
  * 때문이다. /admin 을 경로로 두면 새로고침에서 404 가 난다.
  */
 
-export type View = "chat" | "admin" | "library" | "documents" | "board" | "tools";
+export type View = "chat" | "admin" | "library" | "documents" | "board" | "tools" | "settings";
 
 export const CHAT_HASH = "#/";
 export const ADMIN_HASH = "#/admin";
@@ -18,6 +18,7 @@ export const LIBRARY_HASH = "#/library";
 export const DOCUMENTS_HASH = "#/documents";
 export const BOARD_HASH = "#/board";
 export const TOOLS_HASH = "#/tools";
+export const SETTINGS_HASH = "#/settings";
 
 export const HASHES: Record<View, string> = {
   chat: CHAT_HASH,
@@ -26,6 +27,7 @@ export const HASHES: Record<View, string> = {
   documents: DOCUMENTS_HASH,
   board: BOARD_HASH,
   tools: TOOLS_HASH,
+  settings: SETTINGS_HASH,
 };
 
 export function viewFromHash(hash: string): View {
@@ -33,6 +35,7 @@ export function viewFromHash(hash: string): View {
   if (hash === LIBRARY_HASH) return "library";
   if (hash === DOCUMENTS_HASH) return "documents";
   if (hash === TOOLS_HASH) return "tools";
+  if (hash === SETTINGS_HASH) return "settings";
   // 게시판만 아래에 주소가 더 달린다 — #/board/<글 id>. 글을 읽다 새로고침해도
   // 그 글이 그대로 있어야 하고, 링크로 건네줄 수도 있어야 하기 때문이다.
   if (hash === BOARD_HASH || hash.startsWith(`${BOARD_HASH}/`)) return "board";

@@ -5,6 +5,7 @@ import { CopyButton } from "./CopyButton";
 import { EmbeddingResult } from "./EmbeddingResult";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { citationSources } from "../state/citations";
+import { visibleNotice } from "../state/visibleNotice";
 import { MessageAttachments } from "./MessageAttachments";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ToolUsagePanel } from "./ToolUsagePanel";
@@ -34,6 +35,7 @@ function formatDuration(ms: number): string {
 
 export function MessageItem({ conversationId, message, attachmentUrlFor }: MessageItemProps) {
   const isUser = message.role === "user";
+  const notice = visibleNotice(message.notice);
   // An embedding turn has no prose to render, and no completion tokens to
   // report — the result panel below carries both the numbers and the usage.
   const embedding = !isUser ? message.embedding : undefined;
@@ -92,7 +94,7 @@ export function MessageItem({ conversationId, message, attachmentUrlFor }: Messa
           <p className="message-note">이 응답은 reasoning 필드에서 복원되었습니다.</p>
         )}
 
-        {message.notice && <p className="message-note">{message.notice}</p>}
+        {notice && <p className="message-note">{notice}</p>}
 
         {message.error && <p className="message-error">{message.error}</p>}
       </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client";
 import type { BoardPostStatus, BoardPostSummary, BoardPostView } from "../api/types";
 import { BOARD_HASH, boardPostHash, boardPostIdFromHash } from "../routes";
+import { cachedBoardList, loadBoardList } from "../state/boardCache";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
 import "./BoardPage.css";
@@ -53,11 +54,12 @@ function isSubmitChord(e: { key: string; ctrlKey: boolean; metaKey: boolean }): 
 }
 
 export function BoardPage({ onBack }: Props) {
-  const [posts, setPosts] = useState<BoardPostSummary[]>([]);
-  const [knownTags, setKnownTags] = useState<string[]>([]);
+  // The last list seen draws at once; reload() refreshes it underneath.
+  const [posts, setPosts] = useState<BoardPostSummary[]>(() => cachedBoardList()?.posts ?? []);
+  const [knownTags, setKnownTags] = useState<string[]>(() => cachedBoardList()?.tags ?? []);
   const [tab, setTab] = useState<Tab>("open");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [listLoading, setListLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(() => cachedBoardList() === null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -98,9 +100,9 @@ export function BoardPage({ onBack }: Props) {
   /* --------------------------------------------------------------- 불러오기 */
 
   const reload = useCallback(async () => {
-    setListLoading(true);
+    setListLoading(cachedBoardList() === null);
     try {
-      const body = await api.listBoardPosts();
+      const body = await loadBoardList();
       setPosts(body.posts);
       setKnownTags(body.tags);
     } catch (err) {

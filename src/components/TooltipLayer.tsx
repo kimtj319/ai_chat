@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import "./TooltipLayer.css";
 
 /**
- * Tooltips for icon-only controls, shown only after the pointer has rested on
- * one for a while.
+ * Tooltips for icon-only controls, shown as soon as the pointer reaches one.
+ * (It waited three seconds until 2026-10-16; by then most people had clicked
+ * or moved on, so the label never did its job.)
  *
  * One listener on the document rather than a wrapper around each button: there
  * are two dozen of these, they sit inside flex rows whose spacing a wrapper
@@ -18,23 +19,36 @@ import "./TooltipLayer.css";
  * accessible name comes from `aria-label`, which every one of them already has,
  * so nothing is lost by dropping `title`.
  */
-const DELAY_MS = 3000;
-
 interface Bubble {
   text: string;
   left: number;
   top: number;
+  /** Above the trigger when there is no room below (the composer's buttons). */
+  above: boolean;
+}
+
+/** Room a one-line bubble needs below its trigger, gap included. */
+const BELOW_ROOM = 40;
+/** Keeps a bubble near the window's edge from being cut off. */
+const EDGE = 8;
+const MAX_WIDTH = 260;
+
+function place(target: HTMLElement, text: string): Bubble {
+  const rect = target.getBoundingClientRect();
+  const above = rect.bottom + BELOW_ROOM > window.innerHeight;
+  const half = Math.min(MAX_WIDTH, text.length * 8 + 24) / 2;
+  const centre = rect.left + rect.width / 2;
+  const left = Math.min(Math.max(centre, EDGE + half), window.innerWidth - EDGE - half);
+  return { text, left, top: above ? rect.top - 8 : rect.bottom + 8, above };
 }
 
 export function TooltipLayer() {
   const [bubble, setBubble] = useState<Bubble | null>(null);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let armed: HTMLElement | null = null;
 
     const cancel = () => {
-      clearTimeout(timer);
       armed = null;
       setBubble(null);
     };
@@ -45,18 +59,11 @@ export function TooltipLayer() {
         if (armed) cancel();
         return;
       }
-      // Moving within the same control (over its icon, say) must not restart
-      // the wait, or a tooltip on a small button would never arrive.
+      // Moving within the same control (over its icon, say) keeps the bubble.
       if (target === armed) return;
-      clearTimeout(timer);
       armed = target;
-      setBubble(null);
-      timer = setTimeout(() => {
-        const text = target.dataset.tooltip;
-        if (!text || !target.isConnected) return;
-        const rect = target.getBoundingClientRect();
-        setBubble({ text, left: rect.left + rect.width / 2, top: rect.bottom + 8 });
-      }, DELAY_MS);
+      const text = target.dataset.tooltip;
+      setBubble(text ? place(target, text) : null);
     };
 
     // Anything that means the pointer has moved on, or that the user has acted:
@@ -68,7 +75,6 @@ export function TooltipLayer() {
     window.addEventListener("blur", cancel);
 
     return () => {
-      clearTimeout(timer);
       document.removeEventListener("mouseover", onOver, true);
       document.removeEventListener("mousedown", cancel, true);
       document.removeEventListener("keydown", cancel, true);
@@ -80,7 +86,13 @@ export function TooltipLayer() {
   if (!bubble) return null;
 
   return (
-    <span className="icon-tooltip" role="tooltip" style={{ left: bubble.left, top: bubble.top }}>
+    <span
+      key={`${bubble.text}@${bubble.left},${bubble.top}`}
+      className="icon-tooltip"
+      data-above={bubble.above || undefined}
+      role="tooltip"
+      style={{ left: bubble.left, top: bubble.top }}
+    >
       {bubble.text}
     </span>
   );

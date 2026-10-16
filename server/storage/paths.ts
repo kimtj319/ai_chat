@@ -198,6 +198,20 @@ export function boardPostFile(postId: string): string {
   return path.join(boardPostsDir(), `${postId}.json`);
 }
 
+/** 공지사항. 게시판처럼 전역이고, 파일 하나에 공지 하나. */
+export function noticesDir(): string {
+  return path.join(config.dataDir, "notices");
+}
+
+export function noticeFile(noticeId: string): string {
+  return path.join(noticesDir(), `${noticeId}.json`);
+}
+
+/** 이 계정이 공지를 마지막으로 본 때. 기기가 바뀌어도 같은 표시가 보이게 서버에 둔다. */
+export function noticesSeenFile(ownerId: string): string {
+  return path.join(ownerDir(ownerId), "notices-seen.json");
+}
+
 /**
  * 공유 링크. 소유자별이 아니라 **전역**이다 — 링크를 연 사람은 누구의 것인지 모르고
  * 토큰만 안다. `{DATA_DIR}/shares/<토큰>/share.json` 에 공유한 순간의 대화 사본,

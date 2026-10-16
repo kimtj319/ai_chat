@@ -112,6 +112,12 @@ export function reasoningProfileFor(model: string): ReasoningProfile {
   return DEFAULT;
 }
 
+/** The profile as the operator wrote it ("fixed", "budget:256"), for the admin page. */
+export function reasoningProfileLabel(model: string): string {
+  const profile = reasoningProfileFor(model);
+  return profile.control === "fixed" ? "fixed" : `budget:${profile.minBudget}`;
+}
+
 /** True when the model gives the user nothing to choose, so the UI should say so. */
 export function reasoningIsFixed(model: string): boolean {
   return reasoningProfileFor(model).control === "fixed";

@@ -22,10 +22,10 @@ const FIXED_LEVEL_NOTE = "이 모델은 추론을 조절할 수 없습니다. �
 
 // "지금 답변하기" 버튼(3분부터)은 두 모드 모두에서 뜬다 — 여기 힌트는 안
 // 누르고 두면 무엇이 다른지만 말한다: external 은 끝까지 기다리고, normal 은
-// 잊고 켜 둔 탭을 위한 30분 안전 상한이 있다(server/config.ts 참고).
+// 3분 상한이 있다(server/config.ts 참고, 2026-10-16 에 30분에서 줄임).
 const MODES: Array<{ value: ReasoningMode; label: string; hint: string }> = [
   { value: "external", label: "제한 없음", hint: "끝까지 기다립니다" },
-  { value: "normal", label: "30분 제한", hint: "30분이 지나면 자동으로 정리합니다" },
+  { value: "normal", label: "3분 제한", hint: "3분이 지나면 생각을 끊고 답합니다" },
 ];
 
 function ChevronDownIcon() {

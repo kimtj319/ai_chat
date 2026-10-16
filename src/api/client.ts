@@ -1,6 +1,8 @@
 import { apiPath } from "./base";
 import { flushSseBuffer, parseSseChunk } from "./sseParser";
 import type {
+  Notice,
+  NoticesResponse,
   AddModelEndpointRequest,
   AddModelEndpointResponse,
   AdminGroup,
@@ -818,6 +820,26 @@ export function setBoardPostStatus(id: string, status: BoardPostStatus): Promise
 
 export function deleteBoardPost(id: string): Promise<void> {
   return request<void>(`/board/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listNotices(): Promise<NoticesResponse> {
+  return request<NoticesResponse>("/notices");
+}
+
+export function markNoticesSeen(): Promise<{ seenAt: string; unread: number }> {
+  return request<{ seenAt: string; unread: number }>("/notices/seen", { method: "POST" });
+}
+
+export function createNotice(input: { title: string; body: string }): Promise<{ notice: Notice }> {
+  return request<{ notice: Notice }>("/admin/notices", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateNotice(id: string, input: { title?: string; body?: string }): Promise<{ notice: Notice }> {
+  return request<{ notice: Notice }>(`/admin/notices/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) });
+}
+
+export function deleteNotice(id: string): Promise<void> {
+  return request<void>(`/admin/notices/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** 내 "하지 말 것" 목록. 서버 routes/prohibitions.ts. */

@@ -17,6 +17,8 @@ import {
   STATUS_FILTERS,
   type StatusFilter,
 } from "../auth/adminRules";
+import { AdminModelsTab } from "./AdminModelsTab";
+import { AdminNoticesTab } from "./AdminNoticesTab";
 import { ConfirmDialog } from "./ConfirmDialog";
 import "./AdminPage.css";
 
@@ -49,8 +51,17 @@ interface AdminPageProps {
   onBack: () => void;
 }
 
+type AdminTab = "accounts" | "models" | "notices";
+
+const TABS: Array<{ value: AdminTab; label: string }> = [
+  { value: "accounts", label: "계정" },
+  { value: "models", label: "모델" },
+  { value: "notices", label: "공지사항" },
+];
+
 export function AdminPage({ onBack }: AdminPageProps) {
   const { me } = useAuth();
+  const [tab, setTab] = useState<AdminTab>("accounts");
   const currentAdminId = me?.id ?? "";
 
   const [users, setUsers] = useState<AdminUser[] | null>(null);
@@ -122,21 +133,48 @@ export function AdminPage({ onBack }: AdminPageProps) {
           <BackIcon />
         </button>
         <div className="admin-header-text">
-          <h1 className="admin-title">계정 관리</h1>
+          <h1 className="admin-title">관리자 메뉴</h1>
           <p className="admin-subtitle">
-            {users === null
-              ? "계정 목록을 불러오는 중…"
-              : pending > 0
-                ? `전체 ${all.length}명 · 승인 대기 ${pending}명`
-                : `전체 ${all.length}명 · 승인 대기 없음`}
+            {tab === "models"
+              ? "연결된 서빙 서버와 모델"
+              : tab === "notices"
+                ? "모든 계정에 보이는 공지"
+                : users === null
+                  ? "계정 목록을 불러오는 중…"
+                  : pending > 0
+                    ? `전체 ${all.length}명 · 승인 대기 ${pending}명`
+                    : `전체 ${all.length}명 · 승인 대기 없음`}
           </p>
         </div>
-        <button type="button" className="btn-icon" onClick={() => void load()} data-tooltip="목록 새로고침" aria-label="목록 새로고침">
-          <RefreshIcon />
-        </button>
+        {tab === "accounts" && (
+          <button type="button" className="btn-icon" onClick={() => void load()} data-tooltip="목록 새로고침" aria-label="목록 새로고침">
+            <RefreshIcon />
+          </button>
+        )}
       </header>
 
       <div className="admin-body">
+        <div className="admin-filters admin-tabs" role="tablist" aria-label="관리자 메뉴">
+          {TABS.map((entry) => (
+            <button
+              key={entry.value}
+              type="button"
+              role="tab"
+              aria-selected={tab === entry.value}
+              className={`admin-filter${tab === entry.value ? " active" : ""}`}
+              onClick={() => setTab(entry.value)}
+            >
+              {entry.label}
+              {entry.value === "accounts" && pending > 0 && <span className="admin-filter-count">{pending}</span>}
+            </button>
+          ))}
+        </div>
+        {tab === "models" ? (
+          <AdminModelsTab />
+        ) : tab === "notices" ? (
+          <AdminNoticesTab />
+        ) : (
+        <>
         <div className="admin-filters" role="group" aria-label="상태 필터">
           {STATUS_FILTERS.map((entry) => (
             <button
@@ -410,6 +448,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
               </tbody>
             </table>
           </div>
+        )}
+        </>
         )}
       </div>
 

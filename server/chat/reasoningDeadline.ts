@@ -25,7 +25,7 @@ import type { VllmMessage } from "./historyBuilder.js";
  */
 
 /**
- * Thirty minutes, unless NORMAL_MODE_DEADLINE_MS says otherwise (config.ts).
+ * Three minutes, unless NORMAL_MODE_DEADLINE_MS says otherwise (config.ts).
  *
  * This is a backstop, not the primary way a "normal"-mode turn ends early —
  * that is now the person's own "지금 답변하기" click. The override exists

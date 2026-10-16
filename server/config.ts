@@ -259,13 +259,12 @@ export const config = {
    * This used to be the primary way a turn ended early — a flat 3 minutes,
    * enforced unconditionally. Now the "지금 답변하기" button (client, at
    * ANSWER_NOW_THRESHOLD_MS) gives the person a choice at that same point
-   * instead of a forced cutoff, so this value only has to catch the case
-   * nobody is watching: a turn left running with the tab open. 30 minutes is
-   * well past the worst case measured here (35s on one run, still thinking
-   * after twenty minutes on another) rather than a number a person is
-   * expected to hit routinely.
+   * instead of a forced cutoff. It was 30 minutes, sized for the turn nobody
+   * is watching; set to 3 minutes on 2026-10-16 by request — "normal" mode is
+   * the one that means "do not let it think for long", and three minutes is
+   * also where "지금 답변하기" appears. "external" mode has no ceiling.
    */
-  normalModeDeadlineMs: toDurationMs(process.env.NORMAL_MODE_DEADLINE_MS, 30 * 60 * 1000),
+  normalModeDeadlineMs: toDurationMs(process.env.NORMAL_MODE_DEADLINE_MS, 3 * 60 * 1000),
   /**
    * How long a turn may run before the client offers "지금 답변하기" (answer
    * now). Mode-agnostic on purpose — a person waiting on "external" mode's
