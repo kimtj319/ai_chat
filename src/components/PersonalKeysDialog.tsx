@@ -12,7 +12,7 @@ import "./PersonalKeysDialog.css";
  * 화면 문구는 모두에게 같다 — 어느 팀이 공용 키를 쓰는지는 알리지 않는다.
  * 서버는 키 값을 돌려주지 않는다 — 등록 여부와 끝 네 자리만 보인다.
  */
-const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: string }> = [
+const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: string; multi?: boolean }> = [
   {
     name: "tavily",
     title: "웹 검색 API 키 (Tavily)",
@@ -22,8 +22,9 @@ const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: str
   {
     name: "gitlab",
     title: "GitLab 토큰 (wisenut 이슈)",
-    what: "wisenut 이슈 MCP 가 이 토큰으로 GitLab 이슈를 읽습니다. 토큰으로 볼 수 있는 이슈만 검색됩니다.",
-    how: "GitLab › 사용자 설정 › 액세스 토큰에서 read_api 권한으로 발급하세요.",
+    multi: true,
+    what: "wisenut 이슈 MCP 가 이 토큰들로 GitLab 이슈를 읽습니다. 토큰마다 볼 수 있는 프로젝트를 모두 합쳐 검색합니다.",
+    how: "프로젝트별 토큰이면 프로젝트마다 하나씩 추가하세요(read_api 권한).",
   },
   {
     name: "alphavantage",
@@ -82,6 +83,7 @@ function KeyRow({
   onChange: (keys: MyAccess["keys"]) => void;
 }) {
   const [value, setValue] = useState("");
+  const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
 
@@ -90,9 +92,10 @@ function KeyRow({
     if (busy || value.trim().length === 0) return;
     setBusy(true);
     try {
-      onChange((await api.setPersonalKey(spec.name, value.trim())).keys);
+      onChange((await api.setPersonalKey(spec.name, value.trim(), spec.multi ? label.trim() : undefined)).keys);
       setValue("");
-      setMessage({ tone: "ok", text: "저장했습니다." });
+      setLabel("");
+      setMessage({ tone: "ok", text: spec.multi ? "추가했습니다." : "저장했습니다." });
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -100,11 +103,11 @@ function KeyRow({
     }
   }
 
-  async function remove() {
+  async function remove(entryId?: string) {
     if (busy) return;
     setBusy(true);
     try {
-      onChange((await api.deletePersonalKey(spec.name)).keys);
+      onChange((entryId ? await api.deletePersonalKeyEntry(spec.name, entryId) : await api.deletePersonalKey(spec.name)).keys);
       setMessage({ tone: "ok", text: "삭제했습니다." });
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
@@ -121,26 +124,56 @@ function KeyRow({
           {spec.title}
         </label>
         <span className="keys-row-state" data-set={state.set ? "true" : "false"}>
-          {state.set ? `등록됨 ${state.hint ?? ""}` : "등록 안 됨"}
+          {!state.set ? "등록 안 됨" : spec.multi ? `${state.items?.length ?? 1}개 등록됨` : `등록됨 ${state.hint ?? ""}`}
         </span>
       </div>
       <p className="keys-row-hint">
         {spec.what} {spec.how}
       </p>
+      {spec.multi && (state.items?.length ?? 0) > 0 && (
+        <ul className="keys-row-list">
+          {state.items!.map((item) => (
+            <li key={item.id} className="keys-row-item">
+              <span className="keys-row-item-label">{item.label || "이름 없음"}</span>
+              <span className="keys-row-item-hint">{item.hint}</span>
+              <button
+                type="button"
+                className="btn btn-secondary keys-row-item-remove"
+                disabled={busy}
+                onClick={() => void remove(item.id)}
+                aria-label={`${item.label || item.hint} 토큰 삭제`}
+              >
+                삭제
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="field keys-row-input">
+        {spec.multi && (
+          <input
+            type="text"
+            className="keys-row-label-input"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="이름(선택, 예: 프로젝트명)"
+            aria-label="토큰 이름"
+            maxLength={60}
+          />
+        )}
         <input
           id={inputId}
           type="password"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder={state.set ? "새 키로 바꾸려면 입력" : "키를 붙여 넣으세요"}
+          placeholder={spec.multi ? (state.set ? "토큰을 더 추가하려면 붙여 넣으세요" : "토큰을 붙여 넣으세요") : state.set ? "새 키로 바꾸려면 입력" : "키를 붙여 넣으세요"}
           autoComplete="new-password"
           spellCheck={false}
         />
         <button type="submit" className="btn btn-primary" disabled={busy || value.trim().length === 0}>
-          저장
+          {spec.multi ? "추가" : "저장"}
         </button>
-        {state.set && (
+        {state.set && !spec.multi && (
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void remove()}>
             삭제
           </button>

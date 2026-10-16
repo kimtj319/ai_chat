@@ -185,6 +185,23 @@ async function call(as: string, method: string, p: string, body?: unknown): Prom
   check("AI Product 는 공용 토큰", (await callUrlFor(gitlab, "aip1")) === "http://mock-gitlab/mcp?token=shared-gitlab-token");
   await setPersonalKey("carol", "gitlab", "glpat-carol/own+token");
   check("개인 토큰을 실어 보낸다(URL 인코딩)", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken");
+  await setPersonalKey("carol", "gitlab", "glpat-second-project-token", "다른 프로젝트");
+  check(
+    "GitLab 토큰을 여러 개 두면 모두 싣는다",
+    (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken&token=glpat-second-project-token",
+  );
+  let dup = "";
+  try {
+    await setPersonalKey("carol", "gitlab", "glpat-second-project-token");
+  } catch (err) {
+    dup = (err as Error).message;
+  }
+  check("같은 토큰은 두 번 넣지 않는다", dup.includes("이미"), dup);
+  const summary = (await call("carol", "GET", "/me/access")).json.keys.gitlab;
+  check("토큰마다 이름·끝 네 자리가 보이고 값은 없다", summary.items?.length === 2 && summary.items[1].label === "다른 프로젝트" && summary.items[1].hint === "…oken" && !JSON.stringify(summary).includes("glpat"), JSON.stringify(summary));
+  const removed = await call("carol", "DELETE", `/me/keys/gitlab/${summary.items[0].id}`);
+  check("하나만 지울 수 있다", removed.status === 200 && removed.json.keys.gitlab.items.length === 1);
+  check("…남은 토큰만 싣는다", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-second-project-token");
 
   const av = { origin: "builtin", slug: "alphavantage", url: "https://mcp.alphavantage.co/mcp?apikey=shared-av-key" } as never;
   let avError: Error | null = null;

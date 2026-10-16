@@ -4,7 +4,7 @@ import { effectiveServers, getCredential, readOwnerPrefs } from "./ownerPrefs.js
 import { ALPHAVANTAGE_MCP_URL, ALPHAVANTAGE_SLUG, GITLAB_SLUG, listServers } from "./registryStore.js";
 import { config } from "../config.js";
 import { isPrivilegedOwner } from "../auth/privilege.js";
-import { getPersonalKey, type PersonalKeyName } from "../storage/personalKeys.js";
+import { getPersonalKeys, type PersonalKeyName } from "../storage/personalKeys.js";
 import { missingKeyMessage } from "../tools/missingKey.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { McpServerRecord, McpToolSummary } from "../types.js";
@@ -258,17 +258,18 @@ function identityHeadersFor(server: McpServerRecord, ownerId: string): { identit
  * key instead, and only an account that may use shared resources
  * (auth/privilege.ts) falls back to the shared one.
  */
-const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () => string; url: (key: string) => string; missing: string }> = {
+const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () => string; url: (keys: string[]) => string; missing: string }> = {
   [GITLAB_SLUG]: {
     key: "gitlab",
     shared: () => config.gitlabToken,
-    url: (key) => `${config.gitlabMcpUrl}?token=${encodeURIComponent(key)}`,
+    // 토큰이 여러 개면 모두 싣는다 — gitlabmcp 가 토큰마다 볼 수 있는 프로젝트를 합친다.
+    url: (keys) => `${config.gitlabMcpUrl}?${keys.map((k) => `token=${encodeURIComponent(k)}`).join("&")}`,
     missing: missingKeyMessage("GitLab(wisenut 이슈)", "GitLab 액세스 토큰, read_api 권한"),
   },
   [ALPHAVANTAGE_SLUG]: {
     key: "alphavantage",
     shared: () => config.alphavantageApiKey,
-    url: (key) => `${ALPHAVANTAGE_MCP_URL}?apikey=${encodeURIComponent(key)}`,
+    url: (keys) => `${ALPHAVANTAGE_MCP_URL}?apikey=${encodeURIComponent(keys[0]!)}`,
     missing: missingKeyMessage("Alpha Vantage", "alphavantage.co 에서 무료 발급"),
   },
 };
@@ -280,9 +281,10 @@ const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () =>
 export async function callUrlFor(server: McpServerRecord, ownerId: string): Promise<string> {
   const spec = server.origin === "builtin" ? PERSONAL_KEY_SERVERS[server.slug] : undefined;
   if (!spec) return server.url;
-  const key = (await getPersonalKey(ownerId, spec.key)) ?? ((await isPrivilegedOwner(ownerId)) ? spec.shared() : "");
-  if (!key) throw new McpToolReportedError(spec.missing);
-  return spec.url(key);
+  const own = await getPersonalKeys(ownerId, spec.key);
+  const keys = own.length > 0 ? own : (await isPrivilegedOwner(ownerId)) && spec.shared() ? [spec.shared()] : [];
+  if (keys.length === 0) throw new McpToolReportedError(spec.missing);
+  return spec.url(keys);
 }
 
 function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshotOwnerId: string): ToolDefinition {

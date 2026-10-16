@@ -1,4 +1,4 @@
-import { Component, isValidElement, useMemo, type ReactNode } from "react";
+import { Component, isValidElement, useLayoutEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -6,6 +6,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import type { CitationSource } from "../state/citations";
 import { openSource } from "../state/sourcePanel";
+import { stableStreamingMarkdown } from "../state/streamingMarkdown";
 import { remarkCitations } from "./citationMarkdown";
 import { CopyButton } from "./CopyButton";
 import "./MarkdownRenderer.css";
@@ -88,6 +89,29 @@ interface MarkdownRendererProps {
   content: string;
   /** 이 답변의 문서 출처. 있으면 본문의 "[n]" 이 그 단락을 여는 링크가 된다. */
   citations?: readonly CitationSource[];
+  /** 아직 흘러 들어오는 중 — 반쯤 온 표 줄을 감춘다(state/streamingMarkdown.ts). */
+  streaming?: boolean;
+}
+
+/**
+ * 열 너비가 줄어들지 않는 표. 표는 행이 하나씩 붙으며 그려지는데, 자동 배치는
+ * 행마다 열 너비를 다시 정해 표가 좌우로 들쭉날쭉했다. 첫 행의 각 칸이 지금까지
+ * 가졌던 가장 넓은 너비를 최소 너비로 붙잡아 두면, 열은 넓어질 수만 있어 곧
+ * 자리를 잡고 그대로 간다.
+ */
+function StableTable(props: ComponentPropsWithoutRef<"table">) {
+  const ref = useRef<HTMLTableElement>(null);
+  const widths = useRef<number[]>([]);
+  useLayoutEffect(() => {
+    const row = ref.current?.querySelector("tr");
+    if (!row) return;
+    Array.from(row.children).forEach((cell, i) => {
+      const width = Math.ceil((cell as HTMLElement).getBoundingClientRect().width);
+      if (width > (widths.current[i] ?? 0)) widths.current[i] = width;
+      (cell as HTMLElement).style.minWidth = `${widths.current[i]}px`;
+    });
+  });
+  return <table ref={ref} {...props} />;
 }
 
 /** 출처 번호. 누르면 오른쪽 창에 그 단락의 원문이 열린다. */
@@ -105,7 +129,8 @@ function CitationLink({ source }: { source: CitationSource }) {
   );
 }
 
-export function MarkdownRenderer({ content, citations }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content: raw, citations, streaming = false }: MarkdownRendererProps) {
+  const content = streaming ? stableStreamingMarkdown(raw) : raw;
   const byNumber = useMemo(() => new Map((citations ?? []).map((c) => [c.n, c])), [citations]);
   const remarkPlugins = useMemo(
     () => (byNumber.size > 0 ? [remarkGfm, remarkMath, remarkCitations(new Set(byNumber.keys()))] : [remarkGfm, remarkMath]),
@@ -115,6 +140,7 @@ export function MarkdownRenderer({ content, citations }: MarkdownRendererProps) 
     () => ({
       pre: PreRenderer,
       code: CodeRenderer,
+      table: ({ node: _node, ...rest }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) => <StableTable {...rest} />,
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const cite = href?.startsWith("#cite-") ? byNumber.get(Number(href.slice(6))) : undefined;
         if (cite) return <CitationLink source={cite} />;

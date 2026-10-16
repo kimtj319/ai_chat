@@ -21,7 +21,13 @@
 .app-backdrop-fields {
   position: absolute;
   inset: 0;
-  mask-image: radial-gradient(40% 72% at 57% 50%, transparent 0, transparent 52%, rgba(0, 0, 0, 0.5) 78%, #000 100%);
+  /* Wide and gentle (2026-10-16): the 40% x 72% ellipse this replaced ramped
+     from full colour to clear between ~17% and ~36% of the width — right on
+     the sidebar's edge, so a patch of colour sat beside the glass while the
+     glass itself softened the same colour: two backgrounds, read as a stripe.
+     This one fades from under the sidebar across half the window; the fields
+     (variables.css --backdrop-*) are stronger so the gradient stays as vivid. */
+  mask-image: radial-gradient(58% 90% at 58% 50%, transparent 0, transparent 26%, rgba(0, 0, 0, 0.55) 68%, #000 100%);
 }
 
 .app-backdrop-field {

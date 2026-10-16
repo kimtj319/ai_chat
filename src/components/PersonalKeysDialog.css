@@ -68,3 +68,57 @@
 .keys-row-message[data-tone="danger"] {
   color: var(--danger);
 }
+
+/* 여러 개 둔 토큰(GitLab): 이름·끝 네 자리·삭제 한 줄씩. */
+.keys-row-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.keys-row-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+}
+
+.keys-row-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--on-surface);
+}
+
+.keys-row-item-hint {
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.keys-row-item-remove {
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-xs);
+}
+
+.keys-row-input .keys-row-label-input {
+  flex: 0 1 34%;
+}
+
+@media (max-width: 480px) {
+  .keys-row-input.field {
+    flex-wrap: wrap;
+  }
+
+  .keys-row-input .keys-row-label-input {
+    flex-basis: 100%;
+  }
+}

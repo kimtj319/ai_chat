@@ -85,7 +85,7 @@ export function MessageItem({ conversationId, message, attachmentUrlFor }: Messa
         ) : embedding ? (
           <EmbeddingResult embedding={embedding} usage={message.usage} />
         ) : message.content.length > 0 ? (
-          <MarkdownRenderer content={message.content} citations={citations} />
+          <MarkdownRenderer content={message.content} citations={citations} streaming={Boolean(message.streaming)} />
         ) : null}
 
         {message.contentPromotedFromReasoning && (

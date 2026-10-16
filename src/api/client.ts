@@ -431,8 +431,13 @@ export function getMyAccess(): Promise<MyAccess> {
   return request<MyAccess>("/me/access");
 }
 
-export function setPersonalKey(name: PersonalKeyName, value: string): Promise<{ keys: MyAccess["keys"] }> {
-  return request(`/me/keys/${name}`, { method: "PUT", body: JSON.stringify({ value }) });
+export function setPersonalKey(name: PersonalKeyName, value: string, label?: string): Promise<{ keys: MyAccess["keys"] }> {
+  return request(`/me/keys/${name}`, { method: "PUT", body: JSON.stringify({ value, ...(label ? { label } : {}) }) });
+}
+
+/** 여러 개 둔 키(GitLab) 중 하나를 지운다. */
+export function deletePersonalKeyEntry(name: PersonalKeyName, id: string): Promise<{ keys: MyAccess["keys"] }> {
+  return request(`/me/keys/${name}/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export function deletePersonalKey(name: PersonalKeyName): Promise<{ keys: MyAccess["keys"] }> {

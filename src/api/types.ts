@@ -674,6 +674,8 @@ export interface PersonalKeyState {
   set: boolean;
   /** 끝 네 자리, 예: "…a1b2". */
   hint: string | null;
+  /** 여러 개를 두는 키(GitLab)의 하나하나. */
+  items?: Array<{ id: string; label: string | null; hint: string }>;
 }
 export interface MyAccess {
   privileged: boolean;
