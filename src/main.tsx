@@ -5,6 +5,8 @@ import "./styles/variables.css";
 import "./styles/global.css";
 import App from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+// Last, after every component's own stylesheet: see the file's header.
+import "./styles/glass.css";
 
 const container = document.getElementById("root");
 if (!container) {

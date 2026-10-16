@@ -9,15 +9,6 @@
   overflow: hidden;
 }
 
-/* Same ambient wash the chat canvas uses, so the login screen reads as the
-   same product rather than a bolted-on page. */
-.auth-glow {
-  position: absolute;
-  inset: 0;
-  background: var(--ambient-glow);
-  pointer-events: none;
-}
-
 .auth-card {
   position: relative;
   width: 100%;

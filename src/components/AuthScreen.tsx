@@ -10,6 +10,7 @@ import {
   type FieldErrors,
 } from "../auth/validation";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
+import { AppBackdrop } from "./AppBackdrop";
 import "./AuthScreen.css";
 
 type Mode = "login" | "signup";
@@ -96,7 +97,8 @@ export function AuthScreen() {
 
   return (
     <div className="auth-screen">
-      <div className="auth-glow" aria-hidden="true" />
+      {/* The app's own backdrop, so signing in already looks like the app. */}
+      <AppBackdrop />
 
       <main className="auth-card">
         <div className="auth-brand">
