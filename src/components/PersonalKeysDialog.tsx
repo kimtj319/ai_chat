@@ -52,7 +52,7 @@ export function PersonalKeysDialog({ onClose }: { onClose: () => void }) {
   }, [load]);
 
   return (
-    <Modal title="개인 키" onClose={onClose} width={480}>
+    <Modal title="개인 키" onClose={onClose} width={680}>
       {access && (
         <p className="keys-scope" role="note">
           등록한 키는 이 계정의 웹 검색·wisenut 이슈·Alpha Vantage 호출에만 쓰이며, 저장한 뒤에는 다시 보여 주지 않습니다.

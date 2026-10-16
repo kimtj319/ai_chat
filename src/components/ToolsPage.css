@@ -66,9 +66,11 @@
   font-size: var(--text-sm);
 }
 
+/* 한 줄이 너무 길면 눈이 다음 줄 첫머리를 놓친다. 칸이 넓어도 글은 이 폭에서 접힌다. */
 .tool-detail {
   display: flex;
   flex-direction: column;
+  max-width: 68ch;
 }
 
 .tool-detail-head {
@@ -103,8 +105,8 @@
 
 .tool-detail-long {
   margin: 0 0 var(--space-7);
-  font-size: var(--text-xs);
-  line-height: 1.65;
+  font-size: var(--text-sm);
+  line-height: 1.75;
   color: var(--on-surface-variant);
 }
 
@@ -147,7 +149,7 @@
 }
 
 .tool-schema-field-head code {
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   background: var(--surface-container-highest);
   padding: 1px 5px;
   border-radius: 4px;
@@ -170,5 +172,6 @@
 .tool-schema-enum {
   margin: var(--space-1) 0 0;
   font-size: var(--text-xs);
+  line-height: 1.6;
   color: var(--on-surface-variant);
 }

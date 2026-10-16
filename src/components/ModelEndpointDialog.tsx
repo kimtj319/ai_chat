@@ -135,7 +135,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
       // While the confirm is up, Esc and the overlay cancel *it*, not the
       // dialog underneath — both handlers then agree on the same outcome.
       onClose={pendingDelete ? () => setPendingDelete(null) : onClose}
-      width={560}
+      width={760}
     >
       {data?.unprotected && (
         <p className="endpoint-warning" role="status">

@@ -367,26 +367,30 @@ export function DocumentsPage({ onBack }: Props) {
                 <ul className="documents-list">
                   {visibleShared.map((doc) => (
                     <li key={`shared-${doc.ownerId}-${doc.id}`} className="documents-row" data-status={doc.status}>
-                      <button
-                        type="button"
-                        className="documents-row-name"
-                        onClick={() => setViewing(doc)}
-                        title="원본 보기"
-                      >
-                        {doc.name}
-                      </button>
-                      {/* 등록자. 이름이 없으면(계정이 지워졌으면) id 만 보인다 — 지어내지 않는다. */}
-                      <span className="documents-owner" title={`등록: ${doc.ownerId}`}>
-                        {doc.ownerName ? `${doc.ownerName} (${doc.ownerId})` : doc.ownerId}
-                      </span>
-                      {doc.chunkedBy === "llm" && (
-                        <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
-                          모델 청킹
-                        </span>
-                      )}
-                      <span className="documents-row-meta">
-                        {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
-                      </span>
+                      <div className="documents-row-text">
+                        <button
+                          type="button"
+                          className="documents-row-name"
+                          onClick={() => setViewing(doc)}
+                          title="원본 보기"
+                        >
+                          {doc.name}
+                        </button>
+                        <div className="documents-row-sub">
+                          {/* 등록자. 이름이 없으면(계정이 지워졌으면) id 만 보인다 — 지어내지 않는다. */}
+                          <span className="documents-owner" title={`등록: ${doc.ownerId}`}>
+                            {doc.ownerName ? `${doc.ownerName} (${doc.ownerId})` : doc.ownerId}
+                          </span>
+                          {doc.chunkedBy === "llm" && (
+                            <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
+                              모델 청킹
+                            </span>
+                          )}
+                          <span className="documents-row-meta">
+                            {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
+                          </span>
+                        </div>
+                      </div>
                     </li>
                   ))}
                   {visibleShared.length === 0 && (
@@ -453,25 +457,29 @@ export function DocumentsPage({ onBack }: Props) {
                       onChange={() => toggle(doc.id)}
                       aria-label={`${doc.name} 선택`}
                     />
-                    <button type="button" className="documents-row-name" onClick={() => setViewing(doc)} title="원본 보기">
-                      {doc.name}
-                    </button>
-                    <span className="documents-badge" data-scope={doc.scope}>
-                      {doc.scope === "shared" ? "전체 공개" : "나만"}
-                    </span>
-                    {doc.status === "failed" && (
-                      <span className="documents-badge" data-tone="danger" title={doc.error ?? ""}>
-                        색인 실패
-                      </span>
-                    )}
-                    {doc.chunkedBy === "llm" && (
-                      <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
-                        모델 청킹
-                      </span>
-                    )}
-                    <span className="documents-row-meta">
-                      {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
-                    </span>
+                    <div className="documents-row-text">
+                      <button type="button" className="documents-row-name" onClick={() => setViewing(doc)} title="원본 보기">
+                        {doc.name}
+                      </button>
+                      <div className="documents-row-sub">
+                        <span className="documents-badge" data-scope={doc.scope}>
+                          {doc.scope === "shared" ? "전체 공개" : "나만"}
+                        </span>
+                        {doc.status === "failed" && (
+                          <span className="documents-badge" data-tone="danger" title={doc.error ?? ""}>
+                            색인 실패
+                          </span>
+                        )}
+                        {doc.chunkedBy === "llm" && (
+                          <span className="documents-badge" data-tone="model" title="경계를 모델이 골랐습니다">
+                            모델 청킹
+                          </span>
+                        )}
+                        <span className="documents-row-meta">
+                          {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
+                        </span>
+                      </div>
+                    </div>
                   </li>
                 ))}
                 {visible.length === 0 && (

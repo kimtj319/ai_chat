@@ -115,7 +115,11 @@
   color: var(--on-surface-variant);
 }
 
+/* 설명 칸은 내용만큼만 선다 — 세 줄 설명 아래로 화면 끝까지 빈 상자가 이어지면
+   읽을 곳이 어디서 끝나는지 흐려진다. 길면 칸 높이까지 자라고 그 안에서 스크롤된다. */
 .md-detail {
+  align-self: start;
+  max-height: 100%;
   min-height: 0;
   overflow-y: auto;
   border-radius: var(--radius-md);

@@ -53,7 +53,7 @@ export function ConversationSettingsPanel({ conversation, onClose }: Conversatio
   }, [prohibitionsOpen]);
 
   return (
-    <Modal title="대화 설정" onClose={prohibitionsOpen ? () => setProhibitionsOpen(false) : onClose} width={560}>
+    <Modal title="대화 설정" onClose={prohibitionsOpen ? () => setProhibitionsOpen(false) : onClose} width={760}>
       <div className="field">
         <label htmlFor="system-prompt">
           시스템 프롬프트 (이 대화에만 적용) <SaveIndicator status={systemPromptStatus} />

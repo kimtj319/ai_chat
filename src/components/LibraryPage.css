@@ -47,12 +47,13 @@
   padding: 0 var(--space-10) var(--space-10);
 }
 
-/* 가운데를 기준으로 왼쪽은 내 라이브러리, 오른쪽은 공유 라이브러리. 칸마다 따로 스크롤된다. */
+/* 왼쪽은 내 라이브러리, 오른쪽은 공유 라이브러리. 칸마다 따로 스크롤된다.
+   손대는 쪽은 내 라이브러리라 그쪽이 더 넓다 — 열린 서버의 도구 칩이 덜 꺾인다. */
 .library-columns {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   gap: var(--space-8);
 }
 
