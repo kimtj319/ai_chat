@@ -1,7 +1,7 @@
 /**
  * 주소가 화면을 정한다.
  *
- * 라우터를 두지 않는다 — 화면이 다섯이고 중첩·매개변수 경로가 없어서, 의존성
+ * 라우터를 두지 않는다 — 화면이 여섯이고 중첩·매개변수 경로가 없어서, 의존성
  * 하나가 값을 하지 못한다. 대신 **해석하는 곳은 한 곳**이어야 한다. 규칙이
  * App 과 게시판 양쪽에 나뉘어 있으면 한쪽만 고쳤을 때 조용히 어긋난다:
  * 주소창에는 글이 찍혀 있는데 화면은 채팅으로 떨어지는 식으로, 아무 오류 없이.
@@ -10,13 +10,14 @@
  * 때문이다. /admin 을 경로로 두면 새로고침에서 404 가 난다.
  */
 
-export type View = "chat" | "admin" | "library" | "documents" | "board";
+export type View = "chat" | "admin" | "library" | "documents" | "board" | "tools";
 
 export const CHAT_HASH = "#/";
 export const ADMIN_HASH = "#/admin";
 export const LIBRARY_HASH = "#/library";
 export const DOCUMENTS_HASH = "#/documents";
 export const BOARD_HASH = "#/board";
+export const TOOLS_HASH = "#/tools";
 
 export const HASHES: Record<View, string> = {
   chat: CHAT_HASH,
@@ -24,12 +25,14 @@ export const HASHES: Record<View, string> = {
   library: LIBRARY_HASH,
   documents: DOCUMENTS_HASH,
   board: BOARD_HASH,
+  tools: TOOLS_HASH,
 };
 
 export function viewFromHash(hash: string): View {
   if (hash === ADMIN_HASH) return "admin";
   if (hash === LIBRARY_HASH) return "library";
   if (hash === DOCUMENTS_HASH) return "documents";
+  if (hash === TOOLS_HASH) return "tools";
   // 게시판만 아래에 주소가 더 달린다 — #/board/<글 id>. 글을 읽다 새로고침해도
   // 그 글이 그대로 있어야 하고, 링크로 건네줄 수도 있어야 하기 때문이다.
   if (hash === BOARD_HASH || hash.startsWith(`${BOARD_HASH}/`)) return "board";

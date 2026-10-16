@@ -17,17 +17,11 @@
    clear core shows the flat canvas; the mask ramps to full colour by the
    window's edges, where the glass sidebar sits and where there is nothing to
    read. Only the standard property is written: pairing it with the -webkit-
-   alias is what made the build drop the standard one for backdrop-filter.
-
-   A wide, slow ramp rather than a tall narrow core: the old 40% x 72% ellipse
-   put its edge just right of the sidebar, so the colour peaked at the panel's
-   edge and fell to the flat canvas within ~200px — a vertical band beside the
-   panel (measured, dark theme: 57-60 at the edge, 24 two hundred pixels on).
-   This one falls off evenly from the left edge, mostly behind the glass. */
+   alias is what made the build drop the standard one for backdrop-filter. */
 .app-backdrop-fields {
   position: absolute;
   inset: 0;
-  mask-image: radial-gradient(85% 120% at 66% 50%, transparent 0, transparent 22%, rgba(0, 0, 0, 0.35) 60%, #000 100%);
+  mask-image: radial-gradient(40% 72% at 57% 50%, transparent 0, transparent 52%, rgba(0, 0, 0, 0.5) 78%, #000 100%);
 }
 
 .app-backdrop-field {

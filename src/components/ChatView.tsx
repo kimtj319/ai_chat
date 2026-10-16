@@ -27,7 +27,6 @@ import { useModels } from "../hooks/useModels";
 import { useRemoteCompaction } from "../hooks/useRemoteCompaction";
 import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
-import { ToolsPanel } from "./ToolsPanel";
 import { CompactionProgress } from "./CompactionProgress";
 import "./ChatView.css";
 
@@ -42,9 +41,7 @@ interface ChatViewProps {
   /** Null for everyone who is not an administrator, which hides the shortcut. */
   onOpenAdmin: (() => void) | null;
   showConversationSettings: boolean;
-  showToolsPanel: boolean;
   onCloseConversationSettings: () => void;
-  onCloseToolsPanel: () => void;
   /** Opens the 라이브러리 page, from the composer's MCP picker. */
   onOpenLibrary: () => void;
   /** Opens the 문의 게시판 page, from the header. */
@@ -138,9 +135,7 @@ export function ChatView({
   chatStream,
   onOpenAdmin,
   showConversationSettings,
-  showToolsPanel,
   onCloseConversationSettings,
-  onCloseToolsPanel,
   onOpenLibrary,
   onOpenBoard,
 }: ChatViewProps) {
@@ -558,7 +553,6 @@ export function ChatView({
       {showConversationSettings && (
         <ConversationSettingsPanel conversation={activeConversation} onClose={onCloseConversationSettings} />
       )}
-      {showToolsPanel && <ToolsPanel conversation={activeConversation} onClose={onCloseToolsPanel} />}
     </div>
   );
 }

@@ -65,6 +65,7 @@
 .app-shell[data-narrow] .board-header,
 .app-shell[data-narrow] .documents-header,
 .app-shell[data-narrow] .library-header,
+.app-shell[data-narrow] .tools-page-header,
 .app-shell[data-narrow] .admin-header {
   padding-left: calc(var(--space-5) + 40px + var(--space-5));
 }
@@ -89,6 +90,8 @@
   .documents-body,
   .library-header,
   .library-body,
+  .tools-page-header,
+  .tools-page-body,
   .admin-header,
   .admin-body {
     padding-left: var(--space-6);
@@ -101,6 +104,7 @@
   .app-shell[data-narrow] .board-header,
   .app-shell[data-narrow] .documents-header,
   .app-shell[data-narrow] .library-header,
+  .app-shell[data-narrow] .tools-page-header,
   .app-shell[data-narrow] .admin-header {
     padding-left: calc(var(--space-5) + 40px + var(--space-5));
   }
@@ -264,6 +268,7 @@
 /* 페이지 본문은 홈 막대 뒤까지 스크롤되되, 끝까지 내리면 마지막 줄이 막대 위에 온다. */
 .documents-body::after,
 .library-body::after,
+.tools-page-body::after,
 .board-body::after,
 .admin-body::after {
   content: "";

@@ -1,0 +1,104 @@
+.acc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.acc-row {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--surface-container);
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.acc-row:hover {
+  background: var(--surface-container-high);
+}
+
+.acc-row[data-open] {
+  border-color: var(--primary);
+  background: var(--surface-container-high);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.acc-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding-right: var(--space-6);
+}
+
+.acc-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-6);
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+}
+
+.acc-main:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.acc-trailing {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.acc-row[data-open] .acc-panel {
+  grid-template-rows: 1fr;
+}
+
+.acc-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.acc-body {
+  padding: 0 var(--space-6) var(--space-6);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.acc-row[data-open] .acc-body {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.05s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-row,
+  .acc-panel,
+  .acc-body {
+    transition: none;
+  }
+}
+
+/* 열리면 줄의 설명을 두 줄로 자르지 않고 다 보인다(아래에 같은 글을 되풀이하지 않는다). */
+.acc-row[data-open] .md-row-desc {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}

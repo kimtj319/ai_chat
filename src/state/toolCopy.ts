@@ -1,19 +1,7 @@
-import { useState } from "react";
-import { useTools } from "../hooks/useTools";
-import { MISSING_KEY_NOTICE, missingKey, useMyAccess } from "../hooks/useMyAccess";
-import { useDebouncedSave } from "../hooks/useDebouncedSave";
-import { useStore } from "../state/StoreContext";
-import type { JsonSchemaNode, ToolDefinition } from "../api/types";
-import type { ActiveConversation } from "../state/StoreContext";
-import { MasterDetail } from "./MasterDetail";
-import { Modal } from "./Modal";
-import { ToggleSwitch } from "./ToggleSwitch";
-import "./ToolsPanel.css";
+import type { ToolDefinition } from "../api/types";
 
-interface ToolsPanelProps {
-  conversation: ActiveConversation;
-  onClose: () => void;
-}
+// 도구 설정 화면에 보이는 한국어 글. 서버의 도구 설명(영어)은 모델에게 가는 것이라
+// 그대로 두고, 사람이 읽는 글은 여기서 따로 쓴다.
 
 /**
  * Korean copy for each built-in tool: a one-line summary for the card face,
@@ -22,7 +10,7 @@ interface ToolsPanelProps {
  * name; a tool not listed here still renders using the API's English
  * `description` for both fields so nothing ever shows blank.
  */
-const TOOL_COPY: Record<string, { short: string; long: string }> = {
+export const TOOL_COPY: Record<string, { short: string; long: string }> = {
   calculator: {
     short: "사칙연산과 수학 함수를 계산합니다.",
     long: "괄호와 +, -, *, /, %, ^(거듭제곱)를 지원하며 sin·cos·tan·sqrt·log 등 일반적인 Math 함수와 원주율(pi), 자연상수(e)를 사용할 수 있습니다. 복잡한 수식을 암산하지 않고 정확한 값이 필요할 때 사용하세요. 임의의 코드를 실행하지는 않아 안전합니다.",
@@ -127,128 +115,179 @@ const TOOL_COPY: Record<string, { short: string; long: string }> = {
     short: "URL을 구성 요소로 분해합니다.",
     long: "URL을 스킴, 호스트, 포트, 경로와 각 구간, 쿼리 파라미터, 프래그먼트로 나눠 보여줍니다. 쿼리는 퍼센트 디코딩해 이름과 값의 쌍으로 주고 같은 키가 여러 번 나와도 순서대로 유지합니다. 호스트가 IP인지 도메인인지, 퓨니코드라면 원래 유니코드 형태가 무엇인지도 알려줍니다. 비밀번호는 있는지 여부만 알리고 값은 보여주지 않습니다.",
   },
+  schedule_task: {
+    short: "정해 둔 시각에 작업을 자동으로 실행합니다.",
+    long: "\"11시에 장바구니에 담아줘\", \"30분 뒤에 확인해줘\"처럼 시각이 들어간 요청을 그때 실행되도록 예약합니다. 시각은 한국 시간 기준이며, 예약한 시각이 되면 같은 대화에 그 요청이 새 질문으로 들어가 그때 쓸 수 있는 도구로 처리됩니다. 크롬 제어가 켜진 대화에서는 사용자의 크롬에서 실행됩니다. 지금 바로 실행하지는 않고 예약만 해 둡니다.",
+  },
+  list_scheduled_tasks: {
+    short: "예약해 둔 작업과 최근 결과를 봅니다.",
+    long: "대기 중인 예약과 최근에 실행된 예약을 한국 시간과 함께 보여 줍니다. 예약을 취소하려면 여기서 확인한 id 를 cancel_scheduled_task 에 넘기세요.",
+  },
+  cancel_scheduled_task: {
+    short: "대기 중인 예약 작업을 취소합니다.",
+    long: "아직 실행되지 않은 예약을 id 로 찾아 취소합니다. id 는 list_scheduled_tasks 로 확인할 수 있습니다. 이미 실행되었거나 취소된 예약은 취소할 수 없습니다.",
+  },
 };
 
-function toolCopy(tool: ToolDefinition): { short: string; long: string } {
+export function toolCopy(tool: ToolDefinition): { short: string; long: string } {
   return TOOL_COPY[tool.name] ?? { short: tool.description, long: tool.description };
 }
 
-function typeLabel(node: JsonSchemaNode): string {
-  if (Array.isArray(node.type)) return node.type.join(" | ");
-  return node.type ?? "any";
+/** 묶음 이름(서버의 category). 모르는 묶음은 그 이름 그대로. */
+export const CATEGORY_LABELS: Record<string, string> = {
+  utility: "일반",
+  web: "웹",
+  filesystem: "파일",
+  data: "데이터 처리",
+  schedule: "예약",
+  browser: "크롬 제어",
+};
+
+export function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
 }
 
-/** Readable (not raw-JSON) rendering of a JSON-Schema-ish parameters object, one level of nesting deep. */
-function SchemaFields({ node, depth = 0 }: { node: JsonSchemaNode; depth?: number }) {
-  const properties = node.properties;
-  if (!properties || Object.keys(properties).length === 0) {
-    return <p className="tool-schema-empty">매개변수 없음</p>;
-  }
-  const required = new Set(node.required ?? []);
+/** 매개변수 형식. */
+export const TYPE_LABELS: Record<string, string> = {
+  string: "문자열",
+  integer: "정수",
+  number: "숫자",
+  boolean: "예/아니오",
+  array: "목록",
+  object: "묶음",
+};
 
-  return (
-    <ul className="tool-schema-list" style={{ paddingLeft: depth > 0 ? "var(--space-7)" : 0 }}>
-      {Object.entries(properties).map(([name, field]) => (
-        <li key={name} className="tool-schema-field">
-          <div className="tool-schema-field-head">
-            <code>{name}</code>
-            <span className="tool-schema-type">{typeLabel(field)}</span>
-            {required.has(name) && <span className="tool-schema-required">필수</span>}
-          </div>
-          {field.description && <p className="tool-schema-description">{field.description}</p>}
-          {field.enum && <p className="tool-schema-enum">허용값: {field.enum.join(", ")}</p>}
-          {field.type === "object" && field.properties && <SchemaFields node={field} depth={depth + 1} />}
-          {field.type === "array" && field.items?.properties && <SchemaFields node={field.items} depth={depth + 1} />}
-        </li>
-      ))}
-    </ul>
-  );
-}
+/**
+ * 매개변수 설명. 도구 이름 → 매개변수 경로(하위 항목은 "shift.days" 처럼 점으로) →
+ * 설명. 없는 것은 서버의 영어 설명을 그대로 보인다.
+ */
+export const PARAM_COPY: Record<string, Record<string, string>> = {
+  calculator: {
+    expression: '계산할 수식입니다. 예: "(3 + 4) * 2^10", "sqrt(2) * pi"',
+  },
+  get_current_time: {
+    timezone: "시간대 이름입니다(예: Asia/Seoul). 비워 두면 UTC 기준으로 알려 줍니다.",
+  },
+  web_search: {
+    query: "검색할 내용을 평소 말하듯 적습니다.",
+    max_results: "가져올 결과 수입니다(1~10). 기본은 5개입니다.",
+    search_depth: '검색 깊이입니다. "basic"은 빠르고 대부분 충분하며, "advanced"는 더 깊이 찾지만 느립니다. 기본은 basic입니다.',
+    topic: '최근 소식이나 보도를 찾을 때는 "news"를 씁니다. 기본은 general입니다.',
+    include_domains: '이 도메인에서 나온 결과만 받습니다. 예: ["docs.vllm.ai"]',
+    exclude_domains: "이 도메인의 결과는 받지 않습니다.",
+  },
+  http_fetch: {
+    url: "가져올 주소입니다(http 또는 https).",
+  },
+  read_text_file: {
+    path: "읽을 파일의 경로입니다. 서버에 허용된 폴더를 기준으로 적습니다.",
+  },
+  list_directory: {
+    path: "목록을 볼 폴더 경로입니다. 서버에 허용된 폴더를 기준으로 적고, 비워 두면 그 폴더 자체를 봅니다.",
+  },
+  weather_lookup: {
+    place: '날씨를 볼 장소입니다. 예: "Seoul", "Paris, France", "Tokyo"',
+    unit: "기온 단위입니다. 기본은 섭씨입니다.",
+  },
+  wikipedia_lookup: {
+    query: '찾을 주제나 문서 제목입니다. 예: "Alan Turing", "black hole"',
+  },
+  currency_convert: {
+    amount: "바꿀 금액입니다. 기본은 1입니다.",
+    from: '바꾸기 전 통화의 ISO 4217 코드입니다. 예: "USD"',
+    to: '바꿀 통화의 ISO 4217 코드입니다. 예: "KRW"',
+  },
+  unit_convert: {
+    value: "바꿀 숫자 값입니다.",
+    from: '바꾸기 전 단위입니다. 예: "km", "lb", "celsius", "mph", "GB"',
+    to: '바꿀 단위입니다. 예: "mile", "kg", "fahrenheit", "knot", "MiB"',
+  },
+  datetime_calc: {
+    datetime: '계산을 시작할 일시입니다(ISO 8601). 예: "2026-09-11T10:00:00Z". 비워 두면 지금 시각부터 셉니다.',
+    source_timezone: '일시에 시간대 표시가 없을 때 그 일시를 어느 시간대로 읽을지 정합니다. 예: "Asia/Seoul". 기본은 UTC입니다.',
+    shift: "시작 일시에 더할 시간입니다. 빼려면 음수를 넣고, 여러 항목을 함께 쓸 수 있습니다.",
+    "shift.days": "더할 일수입니다.",
+    "shift.hours": "더할 시간입니다.",
+    "shift.minutes": "더할 분입니다.",
+    "shift.seconds": "더할 초입니다.",
+    target_timezone: '결과를 나타낼 시간대입니다. 예: "America/New_York". 기본은 UTC입니다.',
+  },
+  article_extract: {
+    url: "본문을 읽을 기사나 페이지의 주소입니다(http 또는 https).",
+  },
+  text_stats: {
+    text: "통계를 낼 텍스트입니다.",
+  },
+  data_convert: {
+    data: "바꿀 데이터를 문자열로 넣습니다.",
+    from: "넣은 데이터의 형식입니다.",
+    to: "받고 싶은 형식입니다.",
+    pretty: "결과가 JSON 이면 들여쓰기(2칸)로 보기 좋게 정리합니다. 기본은 켜짐입니다.",
+  },
+  encode_decode: {
+    operation: "어떤 변환을 할지 고릅니다.",
+    text: "변환할 텍스트입니다. JWT 를 풀 때는 토큰을 넣습니다.",
+  },
+  hash_text: {
+    text: "해시를 계산할 텍스트입니다.",
+    algorithm: "해시 알고리즘입니다. 기본은 sha256입니다.",
+  },
+  generate_random: {
+    type: "만들 값의 종류입니다.",
+    count: "만들 개수입니다(1~20). 기본은 1개입니다.",
+    bytes: 'hex·base64 토큰의 바이트 길이입니다(1~64). "uuid4"에는 쓰이지 않으며 기본은 16입니다.',
+  },
+  color_convert: {
+    color: '바꿀 색입니다. hex, rgb(), hsl() 중 아무 형식이나 됩니다. 예: "#ff0000", "rgb(255,0,0)"',
+  },
+  diff_text: {
+    before: "바뀌기 전 텍스트입니다.",
+    after: "바뀐 뒤 텍스트입니다.",
+  },
+  regex_test: {
+    pattern: '정규식 본문입니다(앞뒤 슬래시 없이). 예: "\\b\\w+@\\w+\\.\\w+\\b"',
+    text: "검사할 텍스트입니다(최대 20,000자).",
+    flags: '추가 플래그입니다. "gimsuy" 중에서 고릅니다(i 대소문자 무시, m 여러 줄, s 점이 줄바꿈도 매칭, u 유니코드, y 고정 위치). "g"는 늘 적용됩니다.',
+    max_matches: "돌려줄 매칭의 최대 개수입니다(기본 20, 최대 100).",
+  },
+  json_query: {
+    data: "조회할 JSON 문서를 텍스트로 넣습니다.",
+    path: '값을 찾을 경로입니다. 예: "items[*].name"',
+    limit: "돌려줄 결과의 최대 개수입니다(기본 50, 최대 500).",
+  },
+  sort_unique: {
+    text: "처리할 텍스트입니다. 한 줄에 하나씩 적습니다.",
+    operation: '"sort"(정렬), "unique"(중복 제거), "count"(개수 세기) 중 하나입니다.',
+    order: '정렬 방향입니다. 기본은 오름차순("asc")입니다.',
+    numeric: "줄을 글자가 아니라 숫자로 비교합니다. 기본은 꺼짐입니다.",
+    ignore_case: "대소문자를 구분하지 않고 비교합니다. 기본은 꺼짐입니다.",
+    trim: "비교하기 전에 각 줄의 앞뒤 공백을 지웁니다. 기본은 켜짐입니다.",
+  },
+  unicode_inspect: {
+    text: "살펴볼 텍스트입니다.",
+  },
+  cidr_calc: {
+    cidr: 'IPv4 CIDR 대역입니다. 예: "10.0.0.0/22", "192.168.1.10/24"',
+    contains: '이 대역에 들어가는지 확인할 IPv4 주소입니다(선택). 예: "10.0.1.5"',
+  },
+  cron_describe: {
+    expression: '다섯 자리 크론 표현식입니다. 예: "*/15 9-17 * * 1-5"(평일 오전 9시~오후 5시, 15분마다)',
+    count: "보여 줄 다음 실행 시각의 개수입니다(기본 5, 최대 20).",
+    timezone: '일정을 해석할 시간대입니다. 예: "Asia/Seoul". 기본은 UTC입니다.',
+  },
+  url_parse: {
+    url: '분해할 전체 주소입니다. 예: "https://user:pass@example.com:8443/a/b?x=1&x=2#frag"',
+  },
+  schedule_task: {
+    run_at: '실행할 시각입니다(한국 시간). "HH:MM"(오늘, 이미 지났으면 내일), "YYYY-MM-DD HH:MM", "+30m"·"+2h"(지금부터), 또는 시간대가 붙은 ISO 8601 형식을 씁니다.',
+    instruction: "그 시각에 실행할 요청입니다. 그것만 읽어도 무엇을 할지 알 수 있게 적습니다.",
+    use_browser: "사용자의 크롬이 필요한 작업인지 정합니다. 크롬 제어가 켜진 대화에서는 기본으로 켜집니다.",
+  },
+  cancel_scheduled_task: {
+    id: "취소할 예약의 id 입니다.",
+  },
+};
 
-export function ToolsPanel({ conversation, onClose }: ToolsPanelProps) {
-  const { updateEnabledTools } = useStore();
-  const { tools, loading, error } = useTools();
-  const access = useMyAccess();
-  const [enabledTools, setEnabledTools] = useState<string[]>(conversation.enabledTools);
-  const [selected, setSelected] = useState<string | null>(null);
-  const saveStatus = useDebouncedSave(enabledTools, updateEnabledTools, 400);
-
-  function toggle(name: string) {
-    setEnabledTools((current) => (current.includes(name) ? current.filter((t) => t !== name) : [...current, name]));
-  }
-
-  const categories = new Map<string, ToolDefinition[]>();
-  for (const tool of tools) {
-    const list = categories.get(tool.category) ?? [];
-    list.push(tool);
-    categories.set(tool.category, list);
-  }
-  // 처음 열면 첫 도구의 설명이 오른쪽에 보인다 — 빈 칸으로 시작하지 않는다.
-  const shown = selected ?? tools[0]?.name ?? null;
-
-  return (
-    <Modal title="도구 설정" onClose={onClose} size="wide">
-      <div className="tools-panel-status">
-        {saveStatus === "saving" && <span className="tools-panel-saving">저장 중…</span>}
-        {saveStatus === "saved" && <span className="tools-panel-saved">저장됨</span>}
-        {saveStatus === "error" && <span className="tools-panel-error">저장 실패</span>}
-      </div>
-
-      {loading && <p className="tool-schema-empty">도구 목록을 불러오는 중…</p>}
-      {error && <p className="message-error">{error}</p>}
-
-      {tools.length > 0 && (
-        <MasterDetail
-          className="tools-master-detail"
-          groups={[...categories.entries()].map(([category, items]) => ({ key: category, title: category, items }))}
-          idOf={(tool) => tool.name}
-          selectedId={shown}
-          onSelect={setSelected}
-          renderRow={(tool) => (
-            <>
-              <span className="md-row-name">
-                <code className="tool-row-name">{tool.name}</code>
-                {missingKey(access, { tool: tool.name }) && (
-                  <span className="md-badge" data-tone="warning">
-                    키 필요
-                  </span>
-                )}
-              </span>
-              <span className="md-row-desc">{toolCopy(tool).short}</span>
-            </>
-          )}
-          renderTrailing={(tool) => (
-            <ToggleSwitch
-              on={enabledTools.includes(tool.name)}
-              label={`${tool.name} 사용`}
-              onToggle={() => toggle(tool.name)}
-            />
-          )}
-          renderDetail={(tool) => <ToolDetail tool={tool} keyMissing={missingKey(access, { tool: tool.name }) !== null} enabled={enabledTools.includes(tool.name)} />}
-          placeholder="왼쪽에서 도구를 고르면 자세한 설명이 여기에 보입니다."
-        />
-      )}
-    </Modal>
-  );
-}
-
-function ToolDetail({ tool, keyMissing, enabled }: { tool: ToolDefinition; keyMissing: boolean; enabled: boolean }) {
-  const copy = toolCopy(tool);
-  return (
-    <div className="tool-detail">
-      <div className="tool-detail-head">
-        <code className="tool-detail-name">{tool.name}</code>
-        <span className="md-badge">{enabled ? "이 대화에서 켜짐" : "꺼짐"}</span>
-      </div>
-      <p className="tool-detail-short">{copy.short}</p>
-      {keyMissing && (
-        <p className="tool-detail-warning" role="note">
-          {MISSING_KEY_NOTICE}
-        </p>
-      )}
-      <p className="tool-detail-long">{copy.long}</p>
-      <p className="tool-schema-heading">매개변수</p>
-      <SchemaFields node={tool.parameters} />
-    </div>
-  );
+export function paramCopy(tool: string, path: string, fallback: string | undefined): string | undefined {
+  return PARAM_COPY[tool]?.[path] ?? fallback;
 }
