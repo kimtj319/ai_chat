@@ -268,6 +268,11 @@
     margin-left: auto;
   }
 
+  /* 시작 칩은 폰에서 두 개만(Composer.tsx 의 wideOnly). 넷이면 두 줄로 쌓인다. */
+  .composer-starter[data-wide-only] {
+    display: none;
+  }
+
   /* 답변은 아바타 옆 칸에 들어가 폰 폭의 1/6 가까이를 비워 둔다. 폰에서는 아바타를
      한 줄에 두고 본문과 꼬리말이 그 아래 폭 전체를 쓴다. */
   .message-row.assistant .message-bubble,

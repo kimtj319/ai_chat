@@ -44,11 +44,14 @@ interface ComposerProps {
 }
 
 /* 시작 칩: 누르면 입력창을 채우고 커서를 끝에 둘 뿐, 절대 저절로 보내지 않는다 —
-   무엇을 물을지는 사용자가 이어 쓴다.
-   두 개만 둔다: 넷이면 폰에서 두 줄로 쌓여 입력창 아래를 무겁게 했다. "파일 올려서
-   묻기" 는 입력창의 클립 단추와 같은 일이고, "표로 정리하기" 는 문장을 채울 뿐이다. */
-const STARTERS: Array<{ label: string; text: string }> = [
+   무엇을 물을지는 사용자가 이어 쓴다. "파일" 은 채우는 대신 파일 고르기를 연다.
+   wideOnly 는 폰에서 숨긴다(App.css): 넷이면 폰에서 두 줄로 쌓여 입력창 아래를 무겁게
+   했다. "파일 올려서 묻기" 는 클립 단추와 같은 일이고, "표로 정리하기" 는 문장을 채울 뿐이다. */
+type Starter = { label: string; wideOnly?: true } & ({ text: string } | { pickFile: true });
+const STARTERS: Starter[] = [
   { label: "사내 문서에서 찾기", text: "올린 문서에서 " },
+  { label: "표로 정리하기", text: "다음 내용을 표로 정리해 줘: ", wideOnly: true },
+  { label: "파일 올려서 묻기", pickFile: true, wideOnly: true },
   { label: "웹에서 찾아보기", text: "웹에서 찾아서 알려 줘: " },
 ];
 
@@ -391,8 +394,9 @@ export function Composer({
               key={starter.label}
               type="button"
               className="composer-starter"
+              data-wide-only={starter.wideOnly ? "" : undefined}
               disabled={compacting}
-              onClick={() => fillFromStarter(starter.text)}
+              onClick={() => ("pickFile" in starter ? fileInputRef.current?.click() : fillFromStarter(starter.text))}
             >
               {starter.label}
             </button>
