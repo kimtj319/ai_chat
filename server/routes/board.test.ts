@@ -198,6 +198,41 @@ let postId = "";
   check("답변도 함께 사라진다", !JSON.stringify(list.json).includes("전처리 모듈이 붙기 전"));
 }
 
+/* --------------------------------------------------------- 글 번호(#12) */
+
+{
+  const list = await call("alice", "GET", "/board");
+  const nums = list.json.posts.map((p: any) => p.number);
+  check("글마다 번호가 있다", nums.every((n: unknown) => Number.isInteger(n) && (n as number) > 0), JSON.stringify(nums));
+  // 앞에서 #1(지움)·#2·#3 이 쓰였다. 지운 #1 을 다시 쓰면 옛 링크가 엉뚱한 글을 가리킨다.
+  const next = await call("alice", "POST", "/board", { title: "네 번째 문의" });
+  check("새 글은 다음 번호를 받는다", next.json.post.number === 4, String(next.json?.post?.number));
+  await call("alice", "DELETE", `/board/${next.json.post.id}`);
+  const after = await call("alice", "POST", "/board", { title: "다섯 번째 문의" });
+  check("지운 글의 번호는 다시 쓰지 않는다", after.json.post.number === 5, String(after.json?.post?.number));
+
+  const burst = await Promise.all([1, 2, 3, 4].map((k) => call("bob", "POST", "/board", { title: `동시 ${k}` })));
+  const got = burst.map((r) => r.json.post.number).sort((a: number, b: number) => a - b);
+  check("동시에 올라온 글도 번호가 겹치지 않는다", got.join() === "6,7,8,9", got.join());
+
+  // 번호가 생기기 전에 쓴 글: 파일에 number 가 없다.
+  const legacyDir = path.join(dataDir, "board", "posts");
+  for (const [id, at] of [["post_legacya", "2020-01-02T00:00:00.000Z"], ["post_legacyb", "2020-01-01T00:00:00.000Z"]]) {
+    await fs.writeFile(
+      path.join(legacyDir, `${id}.json`),
+      JSON.stringify({ id, title: id, body: "", tags: [], status: "open", authorId: "alice", replies: [], createdAt: at, updatedAt: at }),
+    );
+  }
+  const filled = await call("alice", "GET", "/board");
+  const a = filled.json.posts.find((p: any) => p.id === "post_legacya")?.number;
+  const b = filled.json.posts.find((p: any) => p.id === "post_legacyb")?.number;
+  check("번호 없는 옛 글은 목록을 읽을 때 작성 순으로 번호를 받는다", b === 10 && a === 11, `${b} ${a}`);
+  const again = await call("alice", "GET", "/board/post_legacyb");
+  check("채운 번호는 파일에 남는다", again.json.post.number === 10, String(again.json?.post?.number));
+  const later = await call("alice", "POST", "/board", { title: "그다음" });
+  check("채운 뒤 새 글은 그 다음 번호", later.json.post.number === 12, String(later.json?.post?.number));
+}
+
 /* ------------------------------------------------ 이상한 id 는 밖으로 못 나간다 */
 
 {

@@ -405,6 +405,28 @@
   .sidebar-item:hover .sidebar-item-actions {
     display: flex;
   }
+
+  /* 드러나는 버튼(26px)이 줄 높이를 밀어 올려 그 아래 줄이 모두 5px씩 출렁였다.
+     흐름 밖에 얹어 줄 크기는 그대로 두고, 제목은 버튼 밑으로 흐려지게 한다. */
+  .sidebar-item {
+    position: relative;
+  }
+
+  .sidebar-item-actions {
+    position: absolute;
+    top: 50%;
+    right: var(--space-3);
+    translate: 0 -50%;
+  }
+
+  .sidebar-item:hover .sidebar-item-title {
+    mask-image: linear-gradient(to right, #000 calc(100% - 72px), transparent calc(100% - 52px));
+  }
+
+  /* 이름을 고치는 동안은 입력칸을 가리지 않는다. */
+  .sidebar-item:has(.sidebar-item-input) .sidebar-item-actions {
+    display: none;
+  }
 }
 
 @media (hover: none) {

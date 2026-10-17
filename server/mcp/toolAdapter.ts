@@ -258,12 +258,18 @@ function identityHeadersFor(server: McpServerRecord, ownerId: string): { identit
  * key instead, and only an account that may use shared resources
  * (auth/privilege.ts) falls back to the shared one.
  */
-const PERSONAL_KEY_SERVERS: Record<string, { key: PersonalKeyName; shared: () => string; url: (keys: string[]) => string; missing: string }> = {
+const PERSONAL_KEY_SERVERS: Record<
+  string,
+  { key: PersonalKeyName; shared: () => string; url: (keys: string[], ownerId: string) => string; missing: string }
+> = {
   [GITLAB_SLUG]: {
     key: "gitlab",
     shared: () => config.gitlabToken,
     // 토큰이 여러 개면 모두 싣는다 — gitlabmcp 가 토큰마다 볼 수 있는 프로젝트를 합친다.
-    url: (keys) => `${config.gitlabMcpUrl}?${keys.map((k) => `token=${encodeURIComponent(k)}`).join("&")}`,
+    // me 는 묻는 계정의 아이디: 공용 봇 토큰으로는 "내 이슈"의 나를 알 수 없어서 싣는다
+    // (사내 계정과 GitLab 아이디가 같다).
+    url: (keys, ownerId) =>
+      `${config.gitlabMcpUrl}?${[...keys.map((k) => `token=${encodeURIComponent(k)}`), `me=${encodeURIComponent(ownerId)}`].join("&")}`,
     missing: missingKeyMessage("GitLab(wisenut 이슈)", "GitLab 액세스 토큰, read_api 권한"),
   },
   [ALPHAVANTAGE_SLUG]: {
@@ -284,7 +290,7 @@ export async function callUrlFor(server: McpServerRecord, ownerId: string): Prom
   const own = await getPersonalKeys(ownerId, spec.key);
   const keys = own.length > 0 ? own : (await isPrivilegedOwner(ownerId)) && spec.shared() ? [spec.shared()] : [];
   if (keys.length === 0) throw new McpToolReportedError(spec.missing);
-  return spec.url(keys);
+  return spec.url(keys, ownerId);
 }
 
 function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshotOwnerId: string): ToolDefinition {

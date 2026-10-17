@@ -12,12 +12,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
-import { boardPostFile, boardPostsDir, isValidId } from "./paths.js";
+import { boardCounterFile, boardPostFile, boardPostsDir, isValidId } from "./paths.js";
 import { withLock } from "./mutex.js";
 import type { BoardPost, BoardPostStatus, BoardReply } from "../types.js";
 
 /** 한 글을 고치는 일은 겹치지 않게 — 답변 두 개가 동시에 달려도 하나가 사라지지 않는다. */
 const lockFor = (postId: string) => `board:${postId}`;
+/** 번호를 매기는 일은 한 번에 하나 — 동시에 올라온 두 글이 같은 번호를 받지 않는다. */
+const NUMBER_LOCK = "board-numbering";
 
 export const MAX_TITLE_CHARS = 120;
 export const MAX_BODY_CHARS = 20_000;
@@ -60,6 +62,35 @@ export function normalizeTags(raw: unknown): string[] {
   return [...seen];
 }
 
+async function readCounter(): Promise<number> {
+  try {
+    const next = (await readJsonFile<{ next: number }>(boardCounterFile()))?.next;
+    return Number.isInteger(next) && next! > 0 ? next! : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * 번호가 없는 글(번호가 생기기 전에 쓴 글)에 작성 순으로 번호를 주고, 다음 번호를
+ * 돌려준다. NUMBER_LOCK 을 쥔 채로 부른다.
+ */
+async function backfillNumbersLocked(): Promise<number> {
+  const posts = await readAllPosts();
+  let next = Math.max(await readCounter(), ...posts.map((p) => (p.number ?? 0) + 1));
+  const missing = posts.filter((p) => !p.number).sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  for (const stale of missing) {
+    const number = next++;
+    // 그 사이 답변이 달렸을 수 있으니 글 잠금 안에서 다시 읽고 번호만 얹는다.
+    await withLock(lockFor(stale.id), async () => {
+      const fresh = await getPost(stale.id);
+      if (fresh && !fresh.number) await writeJsonFileAtomic(boardPostFile(stale.id), { ...fresh, number });
+    });
+  }
+  if (missing.length > 0) await writeJsonFileAtomic(boardCounterFile(), { next });
+  return next;
+}
+
 /** 새 글. 제목이 비면 만들지 않는다 — 목록에서 가리킬 것이 없는 글이 된다. */
 export async function createPost(input: {
   authorId: string;
@@ -69,20 +100,25 @@ export async function createPost(input: {
 }): Promise<BoardPost | null> {
   const title = cleanText(input.title, MAX_TITLE_CHARS);
   if (!title) return null;
-  const now = new Date().toISOString();
-  const post: BoardPost = {
-    id: newId("post"),
-    title,
-    body: cleanText(input.body, MAX_BODY_CHARS),
-    tags: normalizeTags(input.tags),
-    status: "open",
-    authorId: input.authorId,
-    replies: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  await writeJsonFileAtomic(boardPostFile(post.id), post);
-  return post;
+  return withLock(NUMBER_LOCK, async () => {
+    const number = await backfillNumbersLocked();
+    const now = new Date().toISOString();
+    const post: BoardPost = {
+      id: newId("post"),
+      number,
+      title,
+      body: cleanText(input.body, MAX_BODY_CHARS),
+      tags: normalizeTags(input.tags),
+      status: "open",
+      authorId: input.authorId,
+      replies: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await writeJsonFileAtomic(boardPostFile(post.id), post);
+    await writeJsonFileAtomic(boardCounterFile(), { next: number + 1 });
+    return post;
+  });
 }
 
 export async function getPost(postId: string): Promise<BoardPost | null> {
@@ -96,8 +132,16 @@ export async function getPost(postId: string): Promise<BoardPost | null> {
   }
 }
 
-/** 전부, 새것이 먼저. 게시판 규모에서는 한 번에 읽어도 된다. */
+/** 전부, 새것이 먼저. 번호가 빠진 옛 글이 있으면 먼저 채운다. */
 export async function listPosts(): Promise<BoardPost[]> {
+  const posts = await readAllPosts();
+  if (!posts.some((p) => !p.number)) return posts;
+  await withLock(NUMBER_LOCK, backfillNumbersLocked);
+  return readAllPosts();
+}
+
+/** 게시판 규모에서는 한 번에 읽어도 된다. */
+async function readAllPosts(): Promise<BoardPost[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(boardPostsDir());

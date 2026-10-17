@@ -34,7 +34,6 @@
     .endpoint-row,
     .browser-activity,
     .embedding-result,
-    .board-detail-body,
     .code-block,
     .proh-proposal,
     .library-notice,
@@ -290,8 +289,7 @@
     .acc-row,
     .documents-column,
     .admin-groups,
-    .admin-table-scroll,
-    .board-detail-body
+    .admin-table-scroll
   ) {
   background: var(--surface-card);
   /* Flat on the page: no drop shadow and no lit top edge, just a hairline of

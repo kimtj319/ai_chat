@@ -512,6 +512,8 @@ export interface BoardReply {
  */
 export interface BoardPost {
   id: string;
+  /** 사람이 부르는 번호(#12). 이 필드가 생기기 전 글은 처음 목록을 읽을 때 작성 순으로 채운다. */
+  number?: number;
   title: string;
   body: string;
   /** 사용자가 자유롭게 적는다. 소문자로 모으고 중복을 없앤 뒤 저장한다. */

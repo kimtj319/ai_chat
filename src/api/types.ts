@@ -659,6 +659,8 @@ export interface BoardReplyView extends BoardReply {
 /** 글 하나의 전체. 본문과 답변이 함께 온다. */
 export interface BoardPostView {
   id: string;
+  /** 사람이 부르는 번호(#12). */
+  number?: number;
   title: string;
   body: string;
   tags: string[];
@@ -677,6 +679,7 @@ export interface BoardPostView {
 /** 목록용. 본문과 답변 내용은 빠지고 답변 수만 온다. */
 export interface BoardPostSummary {
   id: string;
+  number?: number;
   title: string;
   tags: string[];
   status: BoardPostStatus;

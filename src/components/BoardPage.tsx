@@ -1,20 +1,26 @@
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client";
 import type { BoardPostStatus, BoardPostSummary, BoardPostView } from "../api/types";
 import { BOARD_HASH, boardPostHash, boardPostIdFromHash } from "../routes";
 import { cachedBoardList, loadBoardList } from "../state/boardCache";
+import { exactTime, hueOf, initialOf, participantsOf, relativeTime, timelineOf } from "../state/boardFormat";
+import { copyText } from "../state/clipboard";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import { Modal } from "./Modal";
 import { PageHeader } from "./PageHeader";
+import { showToast } from "./Toast";
 import "./BoardPage.css";
 
 /**
  * 문의 게시판.
  *
- * 이슈 목록의 모양을 빌렸다 — 열림/닫힘 탭, 태그, 답변 수. 그게 이 화면에서
- * 사람이 실제로 하는 일과 맞기 때문이다: 내 문제가 이미 올라와 있는지 훑고,
- * 없으면 올리고, 답이 달리면 닫는다.
+ * GitLab 이슈 화면의 모양을 그대로 빌렸다 — 번호(#12)·상태 아이콘·색 라벨·
+ * 답변 수가 한 줄에 놓인 목록, 글에서는 본문·활동 타임라인·오른쪽 정보 패널.
+ * 사내 사람들이 이미 매일 읽는 화면이라 따로 배울 것이 없다: 내 문제가 이미
+ * 올라와 있는지 훑고, 없으면 올리고, 답이 달리면 닫는다.
  *
  * 목록과 글을 **같은 화면이 갈아 끼운다**(모달이 아니라). 답변 스레드는 길어질
  * 수 있고, 모달 안에서 답을 쓰게 하면 읽던 글을 가린 채로 쓰게 된다. 대신
@@ -28,7 +34,8 @@ interface Props {
   onBack: () => void;
 }
 
-type Tab = BoardPostStatus;
+type Tab = BoardPostStatus | "all";
+type Sort = "updated" | "created";
 
 /** 화면에서도 막아 둔다. 서버가 잘라 내기 전에 사람이 먼저 알아야 한다. */
 const MAX_TITLE_CHARS = 120;
@@ -39,16 +46,12 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+/** 계정 이름이 있으면 이름, 없으면 id — 없는 이름을 지어내지 않는다. */
+function nameOf(name: string | null, id: string): string {
+  return name || id;
 }
 
-/** 계정 이름이 있으면 이름, 없으면 id — 없는 이름을 지어내지 않는다. */
-function who(name: string | null, id: string): string {
-  return name ? `${name} (${id})` : id;
-}
+const ref = (n: number | undefined) => (n ? `#${n}` : "");
 
 /** 여러 줄 입력에서의 제출. Enter 는 줄바꿈으로 남겨 둬야 하므로 수식키를 쓴다. */
 function isSubmitChord(e: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
@@ -61,6 +64,8 @@ export function BoardPage({ onBack }: Props) {
   const [knownTags, setKnownTags] = useState<string[]>(() => cachedBoardList()?.tags ?? []);
   const [tab, setTab] = useState<Tab>("open");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort>("updated");
   const [listLoading, setListLoading] = useState(() => cachedBoardList() === null);
   /** 목록을 가져오지 못했다. 보여 줄 지난 목록이 없으면 목록 자리에 그린다. */
   const [listFailed, setListFailed] = useState(false);
@@ -157,20 +162,32 @@ export function BoardPage({ onBack }: Props) {
 
   // 태그를 걸면 탭의 숫자도 함께 줄어든다. 목록에는 한 건만 보이는데 탭에는
   // "열림 12" 라고 적혀 있으면, 둘 중 무엇이 거짓말인지 알 수 없다.
-  const inScope = useMemo(
-    () => posts.filter((p) => !tagFilter || p.tags.includes(tagFilter)),
-    [posts, tagFilter],
-  );
+  // 검색어도 같다. "#12" 처럼 번호로도 찾는다 — 사람들은 번호로 부른다.
+  const inScope = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const byNumber = /^#?\d+$/.test(q) ? Number(q.replace("#", "")) : null;
+    return posts.filter(
+      (p) =>
+        (!tagFilter || p.tags.includes(tagFilter)) &&
+        (!q || p.number === byNumber || p.title.toLowerCase().includes(q) || p.tags.some((t) => t.includes(q))),
+    );
+  }, [posts, tagFilter, query]);
 
   const counts = useMemo(
     () => ({
       open: inScope.filter((p) => p.status === "open").length,
       closed: inScope.filter((p) => p.status === "closed").length,
+      all: inScope.length,
     }),
     [inScope],
   );
 
-  const visible = useMemo(() => inScope.filter((p) => p.status === tab), [inScope, tab]);
+  const visible = useMemo(() => {
+    const field = sort === "updated" ? "updatedAt" : "createdAt";
+    return inScope
+      .filter((p) => tab === "all" || p.status === tab)
+      .sort((a, b) => (a[field] < b[field] ? 1 : a[field] > b[field] ? -1 : 0));
+  }, [inScope, tab, sort]);
 
   /* ------------------------------------------------------------------ 동작 */
 
@@ -193,6 +210,7 @@ export function BoardPage({ onBack }: Props) {
     if (body) {
       setPost(body.post);
       void reload();
+      showToast(status === "closed" ? `${ref(target.number)} 문의를 닫았습니다.` : `${ref(target.number)} 문의를 다시 열었습니다.`);
     }
   }
 
@@ -216,19 +234,11 @@ export function BoardPage({ onBack }: Props) {
       <PageHeader
         title="문의 게시판"
         onBack={onBack}
-        subtitle={
-          onDetail
-            ? post
-              ? `${post.status === "open" ? "열림" : "닫힘"} · 답변 ${post.replies.length}개`
-              : "글을 불러오는 중"
-            : `열림 ${counts.open}개 · 닫힘 ${counts.closed}개${tagFilter ? ` · #${tagFilter} 만` : ""}`
-        }
+        subtitle={onDetail ? "질문·요청·결함을 남기면 담당자가 답합니다" : `열림 ${counts.open}개 · 닫힘 ${counts.closed}개`}
         actions={
-          !onDetail && (
-            <button type="button" className="btn btn-primary" onClick={() => setComposing(true)} disabled={busy}>
-              문의 올리기
-            </button>
-          )
+          <button type="button" className="btn btn-primary" onClick={() => setComposing(true)} disabled={busy}>
+            새 문의
+          </button>
         }
       />
 
@@ -243,10 +253,17 @@ export function BoardPage({ onBack }: Props) {
         )}
 
         {onDetail && (
-          <button type="button" className="btn btn-sm btn-secondary board-to-list" onClick={showList}>
-            <ListBackIcon />
-            목록으로
-          </button>
+          // GitLab 의 빵부스러기: 어디에 있는지 말하고, 앞 칸을 누르면 목록으로 간다.
+          <nav className="board-crumbs" aria-label="위치">
+            <button type="button" className="board-crumb" onClick={showList}>
+              <ListBackIcon />
+              문의 게시판
+            </button>
+            <span className="board-crumb-sep" aria-hidden="true">
+              /
+            </span>
+            <span className="board-crumb-here">{post ? ref(post.number) || "글" : "…"}</span>
+          </nav>
         )}
 
         {listFailed && posts.length > 0 && !onDetail && (
@@ -284,40 +301,69 @@ export function BoardPage({ onBack }: Props) {
           )
         ) : (
           <>
-            <div className="board-tabs" role="tablist">
-              {(["open", "closed"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === t}
-                  className="board-tab"
-                  data-selected={tab === t || undefined}
-                  onClick={() => setTab(t)}
+            <div className="board-toolbar">
+              <div className="board-tabs" role="tablist" aria-label="상태">
+                {(["open", "closed", "all"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t}
+                    className="board-tab"
+                    data-selected={tab === t || undefined}
+                    onClick={() => setTab(t)}
+                  >
+                    {t !== "all" && <StatusIcon status={t} />}
+                    {t === "open" ? "열림" : t === "closed" ? "닫힘" : "전체"}
+                    <span className="board-tab-count">{counts[t]}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="board-toolbar-right">
+                <label className="board-search">
+                  <SearchIcon />
+                  <input
+                    id="board-search"
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="제목·라벨·#번호로 찾기"
+                    aria-label="문의 찾기"
+                  />
+                </label>
+                <select
+                  id="board-sort"
+                  className="board-sort"
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as Sort)}
+                  aria-label="정렬"
                 >
-                  {t === "open" ? "열림" : "닫힘"} <span className="board-tab-count">{counts[t]}</span>
-                </button>
-              ))}
-              {tagFilter && (
-                <button type="button" className="board-tag-clear" onClick={() => setTagFilter(null)}>
-                  #{tagFilter} 해제
-                </button>
-              )}
+                  <option value="updated">최근 활동순</option>
+                  <option value="created">최근 작성순</option>
+                </select>
+              </div>
             </div>
 
             {knownTags.length > 0 && (
-              <div className="board-tagbar">
+              <div className="board-tagbar" aria-label="라벨로 거르기">
                 {knownTags.map((t) => (
                   <button
                     key={t}
                     type="button"
-                    className="board-tag"
+                    className="board-label board-label-filter"
+                    style={{ "--label-hue": hueOf(t) } as React.CSSProperties}
+                    aria-pressed={tagFilter === t}
                     data-selected={tagFilter === t || undefined}
                     onClick={() => setTagFilter(tagFilter === t ? null : t)}
                   >
-                    #{t}
+                    {t}
                   </button>
                 ))}
+                {tagFilter && (
+                  <button type="button" className="board-tag-clear" onClick={() => setTagFilter(null)}>
+                    라벨 해제
+                  </button>
+                )}
               </div>
             )}
 
@@ -337,34 +383,48 @@ export function BoardPage({ onBack }: Props) {
 
               {visible.map((summary) => (
                 <li key={summary.id} className="board-row" data-status={summary.status}>
-                  <button type="button" className="board-row-title" onClick={() => showPost(summary.id)}>
-                    {summary.title}
-                  </button>
-                  {summary.tags.map((t) => (
-                    <span key={t} className="board-badge">
-                      #{t}
+                  <StatusIcon status={summary.status} />
+                  <div className="board-row-main">
+                    <div className="board-row-line">
+                      <button type="button" className="board-row-title" onClick={() => showPost(summary.id)}>
+                        {summary.title}
+                      </button>
+                      {summary.tags.map((t) => (
+                        <Label key={t} name={t} />
+                      ))}
+                    </div>
+                    <p className="board-row-meta">
+                      {ref(summary.number)}
+                      {summary.number ? " · " : ""}
+                      <span title={exactTime(summary.createdAt)}>{relativeTime(summary.createdAt)}</span>{" "}
+                      {nameOf(summary.authorName, summary.authorId)} 님이 작성
+                    </p>
+                  </div>
+                  <div className="board-row-side">
+                    <span
+                      className="board-row-comments"
+                      data-zero={summary.replyCount === 0 || undefined}
+                      aria-label={`답변 ${summary.replyCount}개`}
+                    >
+                      <CommentIcon />
+                      {summary.replyCount}
                     </span>
-                  ))}
-                  {summary.replyCount > 0 && (
-                    <span className="board-badge" data-tone="reply">
-                      답변 {summary.replyCount}
+                    <span className="board-row-updated" title={exactTime(summary.updatedAt)}>
+                      {relativeTime(summary.updatedAt)} 업데이트
                     </span>
-                  )}
-                  <span className="board-row-meta">
-                    {who(summary.authorName, summary.authorId)} · {formatDate(summary.createdAt)}
-                  </span>
+                  </div>
                 </li>
               ))}
 
               {visible.length === 0 && !listLoading && !(listFailed && posts.length === 0) && (
                 <li className="board-row-empty">
-                  {tagFilter ? (
-                    `#${tagFilter} 태그가 붙은 ${tab === "open" ? "열린" : "닫힌"} 문의가 없습니다.`
-                  ) : tab === "open" ? (
+                  {query.trim() || tagFilter ? (
+                    "조건에 맞는 문의가 없습니다."
+                  ) : tab !== "closed" ? (
                     <EmptyState
                       title="열린 문의가 없습니다"
                       reason="사용 중 막히거나 바라는 기능이 있으면 남겨 주세요. 담당자가 이곳에 답합니다."
-                      actionLabel="문의 올리기"
+                      actionLabel="새 문의"
                       onAction={() => setComposing(true)}
                       actionDisabled={busy}
                     />
@@ -410,7 +470,7 @@ export function BoardPage({ onBack }: Props) {
 interface DetailProps {
   post: BoardPostView;
   busy: boolean;
-  onStatus: (post: BoardPostView, status: BoardPostStatus) => void;
+  onStatus: (post: BoardPostView, status: BoardPostStatus) => Promise<void>;
   onDelete: () => void;
   onReplied: (post: BoardPostView) => void;
   onError: (message: string) => void;
@@ -419,8 +479,13 @@ interface DetailProps {
 function PostDetail({ post, busy, onStatus, onDelete, onReplied, onError }: DetailProps) {
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const open = post.status === "open";
+  const timeline = useMemo(() => timelineOf(post), [post]);
+  const people = useMemo(() => participantsOf(post), [post]);
+  const nameById = useMemo(() => new Map(people.map((p) => [p.id, nameOf(p.name, p.id)])), [people]);
 
-  async function send() {
+  /** andToggle: GitLab 의 "댓글 달고 닫기" — 답을 남기고 그 자리에서 상태도 바꾼다. */
+  async function send(andToggle = false) {
     const text = reply.trim();
     if (!text || sending) return;
     setSending(true);
@@ -428,6 +493,7 @@ function PostDetail({ post, busy, onStatus, onDelete, onReplied, onError }: Deta
       const body = await api.replyToBoardPost(post.id, text);
       setReply("");
       onReplied(body.post);
+      if (andToggle) await onStatus(body.post, open ? "closed" : "open");
     } catch (err) {
       onError(messageOf(err));
     } finally {
@@ -435,77 +501,252 @@ function PostDetail({ post, busy, onStatus, onDelete, onReplied, onError }: Deta
     }
   }
 
+  async function copyLink() {
+    const url = `${window.location.origin}${window.location.pathname}${boardPostHash(post.id)}`;
+    showToast((await copyText(url)) ? "글 주소를 복사했습니다." : "주소를 복사하지 못했습니다.");
+  }
+
   return (
-    <article className="board-detail">
-      <div className="board-detail-head">
-        <h3 className="board-detail-title">{post.title}</h3>
-        <span className="board-badge" data-status={post.status}>
-          {post.status === "open" ? "열림" : "닫힘"}
-        </span>
-        {post.tags.map((t) => (
-          <span key={t} className="board-badge">
-            #{t}
+    <article className="board-issue">
+      <header className="board-issue-head">
+        <h3 className="board-issue-title">
+          {post.title} <span className="board-issue-ref">{ref(post.number)}</span>
+        </h3>
+        <div className="board-issue-bar">
+          <StatusPill status={post.status} />
+          <span className="board-issue-byline">
+            <Avatar name={post.authorName} id={post.authorId} size="sm" />
+            <strong>{nameOf(post.authorName, post.authorId)}</strong> 님이{" "}
+            <span title={exactTime(post.createdAt)}>{relativeTime(post.createdAt)}</span> 작성
           </span>
-        ))}
-      </div>
-      <p className="board-detail-meta">
-        {who(post.authorName, post.authorId)} · {formatDate(post.createdAt)}
-        {post.status === "closed" && post.closedAt ? ` · ${formatDate(post.closedAt)} 에 닫힘` : ""}
-      </p>
-
-      {post.body && <p className="board-detail-body">{post.body}</p>}
-
-      {/* 서버가 판단해서 보낸 값이다 — 화면이 역할을 다시 따지지 않는다. */}
-      {post.canManage && (
-        <div className="board-detail-actions">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => onStatus(post, post.status === "open" ? "closed" : "open")}
-          >
-            {post.status === "open" ? "닫기" : "다시 열기"}
-          </button>
-          <button type="button" className="btn btn-danger-quiet" disabled={busy} onClick={onDelete}>
-            삭제
-          </button>
+          {/* 서버가 판단해서 보낸 값이다 — 화면이 역할을 다시 따지지 않는다. */}
+          {post.canManage && (
+            <div className="board-issue-actions">
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void onStatus(post, open ? "closed" : "open")}>
+                {open ? "문의 닫기" : "다시 열기"}
+              </button>
+              <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={onDelete}>
+                삭제
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </header>
 
-      <h4 className="board-replies-title">답변 {post.replies.length}개</h4>
-      <ul className="board-replies">
-        {post.replies.map((r) => (
-          <li key={r.id} className="board-reply">
-            <p className="board-reply-meta">
-              {who(r.authorName, r.authorId)} · {formatDate(r.createdAt)}
-            </p>
-            <p className="board-reply-body">{r.body}</p>
-          </li>
-        ))}
-        {post.replies.length === 0 && <li className="board-row-empty">아직 답변이 없습니다.</li>}
-      </ul>
+      <div className="board-issue-grid">
+        <div className="board-issue-main">
+          <section className="board-note board-note-description" aria-label="본문">
+            <NoteHead name={post.authorName} id={post.authorId} at={post.createdAt} isAuthor={false} />
+            <div className="board-note-body">
+              {post.body ? <MarkdownRenderer content={post.body} /> : <p className="board-note-empty">설명이 없습니다.</p>}
+            </div>
+          </section>
 
-      {/* 닫힌 글에도 답변은 달 수 있다 — 닫았다고 대화가 끝나는 것은 아니다. */}
-      <div className="board-reply-form">
-        <textarea
-          className="board-reply-input"
-          rows={3}
-          maxLength={MAX_BODY_CHARS}
-          placeholder="답변을 적어 주세요. (Ctrl+Enter 로 올립니다)"
-          value={reply}
-          onChange={(e) => setReply(e.target.value)}
-          onKeyDown={(e) => {
-            if (isSubmitChord(e)) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button type="button" className="btn btn-primary" disabled={sending || !reply.trim()} onClick={() => void send()}>
-          {sending ? "올리는 중…" : "답변 올리기"}
-        </button>
+          <h4 className="board-activity-title">
+            활동 <span className="board-tab-count">{post.replies.length}</span>
+          </h4>
+          <ol className="board-timeline">
+            {timeline.map((item) =>
+              item.kind === "reply" ? (
+                <li key={item.reply.id} className="board-timeline-item">
+                  <Avatar name={item.reply.authorName} id={item.reply.authorId} />
+                  <div className="board-note">
+                    <NoteHead
+                      name={item.reply.authorName}
+                      id={item.reply.authorId}
+                      at={item.reply.createdAt}
+                      isAuthor={item.reply.authorId === post.authorId}
+                    />
+                    <div className="board-note-body">
+                      <MarkdownRenderer content={item.reply.body} />
+                    </div>
+                  </div>
+                </li>
+              ) : (
+                <li key={`closed-${item.at}`} className="board-timeline-item board-timeline-system">
+                  <span className="board-timeline-dot" aria-hidden="true">
+                    <StatusIcon status="closed" />
+                  </span>
+                  <p>
+                    <strong>{nameById.get(item.by) ?? item.by}</strong> 님이{" "}
+                    <span title={exactTime(item.at)}>{relativeTime(item.at)}</span> 문의를 닫았습니다
+                  </p>
+                </li>
+              ),
+            )}
+            {timeline.length === 0 && <li className="board-timeline-none">아직 답변이 없습니다.</li>}
+          </ol>
+
+          {/* 닫힌 글에도 답변은 달 수 있다 — 닫았다고 대화가 끝나는 것은 아니다. */}
+          <div className="board-reply-form">
+            <textarea
+              id="board-reply"
+              className="board-reply-input"
+              rows={4}
+              maxLength={MAX_BODY_CHARS}
+              placeholder="답변을 적어 주세요. 마크다운을 쓸 수 있습니다."
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => {
+                if (isSubmitChord(e)) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+            />
+            <div className="board-reply-foot">
+              <span className="board-reply-hint">Ctrl+Enter 로 올립니다</span>
+              {post.canManage && (
+                <button type="button" className="btn" disabled={sending || busy || !reply.trim()} onClick={() => void send(true)}>
+                  {open ? "답변하고 닫기" : "답변하고 다시 열기"}
+                </button>
+              )}
+              <button type="button" className="btn btn-primary" disabled={sending || !reply.trim()} onClick={() => void send()}>
+                {sending ? "올리는 중…" : "답변 올리기"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <aside className="board-issue-side" aria-label="문의 정보">
+          <dl className="board-side-list">
+            <div className="board-side-item">
+              <dt>상태</dt>
+              <dd>
+                <StatusPill status={post.status} />
+              </dd>
+            </div>
+            <div className="board-side-item">
+              <dt>작성자</dt>
+              <dd className="board-side-person">
+                <Avatar name={post.authorName} id={post.authorId} size="sm" />
+                {nameOf(post.authorName, post.authorId)}
+              </dd>
+            </div>
+            <div className="board-side-item">
+              <dt>라벨</dt>
+              <dd className="board-side-labels">
+                {post.tags.length > 0 ? post.tags.map((t) => <Label key={t} name={t} />) : <span className="board-side-none">없음</span>}
+              </dd>
+            </div>
+            <div className="board-side-item">
+              <dt>참여자 {people.length}명</dt>
+              <dd className="board-side-avatars">
+                {people.map((p) => (
+                  <Avatar key={p.id} name={p.name} id={p.id} size="sm" title={nameOf(p.name, p.id)} />
+                ))}
+              </dd>
+            </div>
+            <div className="board-side-item">
+              <dt>작성</dt>
+              <dd>{exactTime(post.createdAt)}</dd>
+            </div>
+            <div className="board-side-item">
+              <dt>최근 활동</dt>
+              <dd title={exactTime(post.updatedAt)}>{relativeTime(post.updatedAt)}</dd>
+            </div>
+          </dl>
+          <button type="button" className="btn btn-sm board-side-copy" onClick={() => void copyLink()}>
+            <LinkIcon />
+            글 주소 복사
+          </button>
+        </aside>
       </div>
     </article>
+  );
+}
+
+/* ------------------------------------------------------------- 작은 조각들 */
+
+function NoteHead({ name, id, at, isAuthor }: { name: string | null; id: string; at: string; isAuthor: boolean }) {
+  return (
+    <header className="board-note-head">
+      <strong>{nameOf(name, id)}</strong>
+      <span className="board-note-handle">@{id}</span>
+      <span className="board-note-time" title={exactTime(at)}>
+        · {relativeTime(at)}
+      </span>
+      {isAuthor && <span className="board-note-role">작성자</span>}
+    </header>
+  );
+}
+
+function Avatar({ name, id, size, title }: { name: string | null; id: string; size?: "sm"; title?: string }) {
+  return (
+    <span
+      className="board-avatar"
+      data-size={size}
+      style={{ "--avatar-hue": hueOf(id) } as React.CSSProperties}
+      title={title}
+      aria-hidden={title ? undefined : true}
+      aria-label={title}
+      role={title ? "img" : undefined}
+    >
+      {initialOf(name, id)}
+    </span>
+  );
+}
+
+function Label({ name }: { name: string }) {
+  return (
+    <span className="board-label" style={{ "--label-hue": hueOf(name) } as React.CSSProperties}>
+      {name}
+    </span>
+  );
+}
+
+function StatusPill({ status }: { status: BoardPostStatus }) {
+  return (
+    <span className="board-status" data-status={status}>
+      <StatusIcon status={status} />
+      {status === "open" ? "열림" : "닫힘"}
+    </span>
+  );
+}
+
+/** GitLab 의 열림(빈 원 안의 점)·닫힘(체크) 아이콘. 색이 아닌 모양으로도 가른다. */
+function StatusIcon({ status }: { status: BoardPostStatus }) {
+  return (
+    <svg className="board-status-icon" data-status={status} viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      {status === "open" ? (
+        <>
+          <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="8" cy="8" r="2" fill="currentColor" />
+        </>
+      ) : (
+        <>
+          <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M5.4 8.2l1.8 1.8 3.4-3.6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function CommentIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.5 10.5l3 3" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+      <path d="M6.5 9.5l3-3" />
+      <path d="M7 4.5l1-1a2.8 2.8 0 014 4l-1 1" />
+      <path d="M9 11.5l-1 1a2.8 2.8 0 01-4-4l1-1" />
+    </svg>
   );
 }
 
@@ -615,12 +856,12 @@ function Composer({ knownTags, onCancel, onDone, onError }: ComposerProps) {
                   void submit();
                 }
               }}
-              placeholder="상황과 재현 방법을 적어 주시면 답하기 쉽습니다."
+              placeholder="상황과 재현 방법을 적어 주시면 답하기 쉽습니다. 마크다운을 쓸 수 있습니다."
             />
           </label>
 
           <label className="board-field">
-            <span className="board-field-label">태그 (쉼표로 구분, 최대 {MAX_TAGS}개)</span>
+            <span className="board-field-label">라벨 (쉼표로 구분, 최대 {MAX_TAGS}개)</span>
             <input
               className="board-input"
               value={tagText}
@@ -638,32 +879,31 @@ function Composer({ knownTags, onCancel, onDone, onError }: ComposerProps) {
           {tags.length > 0 && (
             <div className="board-tagbar">
               {tags.map((t) => (
-                <span key={t} className="board-badge">
-                  #{t}
-                </span>
+                <Label key={t} name={t} />
               ))}
             </div>
           )}
           {/* 아홉 번째 태그를 조용히 버리지 않는다. */}
           {dropped > 0 && (
             <p className="board-field-warn">
-              태그는 {MAX_TAGS}개까지입니다. 뒤의 {dropped}개는 빠집니다.
+              라벨은 {MAX_TAGS}개까지입니다. 뒤의 {dropped}개는 빠집니다.
             </p>
           )}
 
           {knownTags.length > 0 && (
             <>
-              <p className="board-field-label">이미 쓰이는 태그</p>
+              <p className="board-field-label">이미 쓰이는 라벨</p>
               <div className="board-tagbar">
                 {knownTags.map((t) => (
                   <button
                     key={t}
                     type="button"
-                    className="board-tag"
+                    className="board-label board-label-filter"
+                    style={{ "--label-hue": hueOf(t) } as React.CSSProperties}
                     disabled={tags.length >= MAX_TAGS && !tags.includes(t)}
                     onClick={() => addTag(t)}
                   >
-                    #{t}
+                    {t}
                   </button>
                 ))}
               </div>

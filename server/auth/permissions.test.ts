@@ -182,13 +182,13 @@ async function call(as: string, method: string, p: string, body?: unknown): Prom
     error = err as Error;
   }
   check("토큰 없는 일반 계정은 도구 결과로 거절", error?.name === "McpToolReportedError" && error.message.includes("[API 키 미등록]") && error.message.includes("GitLab"), String(error));
-  check("AI Product 는 공용 토큰", (await callUrlFor(gitlab, "aip1")) === "http://mock-gitlab/mcp?token=shared-gitlab-token");
+  check("AI Product 는 공용 토큰 + 묻는 계정 아이디(내 이슈용)", (await callUrlFor(gitlab, "aip1")) === "http://mock-gitlab/mcp?token=shared-gitlab-token&me=aip1");
   await setPersonalKey("carol", "gitlab", "glpat-carol/own+token");
-  check("개인 토큰을 실어 보낸다(URL 인코딩)", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken");
+  check("개인 토큰을 실어 보낸다(URL 인코딩)", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken&me=carol");
   await setPersonalKey("carol", "gitlab", "glpat-second-project-token", "다른 프로젝트");
   check(
     "GitLab 토큰을 여러 개 두면 모두 싣는다",
-    (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken&token=glpat-second-project-token",
+    (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-carol%2Fown%2Btoken&token=glpat-second-project-token&me=carol",
   );
   let dup = "";
   try {
@@ -201,7 +201,7 @@ async function call(as: string, method: string, p: string, body?: unknown): Prom
   check("토큰마다 이름·끝 네 자리가 보이고 값은 없다", summary.items?.length === 2 && summary.items[1].label === "다른 프로젝트" && summary.items[1].hint === "…oken" && !JSON.stringify(summary).includes("glpat"), JSON.stringify(summary));
   const removed = await call("carol", "DELETE", `/me/keys/gitlab/${summary.items[0].id}`);
   check("하나만 지울 수 있다", removed.status === 200 && removed.json.keys.gitlab.items.length === 1);
-  check("…남은 토큰만 싣는다", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-second-project-token");
+  check("…남은 토큰만 싣는다", (await callUrlFor(gitlab, "carol")) === "http://mock-gitlab/mcp?token=glpat-second-project-token&me=carol");
 
   const av = { origin: "builtin", slug: "alphavantage", url: "https://mcp.alphavantage.co/mcp?apikey=shared-av-key" } as never;
   let avError: Error | null = null;

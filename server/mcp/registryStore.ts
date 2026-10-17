@@ -432,7 +432,7 @@ const BUILTIN_SERVERS: Array<Omit<CreateServerInput, "createdBy">> = [
           name: "wisenut 이슈",
           slug: GITLAB_SLUG,
           description:
-            "GitLab 의 wisenut 이슈를 읽습니다. 프로젝트 목록, 제목·본문 부분일치 검색, 라벨·상태별 목록, 이슈 본문과 댓글 조회를 지원합니다. 읽기 전용이며, 각자 등록한 GitLab 토큰(여러 개 가능)으로 볼 수 있는 프로젝트의 이슈만 검색됩니다.",
+            "GitLab 의 wisenut 이슈를 읽습니다. 프로젝트 목록, 제목·본문 부분일치 검색, 담당자·작성자별(내 이슈 포함)·라벨·상태별 목록, 이슈 본문과 댓글 조회를 지원합니다. 읽기 전용이며, 각자 등록한 GitLab 토큰(여러 개 가능)으로 볼 수 있는 프로젝트의 이슈만 검색됩니다.",
           url: `${config.gitlabMcpUrl}?token=${encodeURIComponent(config.gitlabToken)}`,
           authMode: "none" as const,
           origin: "builtin" as const,

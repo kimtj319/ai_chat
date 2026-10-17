@@ -190,6 +190,11 @@ export function boardDir(): string {
   return path.join(config.dataDir, "board");
 }
 
+/** 다음 글 번호. 글이 지워져도 번호는 다시 쓰지 않는다(#12 를 지우고 새 글이 #12 가 되면 옛 링크가 엉뚱한 글을 가리킨다). */
+export function boardCounterFile(): string {
+  return path.join(boardDir(), "counter.json");
+}
+
 export function boardPostsDir(): string {
   return path.join(boardDir(), "posts");
 }

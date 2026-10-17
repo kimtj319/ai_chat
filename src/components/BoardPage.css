@@ -1,3 +1,49 @@
+/* 문의 게시판 — GitLab 이슈 화면의 배치를 리퀴드 글래스로.
+ *
+ * 유리는 '틀'에만 쓴다: 도구 막대, 목록 판, 오른쪽 정보 패널, 상태·라벨 알약.
+ * 사람이 길게 읽는 본문과 답변은 거의 불투명한 카드에 둔다 — 배경 색이 글자
+ * 뒤로 비치면 읽기 어렵다는 것이 지난 라운드(2026-10-17)의 결론이다.
+ */
+
+:root {
+  /* 목록 판·정보 패널의 유리. 카드 단(glass-card)보다 진하고 팝(glass-pop)보다 옅다:
+     배경의 색은 번져 보이되, 그 위 제목은 또렷해야 한다. */
+  --board-glass: linear-gradient(158deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.5) 55%, rgba(255, 255, 255, 0.66));
+  --board-glass-row-hover: rgba(255, 255, 255, 0.62);
+  /* 유리 가장자리에 맺히는 빛: 왼쪽 위와 오른쪽 아래가 밝고 가운데는 비어 있다. */
+  --board-rim: linear-gradient(140deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.3) 28%, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.4) 78%, rgba(255, 255, 255, 0.95));
+  --board-glow: inset 0 -14px 28px -22px rgba(255, 255, 255, 0.9);
+  /* 라벨 글자의 밝기. 색상(hue)은 이름에서 나온다. */
+  --board-label-ink: 30%;
+  --board-label-fill: 0.13;
+  --board-open: #1f7a3d;
+  --board-closed: #2f5fd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --board-glass: linear-gradient(158deg, rgba(70, 72, 80, 0.72), rgba(36, 37, 41, 0.62) 55%, rgba(52, 53, 59, 0.68));
+    --board-glass-row-hover: rgba(255, 255, 255, 0.06);
+    --board-rim: linear-gradient(140deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.06) 30%, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.05) 75%, rgba(255, 255, 255, 0.22));
+    --board-glow: inset 0 -14px 28px -22px rgba(255, 255, 255, 0.14);
+    --board-label-ink: 78%;
+    --board-label-fill: 0.2;
+    --board-open: #6dd58c;
+    --board-closed: #8ab4f8;
+  }
+}
+
+:root[data-theme="dark"] {
+  --board-glass: linear-gradient(158deg, rgba(70, 72, 80, 0.72), rgba(36, 37, 41, 0.62) 55%, rgba(52, 53, 59, 0.68));
+  --board-glass-row-hover: rgba(255, 255, 255, 0.06);
+  --board-rim: linear-gradient(140deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.06) 30%, rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.05) 75%, rgba(255, 255, 255, 0.22));
+  --board-glow: inset 0 -14px 28px -22px rgba(255, 255, 255, 0.14);
+  --board-label-ink: 78%;
+  --board-label-fill: 0.2;
+  --board-open: #6dd58c;
+  --board-closed: #8ab4f8;
+}
+
 /* .documents-page 와 같은 골격 — 사이드바 옆 본문을 차지하고, 창의 배경이
    그대로 비쳐야 하므로 자기 바탕을 칠하지 않는다. */
 .board-page {
@@ -14,10 +60,47 @@
   flex: 1;
   overflow-y: auto;
   width: 100%;
-  /* 머리(PageHeader)·라이브러리·문서·도구·관리와 같은 폭 — 탭과 목록이 제목 아래에 선다. */
+  /* 머리(PageHeader)·라이브러리·문서·도구·관리와 같은 폭. */
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 var(--space-10) var(--space-11);
+}
+
+/* 유리 판 하나의 재질. 목록·정보 패널·도구 막대가 함께 쓴다. */
+.board-toolbar,
+.board-list,
+.board-issue-side {
+  background: var(--board-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-card-border);
+  box-shadow:
+    0 0 0 0.5px var(--glass-card-edge),
+    var(--glass-card-shadow),
+    inset 0 1px 0 var(--glass-card-highlight),
+    var(--board-glow);
+  isolation: isolate;
+}
+
+.board-toolbar,
+.board-list {
+  position: relative;
+}
+
+.board-toolbar::after,
+.board-list::after,
+.board-issue-side::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--board-rim);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 .board-error {
@@ -45,36 +128,39 @@
   opacity: 0.7;
 }
 
+.board-banner-close:hover {
+  opacity: 1;
+}
+
 .board-banner-retry {
   flex-shrink: 0;
   margin-left: auto;
 }
 
-/* 글에서 목록으로. 머리의 뒤로 단추(대화로)와는 다른 일이다. */
-.board-to-list {
-  margin: 0 0 var(--space-6);
-}
+/* ------------------------------------------------------------ 도구 막대 */
 
-.board-banner-close:hover {
-  opacity: 1;
-}
-
-/* ------------------------------------------------------- 열림 / 닫힘 탭 */
-
-/* 밑줄 탭이다. 알약 버튼으로 하면 그 옆의 태그 칩과 같은 모양이 되어,
-   무엇이 '지금 보고 있는 묶음' 이고 무엇이 '거르는 조건' 인지 섞인다. */
-.board-tabs {
+/* GitLab 목록 머리: 왼쪽은 상태 탭, 오른쪽은 찾기·정렬. */
+.board-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-7);
-  border-bottom: 1px solid var(--outline-variant);
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+}
+
+/* 막대 자체가 유리이므로 탭 묶음은 테두리 없이 그 안에 앉는다(glass.css 의 알약 모양 위에). */
+.board-toolbar .board-tabs {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .board-tab {
-  padding: var(--space-5) var(--space-2);
-  margin-bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
   border: none;
-  border-bottom: 2px solid transparent;
   background: none;
   color: var(--on-surface-variant);
   font: inherit;
@@ -83,27 +169,130 @@
 }
 
 .board-tab[data-selected] {
-  color: var(--on-surface);
   font-weight: var(--weight-semibold);
-  border-bottom-color: var(--primary);
 }
 
 .board-tab-count {
   display: inline-block;
-  min-width: 1.6em;
+  min-width: 1.7em;
   padding: 0 var(--space-3);
-  margin-left: var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--surface-container);
+  background: var(--glass-control);
+  border: 1px solid var(--glass-card-border);
   color: var(--on-surface-variant);
-  font-size: var(--text-xs);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-regular);
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
-.board-tag-clear {
+.board-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   margin-left: auto;
-  padding: 0;
+  flex: 1 1 280px;
+  justify-content: flex-end;
+}
+
+.board-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 1 1 220px;
+  max-width: 360px;
+  height: 36px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-full);
+  background: var(--glass-field);
+  border: 1px solid var(--field-border);
+  color: var(--on-surface-variant);
+}
+
+.board-search:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.board-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.board-sort {
+  height: 36px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-full);
+  background: var(--glass-control);
+  border: 1px solid var(--glass-card-border);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.board-sort:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- 라벨 */
+
+.board-tagbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+/* GitLab 라벨: 이름마다 고유한 색의 알약. 색은 이름에서 나오므로 어디서나 같다. */
+.board-label {
+  --label-hue: 210;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px var(--space-5);
+  border-radius: var(--radius-full);
+  background: hsl(var(--label-hue) 80% 50% / var(--board-label-fill));
+  border: 1px solid hsl(var(--label-hue) 70% 45% / 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  color: hsl(var(--label-hue) 65% var(--board-label-ink));
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.board-label-filter {
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.board-label-filter:hover:not(:disabled) {
+  background: hsl(var(--label-hue) 80% 50% / calc(var(--board-label-fill) + 0.08));
+}
+
+.board-label-filter[data-selected] {
+  background: hsl(var(--label-hue) 70% 45%);
+  border-color: transparent;
+  color: #fff;
+}
+
+.board-label-filter:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.board-tag-clear {
+  padding: 0 var(--space-2);
   border: none;
   background: none;
   color: var(--primary);
@@ -112,82 +301,110 @@
   cursor: pointer;
 }
 
-/* ------------------------------------------------------------- 태그 */
+/* ------------------------------------------------------------- 상태 */
 
-.board-tagbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
-}
-
-.board-tag {
-  padding: 2px var(--space-4);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--on-surface-variant);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.board-tag:hover {
-  background: var(--surface-container);
-}
-
-.board-tag:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.board-tag[data-selected] {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--on-primary);
-}
-
-/* 배지는 문서 페이지와 같은 모양이다 — 같은 앱에서 같은 뜻이면 같게 보인다. */
-.board-badge {
+.board-status-icon {
   flex-shrink: 0;
-  padding: 2px var(--space-4);
+}
+
+.board-status-icon[data-status="open"] {
+  color: var(--board-open);
+}
+
+.board-status-icon[data-status="closed"] {
+  color: var(--board-closed);
+}
+
+/* GitLab 의 "Open"/"Closed" 알약 — 진한 색 유리. */
+.board-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 3px var(--space-6) 3px var(--space-5);
   border-radius: var(--radius-full);
-  background: var(--surface-container-highest);
-  color: var(--on-surface-variant);
   font-size: var(--text-xs);
-  white-space: nowrap;
+  font-weight: var(--weight-semibold);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-.board-badge[data-tone="reply"] {
-  background: transparent;
-  border: 1px solid var(--outline-variant);
-  font-variant-numeric: tabular-nums;
+.board-status[data-status="open"] {
+  background: linear-gradient(180deg, #2c9a52, #1f7a3d);
 }
 
-.board-badge[data-status="open"] {
-  background: var(--primary);
-  color: var(--on-primary);
+.board-status[data-status="closed"] {
+  background: linear-gradient(180deg, #4a7be6, #2f5fd0);
+}
+
+.board-status .board-status-icon {
+  color: #fff;
 }
 
 /* ------------------------------------------------------------- 목록 */
 
 .board-list {
   list-style: none;
-  margin: var(--space-5) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
+  margin: var(--space-6) 0 0;
+  padding: var(--space-2) 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .board-row {
   display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-9);
+  transition: background-color 0.15s ease;
+}
+
+.board-row + .board-row {
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 9%, transparent);
+}
+
+.board-row:hover {
+  background: var(--board-glass-row-hover);
+}
+
+.board-row > .board-status-icon {
+  margin-top: 3px;
+}
+
+.board-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-row-line {
+  display: flex;
   align-items: center;
-  /* 배지는 줄지 않으므로(flex-shrink:0), 줄바꿈이 없으면 좁은 화면에서 태그
-     서너 개에 제목이 먼저 뭉개진다. 제목에 최소 폭을 주고 넘치면 아래로 민다. */
   flex-wrap: wrap;
-  gap: var(--space-4) var(--space-5);
-  padding: var(--space-5);
-  border-bottom: 1px solid var(--outline-variant);
+  gap: var(--space-3) var(--space-4);
+}
+
+/* 제목이 곧 열기 버튼이다 — 행마다 '보기' 를 따로 두지 않는다. */
+.board-row-title {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.board-row-title:hover,
+.board-row-title:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* 닫힌 글은 목록에서 한 발 물러난다. 지워진 것은 아니므로 흐리게만 둔다. */
@@ -195,34 +412,32 @@
   color: var(--on-surface-variant);
 }
 
-/* 제목이 곧 열기 버튼이다 — 행마다 '보기' 를 따로 두지 않는다. */
-.board-row-title {
-  flex: 1 1 16rem;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.board-row-title:hover,
-.board-row-title:focus-visible {
-  text-decoration: underline;
-}
-
 .board-row-meta {
-  flex-shrink: 0;
-  margin-left: auto;
+  margin: var(--space-2) 0 0;
   font-size: var(--text-xs);
   color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-row-side {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.board-row-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-row-comments[data-zero] {
+  opacity: 0.45;
 }
 
 /* 불러오는 중·안내·막다른 길이 같은 자리에 같은 모양으로 선다. */
@@ -231,6 +446,14 @@
   text-align: center;
   font-size: var(--text-sm);
   color: var(--on-surface-variant);
+}
+
+.board-row-empty {
+  padding: var(--space-9);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+  list-style: none;
 }
 
 .board-row-empty > .btn {
@@ -244,131 +467,381 @@
 
 .board-row-loading {
   list-style: none;
-  padding: var(--space-5) 0;
+  padding: var(--space-5) var(--space-9);
 }
 
-/* 한도에 가까워졌을 때만 나타나는 글자 수, 그리고 잘려 나갈 것에 대한 알림. */
-.board-field-count {
-  margin-left: var(--space-4);
-  font-variant-numeric: tabular-nums;
-}
+/* --------------------------------------------------------- 빵부스러기 */
 
-.board-field-warn {
-  margin: 0;
-  font-size: var(--text-xs);
-  color: var(--warning);
-}
-
-.board-row-empty {
-  padding: var(--space-9);
-  text-align: center;
+.board-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-6);
   font-size: var(--text-sm);
   color: var(--on-surface-variant);
-  list-style: none;
+}
+
+.board-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-3);
+  border: 1px solid var(--glass-card-border);
+  border-radius: var(--radius-full);
+  background: var(--glass-control);
+  backdrop-filter: blur(12px) saturate(160%);
+  color: var(--on-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.board-crumb:hover {
+  background: var(--glass-control-hover);
+}
+
+.board-crumb-here {
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --------------------------------------------------------- 글 하나 */
 
-.board-detail {
-  padding-top: var(--space-6);
+.board-issue-head {
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid color-mix(in srgb, var(--on-surface) 10%, transparent);
 }
 
-.board-detail-head {
+.board-issue-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.35;
+  font-weight: var(--weight-bold);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.board-issue-ref {
+  color: var(--on-surface-variant);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-issue-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-4);
-}
-
-.board-detail-title {
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  /* 긴 제목이 배지를 밀어내지 않도록 줄바꿈을 허용한다. */
-  min-width: 0;
-  flex: 1 1 60%;
-}
-
-.board-detail-meta {
-  margin: var(--space-3) 0 0;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
-/* 본문은 사용자가 적은 그대로 — 줄바꿈을 살린다. */
-.board-detail-body {
-  margin: var(--space-6) 0 0;
-  padding: var(--space-6);
-  border-radius: var(--radius-sm);
-  background: var(--surface-container);
-  font-size: var(--text-sm);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.board-detail-actions {
-  display: flex;
-  gap: var(--space-4);
+  gap: var(--space-5) var(--space-6);
   margin-top: var(--space-6);
 }
 
-.board-replies-title {
-  margin: var(--space-9) 0 0;
+.board-issue-byline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-}
-
-.board-replies {
-  list-style: none;
-  margin: var(--space-4) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.board-reply {
-  padding: var(--space-5) 0;
-  border-bottom: 1px solid var(--outline-variant);
-}
-
-.board-reply-meta {
-  margin: 0;
-  font-size: var(--text-xs);
   color: var(--on-surface-variant);
 }
 
-.board-reply-body {
-  margin: var(--space-3) 0 0;
-  font-size: var(--text-sm);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.board-issue-byline strong {
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
 }
 
-.board-reply-form {
+.board-issue-actions {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+/* 본문 + 오른쪽 정보 패널. GitLab 처럼 패널은 좁고 스크롤해도 따라온다. */
+.board-issue-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 264px;
+  gap: var(--space-10);
+  align-items: start;
+  margin-top: var(--space-9);
+}
+
+.board-issue-main {
+  min-width: 0;
+}
+
+/* 길게 읽는 것은 불투명한 카드에. 머리줄만 살짝 유리빛을 띤다. */
+.board-note {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border: 1px solid var(--field-border);
+  overflow: hidden;
+}
+
+.board-note-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-8);
+  border-bottom: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+  background: var(--glass-control);
+  font-size: var(--text-sm);
+}
+
+.board-note-head strong {
+  font-weight: var(--weight-semibold);
+}
+
+.board-note-handle,
+.board-note-time {
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+}
+
+.board-note-role {
+  margin-left: auto;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--field-border);
+  color: var(--on-surface-variant);
+  font-size: var(--text-2xs);
+}
+
+.board-note-body {
+  padding: var(--space-6) var(--space-8) var(--space-7);
+}
+
+.board-note-body .markdown-body {
+  font-size: var(--text-sm);
+  line-height: 1.75;
+}
+
+.board-note-body .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.board-note-body .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.board-note-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+  font-style: italic;
+}
+
+.board-activity-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: var(--space-11) 0 var(--space-6);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+/* 활동 타임라인: 왼쪽의 세로 선 위에 아바타가 꿰인다. */
+.board-timeline {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-4);
-  margin-top: var(--space-7);
+  gap: var(--space-8);
 }
 
-.board-reply-input {
+.board-timeline::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 15px;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--on-surface) 10%, transparent);
+}
+
+.board-timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+
+.board-timeline-system {
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+.board-timeline-system p {
+  margin: 0;
+}
+
+.board-timeline-system strong {
+  color: var(--on-surface);
+  font-weight: var(--weight-semibold);
+}
+
+.board-timeline-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--surface-card);
+  border: 1px solid var(--field-border);
+}
+
+.board-timeline-none {
+  padding-left: calc(32px + var(--space-6));
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+/* 아바타: 이름에서 나온 색의 유리 구슬. */
+.board-avatar {
+  --avatar-hue: 210;
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, hsl(var(--avatar-hue) 70% 62%), hsl(var(--avatar-hue) 62% 44%));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 2px var(--surface-card),
+    0 2px 6px rgba(0, 0, 0, 0.14);
+  color: #fff;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.board-avatar[data-size="sm"] {
+  width: 22px;
+  height: 22px;
+  font-size: var(--text-2xs);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+/* 답변 상자: 아바타 줄과 맞춘다. */
+.board-reply-form {
+  margin-top: var(--space-9);
+  margin-left: calc(32px + var(--space-6));
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border: 1px solid var(--field-border);
+  overflow: hidden;
+}
+
+.board-reply-form:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+/* glass.css 가 필드에 주는 바탕·테두리는 상자가 대신 맡는다. */
+.board-reply-form .board-reply-input {
+  display: block;
   width: 100%;
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--radius-sm);
-  background: var(--surface-container);
+  padding: var(--space-7) var(--space-8);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: inherit;
   font: inherit;
   font-size: var(--text-sm);
+  line-height: 1.7;
   resize: vertical;
+  outline: none;
 }
 
-.board-reply-input:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -1px;
+.board-reply-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+  background: var(--glass-control);
+}
+
+.board-reply-hint {
+  margin-right: auto;
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+/* 오른쪽 정보 패널 — GitLab 사이드바의 항목들. */
+.board-issue-side {
+  position: sticky;
+  top: var(--space-6);
+  padding: var(--space-4) var(--space-8) var(--space-8);
+  border-radius: var(--radius-lg);
+}
+
+.board-side-list {
+  margin: 0;
+}
+
+.board-side-item {
+  padding: var(--space-6) 0;
+}
+
+.board-side-item + .board-side-item {
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+}
+
+.board-side-item dt {
+  margin-bottom: var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--on-surface-variant);
+}
+
+.board-side-item dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--on-surface);
+}
+
+.board-side-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.board-side-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.board-side-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.board-side-none {
+  color: var(--on-surface-variant);
+}
+
+.board-side-copy {
+  width: 100%;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
 /* ------------------------------------------------------- 새 글 쓰기 */
@@ -388,6 +861,18 @@
 .board-field-label {
   font-size: var(--text-xs);
   color: var(--on-surface-variant);
+}
+
+/* 한도에 가까워졌을 때만 나타나는 글자 수, 그리고 잘려 나갈 것에 대한 알림. */
+.board-field-count {
+  margin-left: var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-field-warn {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--warning);
 }
 
 .board-input {
@@ -418,9 +903,82 @@
   margin-top: var(--space-2);
 }
 
-@media (max-width: 720px) {
-  /* 좁은 화면에서는 제목과 상태만 남긴다. 누가 언제 썼는지는 글을 열면 나온다. */
-  .board-row-meta {
+/* ------------------------------------------------------- 좁은 화면 */
+
+@media (max-width: 960px) {
+  /* 정보 패널은 본문 아래로 — 읽는 것이 먼저다. */
+  .board-issue-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .board-issue-side {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .board-toolbar {
+    border-radius: var(--radius-md);
+  }
+
+  .board-toolbar-right {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .board-search {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .board-sort {
+    flex-shrink: 0;
+    padding: 0 var(--space-4);
+  }
+
+  .board-row {
+    padding: var(--space-6) var(--space-7);
+    gap: var(--space-5);
+  }
+
+  /* 언제 손댔는지는 글을 열면 나온다. 답변 수만 남긴다. */
+  .board-row-updated {
     display: none;
+  }
+
+  .board-issue-title {
+    font-size: 20px;
+  }
+
+  .board-issue-actions {
+    margin-left: 0;
+  }
+
+  .board-timeline::before {
+    left: 11px;
+  }
+
+  .board-timeline-item > .board-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: var(--text-2xs);
+  }
+
+  .board-timeline-dot {
+    width: 24px;
+    height: 24px;
+  }
+
+  .board-reply-form,
+  .board-timeline-none {
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  .board-note-head,
+  .board-note-body {
+    padding-left: var(--space-6);
+    padding-right: var(--space-6);
   }
 }
