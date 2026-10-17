@@ -1,14 +1,11 @@
 import type { ToolDefinition } from "./types.js";
-import { config } from "../config.js";
+import { requireTrimmed } from "./args.js";
+import { fetchJsonOrThrow, LEG_TIMEOUT_MS } from "./net/fetchJson.js";
+import { TOOL_USER_AGENT } from "./net/guardedFetch.js";
 
 const SEARCH_ENDPOINT = "https://en.wikipedia.org/w/api.php";
 const SUMMARY_ENDPOINT = "https://en.wikipedia.org/api/rest_v1/page/summary/";
-// Two sequential calls (search, then summary) share the tool's runner budget,
-// so each leg gets 60% of the single-request timeout (6s at the default) —
-// enough for a slow leg, short enough that one cannot eat the whole budget.
-const LEG_TIMEOUT_MS = Math.round(config.toolHttpTimeoutMs * 0.6);
 const MAX_EXTRACT_CHARS = 2_000;
-const USER_AGENT = "qwen3-web-chat-tool/1.0";
 
 interface SearchHit {
   title: string;
@@ -21,14 +18,12 @@ async function findTitle(query: string): Promise<string> {
   url.searchParams.set("srsearch", query);
   url.searchParams.set("srlimit", "1");
   url.searchParams.set("format", "json");
-  let res: Response;
-  try {
-    res = await fetch(url, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(LEG_TIMEOUT_MS) });
-  } catch (err) {
-    throw new Error(`Wikipedia search failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!res.ok) throw new Error(`Wikipedia search responded ${res.status}`);
-  const data = (await res.json()) as { query?: { search?: SearchHit[] } };
+  const data = await fetchJsonOrThrow<{ query?: { search?: SearchHit[] } }>(url, {
+    timeoutMs: LEG_TIMEOUT_MS,
+    headers: { "User-Agent": TOOL_USER_AGENT },
+    failed: (detail) => `Wikipedia search failed: ${detail}`,
+    status: (status) => `Wikipedia search responded ${status}`,
+  });
   const hit = data.query?.search?.[0];
   if (!hit) {
     throw new Error(`No Wikipedia article found for "${query}" — try a different phrase or an English title.`);
@@ -53,28 +48,22 @@ export const wikipediaLookupTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { query: string }) {
-    const query = typeof args?.query === "string" ? args.query.trim() : "";
-    if (!query) throw new Error("query must be a non-empty string");
+    const query = requireTrimmed(args?.query, "query");
 
     const title = await findTitle(query);
 
-    let res: Response;
-    try {
-      res = await fetch(SUMMARY_ENDPOINT + encodeURIComponent(title.replace(/ /g, "_")), {
-        headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(LEG_TIMEOUT_MS),
-      });
-    } catch (err) {
-      throw new Error(`Wikipedia summary request failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (!res.ok) throw new Error(`Wikipedia summary responded ${res.status} for "${title}"`);
-    const data = (await res.json()) as {
+    const data = await fetchJsonOrThrow<{
       title?: string;
       description?: string;
       extract?: string;
       type?: string;
       content_urls?: { desktop?: { page?: string } };
-    };
+    }>(SUMMARY_ENDPOINT + encodeURIComponent(title.replace(/ /g, "_")), {
+      timeoutMs: LEG_TIMEOUT_MS,
+      headers: { "User-Agent": TOOL_USER_AGENT },
+      failed: (detail) => `Wikipedia summary request failed: ${detail}`,
+      status: (status) => `Wikipedia summary responded ${status} for "${title}"`,
+    });
 
     const extract = data.extract ?? "";
     const truncated = extract.length > MAX_EXTRACT_CHARS;

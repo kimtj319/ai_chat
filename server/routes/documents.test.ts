@@ -39,12 +39,20 @@ interface Call {
   body: unknown;
 }
 const calls: Call[] = [];
+/** 설정되면 다음 삭제 요청은 이 약속이 풀릴 때까지 답하지 않는다. */
+let holdNextDelete: { arrived: () => void; release: Promise<void> } | null = null;
 
 const engine = http.createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   const raw = Buffer.concat(chunks).toString("utf8");
   calls.push({ path: req.url ?? "", body: raw ? JSON.parse(raw) : null });
+  if (req.url === "/index/test/delete" && holdNextDelete) {
+    const hold = holdNextDelete;
+    holdNextDelete = null;
+    hold.arrived();
+    await hold.release;
+  }
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ header: { status: "success" } }));
 });
@@ -63,7 +71,7 @@ delete process.env.RAG_CHUNK_MODEL_URL;
 delete process.env.RAG_CHUNK_MODEL;
 
 const { documentsRouter } = await import("./documents.js");
-const { saveDocumentMeta, saveDocumentChunks,
+const { getDocument, saveDocumentMeta, saveDocumentChunks,
   saveDocumentText } = await import("../storage/documentStore.js");
 type RagDocument = Parameters<typeof saveDocumentMeta>[1];
 
@@ -200,6 +208,51 @@ console.log("server/routes/documents.ts (PATCH)");
   eq("규칙 기반으로 새로 잘랐다고 보고한다", json.document?.chunkedBy, "rule");
   const indexCalls = calls.filter((c) => c.path === "/index/test");
   check("이번에는 색인 요청이 실제로 나간다", indexCalls.length > 0, `${indexCalls.length}`);
+}
+
+/* --------------------------- 지우는 중에 온 PATCH 는 지운 문서를 되살리지 않는다 */
+
+{
+  // PATCH 가 문서를 읽은 뒤 색인 잠금을 기다리는 사이에 DELETE 가 청크와 파일을
+  // 지우면, PATCH 는 읽어 둔 사본으로 청크를 **공개로** 다시 넣고 메타 파일을 새로
+  // 쓴다 — 지운 문서가 목록에 돌아오고 모두의 검색에 걸린다.
+  calls.length = 0;
+  const now = new Date().toISOString();
+  const doc: RagDocument = {
+    id: "doc_race01",
+    name: "지울문서.md",
+    mime: "text/markdown",
+    bytes: 100,
+    chars: 100,
+    chunks: 2,
+    chunkedBy: "rule",
+    scope: "private",
+    status: "ready",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await saveDocumentMeta(OWNER, doc);
+  await saveDocumentText(OWNER, doc.id, "지울 문서 원문.");
+  await saveDocumentChunks(OWNER, doc.id, ["청크-A", "청크-B"].map((text) => ({ text, overlapLen: 0 })));
+
+  let arrived!: () => void;
+  const deleteArrived = new Promise<void>((r) => (arrived = r));
+  let release!: () => void;
+  holdNextDelete = { arrived, release: new Promise<void>((r) => (release = r)) };
+
+  const deleting = fetch(`http://127.0.0.1:${port}/api/documents/${doc.id}`, { method: "DELETE" });
+  await deleteArrived; // DELETE 가 색인 잠금 안에서 엔진을 기다리는 중
+  const patching = patch(doc.id, { scope: "shared" });
+  await new Promise((r) => setTimeout(r, 200)); // PATCH 가 문서를 읽고 잠금 앞에 줄을 선다
+  release();
+  const [deleted, patched] = await Promise.all([deleting, patching]);
+
+  eq("DELETE 는 204", deleted.status, 204);
+  eq("PATCH 는 그사이 지워진 문서라 404", patched.status, 404);
+  check("지운 문서의 메타 파일이 되살아나지 않는다", (await getDocument(OWNER, doc.id)) === null);
+  const deleteAt = calls.findIndex((c) => c.path === "/index/test/delete");
+  const reindexed = calls.slice(deleteAt + 1).filter((c) => c.path === "/index/test");
+  eq("지운 뒤에 엔진으로 색인 요청이 가지 않는다", reindexed.length, 0);
 }
 
 /* -------------------------------------------------------------------- 결과 */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getModels } from "../api/client";
 import type { ModelCatalogEntry } from "../api/types";
+import { errorMessage } from "../state/friendlyError";
 
 // Three separate components read the catalog (the sidebar's model selector,
 // its endpoint dialog, the chat view) and each holds its own copy. Registering
@@ -47,7 +48,7 @@ export function useModels() {
         setModels([]);
         setCatalog([]);
         setCurrent("");
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errorMessage(err));
         setLoading(false);
       });
 

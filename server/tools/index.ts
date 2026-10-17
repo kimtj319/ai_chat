@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "./types.js";
+import { MCP_TOOL_PREFIX, type ToolDefinition } from "./types.js";
 import { calculatorTool } from "./calculator.js";
 import { getCurrentTimeTool } from "./time.js";
 import { httpFetchTool } from "./httpFetch.js";
@@ -26,6 +26,7 @@ import { cidrCalcTool } from "./cidrCalc.js";
 import { cronDescribeTool } from "./cronDescribe.js";
 import { urlParseTool } from "./urlParse.js";
 import { readAttachmentTool } from "./readAttachment.js";
+import { createDocumentTool } from "./createDocument.js";
 import { SCHEDULE_TOOLS } from "./schedule.js";
 
 // Registering a new tool = write a file exporting a ToolDefinition, then add it here.
@@ -57,6 +58,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   cidrCalcTool,
   cronDescribeTool,
   urlParseTool,
+  createDocumentTool,
   ...SCHEDULE_TOOLS,
 ];
 
@@ -79,7 +81,7 @@ const CONTEXTUAL_TOOLS: ToolDefinition[] = [readAttachmentTool];
  * to deploy, not merely logged.
  */
 for (const tool of [...ALL_TOOLS, ...CONTEXTUAL_TOOLS]) {
-  if (tool.name.startsWith("mcp__")) {
+  if (tool.name.startsWith(MCP_TOOL_PREFIX)) {
     throw new Error(`Builtin tool "${tool.name}" uses the reserved "mcp__" prefix, which belongs to MCP tools.`);
   }
 }

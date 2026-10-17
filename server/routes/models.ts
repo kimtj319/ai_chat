@@ -16,6 +16,7 @@ import { config } from "../config.js";
 import { reasoningIsFixed, reasoningProfileLabel } from "../chat/reasoningProfiles.js";
 import { modelAccessFor } from "../vllm/access.js";
 import { modelOwnerOf, removeModelOwner, setModelOwner } from "../storage/modelOwners.js";
+import { clientAddress } from "./rateLimit.js";
 
 export const modelsRouter = Router();
 
@@ -96,10 +97,6 @@ modelsRouter.get("/models", async (req, res) => {
  * private-range block: the real servers are on public addresses (211.39.x.x),
  * so such a rule would block exactly the machines this exists for.
  */
-function clientAddress(req: Request): string {
-  return req.ip || req.socket?.remoteAddress || "unknown";
-}
-
 function adminTokenAllowed(req: Request, res: Response): boolean {
   // Any account may register an endpoint now: what it registers is usable only
   // by itself and the accounts that may use every model (vllm/access.ts), so
@@ -112,29 +109,33 @@ function adminTokenAllowed(req: Request, res: Response): boolean {
   return false;
 }
 
-modelsRouter.get("/models/endpoints", async (req, res) => {
-  const access = await modelAccessFor(req.user);
-  const endpoints = await Promise.all(
-    listEndpoints().filter(access.allows).map(async (endpoint) => {
-      const probe = await probeEndpoint(endpoint.baseUrl, endpoint.apiKey);
-      const source = endpointSource(endpoint.baseUrl);
-      return {
-        label: endpoint.label,
-        baseUrl: endpoint.baseUrl,
-        source,
-        // Registered by this account — and so deletable by it.
-        mine: access.owns(endpoint.baseUrl),
-        deletable: source === "file" && (access.privileged || access.owns(endpoint.baseUrl)),
-        reachable: probe.ok,
-        models: probe.models,
-        // The models this endpoint is limited to; null = all it lists.
-        allowedModels: endpoint.models && endpoint.models.length > 0 ? endpoint.models : null,
-        maxModelLen: probe.maxModelLen,
-        latencyMs: probe.latencyMs,
-      };
-    }),
-  );
-  res.json({ unprotected: config.modelAdminToken.length === 0, privileged: access.privileged, endpoints });
+modelsRouter.get("/models/endpoints", async (req, res, next) => {
+  try {
+    const access = await modelAccessFor(req.user);
+    const endpoints = await Promise.all(
+      listEndpoints().filter(access.allows).map(async (endpoint) => {
+        const probe = await probeEndpoint(endpoint.baseUrl, endpoint.apiKey);
+        const source = endpointSource(endpoint.baseUrl);
+        return {
+          label: endpoint.label,
+          baseUrl: endpoint.baseUrl,
+          source,
+          // Registered by this account — and so deletable by it.
+          mine: access.owns(endpoint.baseUrl),
+          deletable: source === "file" && (access.privileged || access.owns(endpoint.baseUrl)),
+          reachable: probe.ok,
+          models: probe.models,
+          // The models this endpoint is limited to; null = all it lists.
+          allowedModels: endpoint.models && endpoint.models.length > 0 ? endpoint.models : null,
+          maxModelLen: probe.maxModelLen,
+          latencyMs: probe.latencyMs,
+        };
+      }),
+    );
+    res.json({ unprotected: config.modelAdminToken.length === 0, privileged: access.privileged, endpoints });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
@@ -161,135 +162,151 @@ function requestedModels(raw: unknown): string[] | null {
  * The models a server offers, without adding it — so the dialog can let the
  * user pick before anything is written.
  */
-modelsRouter.post("/models/endpoints/probe", async (req, res) => {
-  if (!adminTokenAllowed(req, res)) return;
-  const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
-  if (!baseUrl) {
-    return res.status(400).json({ error: "주소를 알아볼 수 없습니다. 예: 10.0.0.10:8000 또는 http://10.0.0.10:8000/v1", code: "invalid_url" });
+modelsRouter.post("/models/endpoints/probe", async (req, res, next) => {
+  try {
+    if (!adminTokenAllowed(req, res)) return;
+    const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
+    if (!baseUrl) {
+      return res.status(400).json({ error: "주소를 알아볼 수 없습니다. 예: 10.0.0.10:8000 또는 http://10.0.0.10:8000/v1", code: "invalid_url" });
+    }
+    // For an endpoint already registered, its stored key is used when none is typed.
+    const known = listEndpoints().find((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase());
+    const typed = typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
+    const probe = await probeEndpoint(baseUrl, typed || known?.apiKey);
+    if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(baseUrl, probe), code: probe.code });
+    res.json({ baseUrl, models: probe.models, latencyMs: probe.latencyMs, mustChoose: probe.models.length > MAX_UNFILTERED_MODELS });
+  } catch (err) {
+    next(err);
   }
-  // For an endpoint already registered, its stored key is used when none is typed.
-  const known = listEndpoints().find((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase());
-  const typed = typeof req.body?.apiKey === "string" ? req.body.apiKey.trim() : "";
-  const probe = await probeEndpoint(baseUrl, typed || known?.apiKey);
-  if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(baseUrl, probe), code: probe.code });
-  res.json({ baseUrl, models: probe.models, latencyMs: probe.latencyMs, mustChoose: probe.models.length > MAX_UNFILTERED_MODELS });
 });
 
-modelsRouter.post("/models/endpoints", async (req, res) => {
-  if (!adminTokenAllowed(req, res)) return;
-  const body = req.body ?? {};
-  const baseUrl = normalizeBaseUrl(body.baseUrl);
-  if (!baseUrl) {
-    return res.status(400).json({ error: "주소를 알아볼 수 없습니다. 예: 10.0.0.10:8000 또는 http://10.0.0.10:8000/v1", code: "invalid_url" });
-  }
-  if (listEndpoints().some((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase())) {
-    return res.status(409).json({ error: `이미 등록된 주소입니다: ${baseUrl}`, code: "duplicate" });
-  }
-
-  const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
-  const probe = await probeEndpoint(baseUrl, apiKey);
-  if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(baseUrl, probe), code: probe.code });
-
-  const chosen = requestedModels(body.models) ?? [];
-  const unknown = chosen.filter((m) => !probe.models.includes(m));
-  if (unknown.length > 0) {
-    return res.status(400).json({ error: `이 서버에 없는 모델입니다: ${unknown.slice(0, 5).join(", ")}`, code: "unknown_models" });
-  }
-  if (chosen.length === 0 && probe.models.length > MAX_UNFILTERED_MODELS) {
-    return res.status(400).json({
-      error: `이 서버는 모델 ${probe.models.length}개를 내줍니다. 사용할 모델을 골라 주세요.`,
-      code: "models_required",
-    });
-  }
-
-  const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 80) : baseUrl;
+modelsRouter.post("/models/endpoints", async (req, res, next) => {
   try {
-    await upsertFileEndpoint({ label, baseUrl, apiKey, ...(chosen.length > 0 ? { models: chosen } : {}) });
-    await setModelOwner(baseUrl, req.ownerId);
+    if (!adminTokenAllowed(req, res)) return;
+    const body = req.body ?? {};
+    const baseUrl = normalizeBaseUrl(body.baseUrl);
+    if (!baseUrl) {
+      return res.status(400).json({ error: "주소를 알아볼 수 없습니다. 예: 10.0.0.10:8000 또는 http://10.0.0.10:8000/v1", code: "invalid_url" });
+    }
+    if (listEndpoints().some((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase())) {
+      return res.status(409).json({ error: `이미 등록된 주소입니다: ${baseUrl}`, code: "duplicate" });
+    }
+
+    const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    const probe = await probeEndpoint(baseUrl, apiKey);
+    if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(baseUrl, probe), code: probe.code });
+
+    const chosen = requestedModels(body.models) ?? [];
+    const unknown = chosen.filter((m) => !probe.models.includes(m));
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: `이 서버에 없는 모델입니다: ${unknown.slice(0, 5).join(", ")}`, code: "unknown_models" });
+    }
+    if (chosen.length === 0 && probe.models.length > MAX_UNFILTERED_MODELS) {
+      return res.status(400).json({
+        error: `이 서버는 모델 ${probe.models.length}개를 내줍니다. 사용할 모델을 골라 주세요.`,
+        code: "models_required",
+      });
+    }
+
+    const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, 80) : baseUrl;
+    try {
+      await upsertFileEndpoint({ label, baseUrl, apiKey, ...(chosen.length > 0 ? { models: chosen } : {}) });
+      await setModelOwner(baseUrl, req.ownerId);
+    } catch (err) {
+      console.error("[models] could not write the endpoints file:", err);
+      return res.status(500).json({ error: `엔드포인트 파일(${writableEndpointsFile()})에 기록하지 못했습니다.`, code: "write_failed" });
+    }
+    invalidateCatalog();
+    console.log(
+      `[models] endpoint ADDED by ${req.ownerId}@${clientAddress(req)}: ${label} ${baseUrl} ` +
+        `models=${chosen.length > 0 ? `${chosen.join(",")} (of ${probe.models.length})` : probe.models.join(",")} ` +
+        `apiKey=${apiKey ? "provided" : "none"} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`,
+    );
+    res.status(201).json({
+      label,
+      baseUrl,
+      models: chosen.length > 0 ? chosen : probe.models,
+      maxModelLen: probe.maxModelLen,
+      // The servers answer 200 even with a deliberately wrong bearer token
+      // (measured), so a key can be stored and sent but never confirmed.
+      note: apiKey ? "API 키는 저장되어 요청에 사용되지만, 이 서버는 키가 틀려도 200을 돌려주므로 유효성은 확인할 수 없습니다." : undefined,
+    });
   } catch (err) {
-    console.error("[models] could not write the endpoints file:", err);
-    return res.status(500).json({ error: `엔드포인트 파일(${writableEndpointsFile()})에 기록하지 못했습니다.`, code: "write_failed" });
+    next(err);
   }
-  invalidateCatalog();
-  console.log(
-    `[models] endpoint ADDED by ${req.ownerId}@${clientAddress(req)}: ${label} ${baseUrl} ` +
-      `models=${chosen.length > 0 ? `${chosen.join(",")} (of ${probe.models.length})` : probe.models.join(",")} ` +
-      `apiKey=${apiKey ? "provided" : "none"} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`,
-  );
-  res.status(201).json({
-    label,
-    baseUrl,
-    models: chosen.length > 0 ? chosen : probe.models,
-    maxModelLen: probe.maxModelLen,
-    // The servers answer 200 even with a deliberately wrong bearer token
-    // (measured), so a key can be stored and sent but never confirmed.
-    note: apiKey ? "API 키는 저장되어 요청에 사용되지만, 이 서버는 키가 틀려도 200을 돌려주므로 유효성은 확인할 수 없습니다." : undefined,
-  });
 });
 
 /**
  * Change which models an already-registered endpoint is limited to. An empty
  * list means "all of them", which a long list is not allowed to fall back to.
  */
-modelsRouter.patch("/models/endpoints", async (req, res) => {
-  if (!adminTokenAllowed(req, res)) return;
-  const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
-  if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
-  const access = await modelAccessFor(req.user);
-  if (!access.privileged && (await modelOwnerOf(baseUrl)) !== req.ownerId) {
-    return res.status(403).json({ error: "직접 등록한 서버만 바꿀 수 있습니다.", code: "not_owner" });
-  }
-  if (isEnvEndpoint(baseUrl)) {
-    return res.status(409).json({
-      error: `${baseUrl} 은(는) VLLM_ENDPOINTS 환경변수로 설정된 항목이라 여기서 바꿀 수 없습니다. 환경변수의 네 번째 칸(모델1;모델2)을 수정해 주세요.`,
-      code: "forbidden",
-    });
-  }
-  const current = listEndpoints().find((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase());
-  if (!current) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
-  const chosen = requestedModels(req.body?.models);
-  if (chosen === null) return res.status(400).json({ error: "models 목록이 필요합니다.", code: "invalid_models" });
-  const probe = await probeEndpoint(current.baseUrl, current.apiKey);
-  if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(current.baseUrl, probe), code: probe.code });
-  const unknown = chosen.filter((m) => !probe.models.includes(m));
-  if (unknown.length > 0) {
-    return res.status(400).json({ error: `이 서버에 없는 모델입니다: ${unknown.slice(0, 5).join(", ")}`, code: "unknown_models" });
-  }
-  if (chosen.length === 0 && probe.models.length > MAX_UNFILTERED_MODELS) {
-    return res.status(400).json({ error: `모델이 ${probe.models.length}개라 모두 쓰도록 둘 수 없습니다. 사용할 모델을 골라 주세요.`, code: "models_required" });
-  }
+modelsRouter.patch("/models/endpoints", async (req, res, next) => {
   try {
-    await upsertFileEndpoint({ label: current.label, baseUrl: current.baseUrl, apiKey: current.apiKey, ...(chosen.length > 0 ? { models: chosen } : {}) });
+    if (!adminTokenAllowed(req, res)) return;
+    const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
+    if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
+    const access = await modelAccessFor(req.user);
+    if (!access.privileged && (await modelOwnerOf(baseUrl)) !== req.ownerId) {
+      return res.status(403).json({ error: "직접 등록한 서버만 바꿀 수 있습니다.", code: "not_owner" });
+    }
+    if (isEnvEndpoint(baseUrl)) {
+      return res.status(409).json({
+        error: `${baseUrl} 은(는) VLLM_ENDPOINTS 환경변수로 설정된 항목이라 여기서 바꿀 수 없습니다. 환경변수의 네 번째 칸(모델1;모델2)을 수정해 주세요.`,
+        code: "forbidden",
+      });
+    }
+    const current = listEndpoints().find((e) => e.baseUrl.toLowerCase() === baseUrl.toLowerCase());
+    if (!current) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
+    const chosen = requestedModels(req.body?.models);
+    if (chosen === null) return res.status(400).json({ error: "models 목록이 필요합니다.", code: "invalid_models" });
+    const probe = await probeEndpoint(current.baseUrl, current.apiKey);
+    if (!probe.ok) return res.status(502).json({ error: probeFailureMessage(current.baseUrl, probe), code: probe.code });
+    const unknown = chosen.filter((m) => !probe.models.includes(m));
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: `이 서버에 없는 모델입니다: ${unknown.slice(0, 5).join(", ")}`, code: "unknown_models" });
+    }
+    if (chosen.length === 0 && probe.models.length > MAX_UNFILTERED_MODELS) {
+      return res.status(400).json({ error: `모델이 ${probe.models.length}개라 모두 쓰도록 둘 수 없습니다. 사용할 모델을 골라 주세요.`, code: "models_required" });
+    }
+    try {
+      await upsertFileEndpoint({ label: current.label, baseUrl: current.baseUrl, apiKey: current.apiKey, ...(chosen.length > 0 ? { models: chosen } : {}) });
+    } catch (err) {
+      console.error("[models] could not write the endpoints file:", err);
+      return res.status(500).json({ error: `엔드포인트 파일(${writableEndpointsFile()})에 기록하지 못했습니다.`, code: "write_failed" });
+    }
+    invalidateCatalog();
+    console.log(`[models] endpoint MODELS by ${req.ownerId}@${clientAddress(req)}: ${current.baseUrl} models=${chosen.length > 0 ? chosen.join(",") : "(all)"}`);
+    res.json({ baseUrl: current.baseUrl, allowedModels: chosen.length > 0 ? chosen : null });
   } catch (err) {
-    console.error("[models] could not write the endpoints file:", err);
-    return res.status(500).json({ error: `엔드포인트 파일(${writableEndpointsFile()})에 기록하지 못했습니다.`, code: "write_failed" });
+    next(err);
   }
-  invalidateCatalog();
-  console.log(`[models] endpoint MODELS by ${req.ownerId}@${clientAddress(req)}: ${current.baseUrl} models=${chosen.length > 0 ? chosen.join(",") : "(all)"}`);
-  res.json({ baseUrl: current.baseUrl, allowedModels: chosen.length > 0 ? chosen : null });
 });
 
-modelsRouter.delete("/models/endpoints", async (req, res) => {
-  if (!adminTokenAllowed(req, res)) return;
-  const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
-  if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
-  const access = await modelAccessFor(req.user);
-  if (!access.privileged && (await modelOwnerOf(baseUrl)) !== req.ownerId) {
-    return res.status(403).json({ error: "직접 등록한 모델만 지울 수 있습니다.", code: "not_owner" });
+modelsRouter.delete("/models/endpoints", async (req, res, next) => {
+  try {
+    if (!adminTokenAllowed(req, res)) return;
+    const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
+    if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
+    const access = await modelAccessFor(req.user);
+    if (!access.privileged && (await modelOwnerOf(baseUrl)) !== req.ownerId) {
+      return res.status(403).json({ error: "직접 등록한 모델만 지울 수 있습니다.", code: "not_owner" });
+    }
+    if (isEnvEndpoint(baseUrl)) {
+      // VLLM_ENDPOINTS is the deployment's own configuration. Even when the file
+      // also lists this URL, deleting the file's line would leave the endpoint
+      // being served from the environment — a 204 that changed nothing visible.
+      return res.status(409).json({
+        error: `${baseUrl} 은(는) VLLM_ENDPOINTS 환경변수로 설정된 항목이라 여기서 지울 수 없습니다. 환경변수를 수정해 주세요.`,
+        code: "forbidden",
+      });
+    }
+    const removed = await removeFileEndpoint(baseUrl);
+    if (!removed) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
+    await removeModelOwner(baseUrl);
+    invalidateCatalog();
+    console.log(`[models] endpoint REMOVED by ${req.ownerId}@${clientAddress(req)}: ${baseUrl} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
   }
-  if (isEnvEndpoint(baseUrl)) {
-    // VLLM_ENDPOINTS is the deployment's own configuration. Even when the file
-    // also lists this URL, deleting the file's line would leave the endpoint
-    // being served from the environment — a 204 that changed nothing visible.
-    return res.status(409).json({
-      error: `${baseUrl} 은(는) VLLM_ENDPOINTS 환경변수로 설정된 항목이라 여기서 지울 수 없습니다. 환경변수를 수정해 주세요.`,
-      code: "forbidden",
-    });
-  }
-  const removed = await removeFileEndpoint(baseUrl);
-  if (!removed) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
-  await removeModelOwner(baseUrl);
-  invalidateCatalog();
-  console.log(`[models] endpoint REMOVED by ${req.ownerId}@${clientAddress(req)}: ${baseUrl} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`);
-  res.status(204).end();
 });

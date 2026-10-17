@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "./types.js";
+import { requireBoundedText } from "./args.js";
 
 const MAX_INPUT_CHARS = 100_000;
 
@@ -119,12 +120,7 @@ export const dataConvertTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { data: string; from: "json" | "csv"; to: "json" | "csv"; pretty?: boolean }) {
-    if (typeof args?.data !== "string" || args.data.length === 0) {
-      throw new Error("data must be a non-empty string");
-    }
-    if (args.data.length > MAX_INPUT_CHARS) {
-      throw new Error(`data too large (${args.data.length} chars, limit ${MAX_INPUT_CHARS})`);
-    }
+    requireBoundedText(args?.data, "data", MAX_INPUT_CHARS);
     if (args.from !== "json" && args.from !== "csv") throw new Error('from must be "json" or "csv"');
     if (args.to !== "json" && args.to !== "csv") throw new Error('to must be "json" or "csv"');
 

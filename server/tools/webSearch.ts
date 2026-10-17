@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { isPrivilegedOwner } from "../auth/privilege.js";
 import { getPersonalKey } from "../storage/personalKeys.js";
 import { missingKeyMessage } from "./missingKey.js";
+import { requireTrimmed } from "./args.js";
 
 const MAX_RESULTS_CAP = 10;
 const SNIPPET_CHARS = 1_200;
@@ -101,8 +102,7 @@ export const webSearchTool: ToolDefinition = {
     include_domains?: string[];
     exclude_domains?: string[];
   }, ctx?: ToolContext) {
-    const query = typeof args?.query === "string" ? args.query.trim() : "";
-    if (!query) throw new Error("query must be a non-empty string");
+    const query = requireTrimmed(args?.query, "query");
 
     const apiKey = await tavilyKeyFor(ctx);
     if (!apiKey) {

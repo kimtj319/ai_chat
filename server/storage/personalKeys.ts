@@ -40,8 +40,14 @@ type KeyFile = Partial<Record<PersonalKeyName, string | KeyEntry[]>>;
 
 const lockFor = (ownerId: string) => `keys:${ownerId}`;
 
+/** 키를 쓰거나 보여 줄 때. 못 읽으면 "키 없음" 으로 넘어간다 — 요청을 실패시키지 않는다. */
 async function read(ownerId: string): Promise<KeyFile> {
   return (await readJsonFile<KeyFile>(ownerKeysFile(ownerId)).catch(() => null)) ?? {};
+}
+
+/** 고쳐 쓸 때. 파일을 통째로 다시 쓰므로 읽기 실패는 쓰기 실패여야 한다 — 아니면 나머지 키가 지워진다. */
+async function readForUpdate(ownerId: string): Promise<KeyFile> {
+  return (await readJsonFile<KeyFile>(ownerKeysFile(ownerId))) ?? {};
 }
 
 function entriesOf(value: string | KeyEntry[] | undefined): KeyEntry[] {
@@ -69,7 +75,7 @@ export async function setPersonalKey(ownerId: string, name: PersonalKeyName, raw
   }
   const label = typeof rawLabel === "string" ? rawLabel.trim().slice(0, 60) : "";
   await withLock(lockFor(ownerId), async () => {
-    const keys = await read(ownerId);
+    const keys = await readForUpdate(ownerId);
     if (!MULTI.has(name)) {
       await writeJsonFileAtomic(ownerKeysFile(ownerId), { ...keys, [name]: value });
       return;
@@ -85,7 +91,7 @@ export async function setPersonalKey(ownerId: string, name: PersonalKeyName, raw
 /** entryId 가 있으면 그 하나만, 없으면 그 이름의 키 전부를 지운다. */
 export async function deletePersonalKey(ownerId: string, name: PersonalKeyName, entryId?: string): Promise<boolean> {
   return withLock(lockFor(ownerId), async () => {
-    const keys = await read(ownerId);
+    const keys = await readForUpdate(ownerId);
     if (!keys[name]) return false;
     if (entryId && MULTI.has(name)) {
       const entries = entriesOf(keys[name]);

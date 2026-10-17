@@ -1,12 +1,14 @@
-import { callMcpTool, openSession, type McpCallResult, type McpToolDescriptor } from "./client.js";
+import { callMcpTool, McpHttpError, McpRpcError, openSession, type McpCallResult, type McpToolDescriptor } from "./client.js";
 import { noteCallFailure, noteCallSuccess, scheduleRefresh, snapshot } from "./discovery.js";
 import { effectiveServers, getCredential, readOwnerPrefs } from "./ownerPrefs.js";
-import { ALPHAVANTAGE_MCP_URL, ALPHAVANTAGE_SLUG, GITLAB_SLUG, listServers } from "./registryStore.js";
+import { ALPHAVANTAGE_MCP_URL, ALPHAVANTAGE_SLUG, GITLAB_SLUG } from "./builtinServers.js";
+import { listServers } from "./registryStore.js";
 import { config } from "../config.js";
 import { isPrivilegedOwner } from "../auth/privilege.js";
 import { getPersonalKeys, type PersonalKeyName } from "../storage/personalKeys.js";
 import { missingKeyMessage } from "../tools/missingKey.js";
-import type { ToolDefinition } from "../tools/types.js";
+import { MCP_TOOL_PREFIX, type ToolDefinition } from "../tools/types.js";
+import { cleanText, isPlainObject, sanitizeInputSchema } from "./schemaSanitize.js";
 import type { McpServerRecord, McpToolSummary } from "../types.js";
 
 /**
@@ -17,12 +19,12 @@ import type { McpServerRecord, McpToolSummary } from "../types.js";
  * The caps in this file all exist for the same reason: THE SCHEMA BLOCK IS A
  * FIXED COST IN EVERY PROMPT. It is sent on every round of every turn, it
  * cannot be shortened later, and a server we do not control decides what goes
- * in it. So an oversized, deeply nested or $ref-laden schema is cut down here,
- * at the boundary, rather than being passed through to the model.
+ * in it. So an oversized, deeply nested or $ref-laden schema is cut down at the
+ * boundary (schemaSanitize.ts per tool, the per-server budget here) rather than
+ * being passed through to the model.
  */
 
-/** Reserved namespace. tools/index.ts refuses to load a builtin that uses it. */
-export const MCP_TOOL_PREFIX = "mcp__";
+export { MCP_TOOL_PREFIX };
 /** What a server that takes our word for it reads the owner's id from. */
 const MCP_USER_HEADER = "X-Mcp-User";
 
@@ -32,150 +34,8 @@ const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /** Per SERVER, not per tool: one server may not crowd out the rest of the prompt. */
 const MAX_SCHEMA_BLOCK_BYTES = 8 * 1024;
-/** Root counts as 1, so a property's property is the deepest that survives. */
-const MAX_SCHEMA_DEPTH = 3;
-const MAX_PROPERTIES = 40;
-const MAX_DESCRIPTION_CHARS = 1024;
 /** The assembled text handed back to the model; the raw body is capped at 1MB in client.ts. */
 const MAX_RESULT_CHARS = 64 * 1024;
-
-/**
- * Everything else is dropped. An allowlist rather than a denylist because the
- * risk is what a server sends that we have not thought about — `$ref` into a
- * `$defs` we removed, vendor extensions, a nested `$schema` — not what it sends
- * that we already know to remove.
- */
-const SCHEMA_KEYS = new Set([
-  "type",
-  "description",
-  "enum",
-  "const",
-  "default",
-  "format",
-  "minimum",
-  "maximum",
-  "exclusiveMinimum",
-  "exclusiveMaximum",
-  "multipleOf",
-  "minLength",
-  "maxLength",
-  "pattern",
-  "minItems",
-  "maxItems",
-  "uniqueItems",
-  "items",
-  "properties",
-  "required",
-  "additionalProperties",
-  // Kept because real servers use them for a plain "string or string[]"
-  // argument: mcp.deepwiki.com's ask_question declares repoName that way, and
-  // dropping the branch would leave the model a described argument with no
-  // type at all.
-  "anyOf",
-  "oneOf",
-]);
-
-/** Dropped wherever they appear, including nested. A $ref is dropped, never resolved. */
-const STRIPPED_KEYS = new Set(["$schema", "$id", "$ref", "$defs", "definitions"]);
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Control characters out of a description. Newlines and tabs stay: a schema
- * description is prose that reaches the prompt, and flattening it to one line
- * makes a multi-paragraph description unreadable without making it any safer.
- */
-function cleanText(value: unknown, max = MAX_DESCRIPTION_CHARS): string {
-  if (typeof value !== "string") return "";
-  const stripped = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
-  return stripped.length > max ? `${stripped.slice(0, max - 1)}…` : stripped;
-}
-
-/**
- * One schema node. Returns undefined for anything that must be DROPPED — a
- * $ref, a non-object node, or a node that is already too deep — and the caller
- * removes the property that held it (and its `required` entry) rather than
- * leaving the model a name with no schema.
- */
-function sanitizeNode(node: unknown, depth: number): Record<string, unknown> | undefined {
-  if (!isPlainObject(node)) return undefined;
-  if ("$ref" in node) return undefined;
-
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(node)) {
-    if (STRIPPED_KEYS.has(key) || !SCHEMA_KEYS.has(key)) continue;
-    if (key === "description") {
-      const description = cleanText(value);
-      if (description) out.description = description;
-      continue;
-    }
-    if (key === "properties" || key === "items" || key === "anyOf" || key === "oneOf") continue; // depth-aware, below
-    if (key === "required") {
-      if (Array.isArray(value)) out.required = value.filter((v): v is string => typeof v === "string");
-      continue;
-    }
-    out[key] = value;
-  }
-
-  // At the depth limit the node keeps its scalar constraints and loses its
-  // children: a truncated shape the model can still fill in beats a name with
-  // no schema at all.
-  if (depth >= MAX_SCHEMA_DEPTH) {
-    delete out.required;
-    return out;
-  }
-
-  if (isPlainObject(node.properties)) {
-    const properties: Record<string, unknown> = {};
-    let kept = 0;
-    for (const [name, child] of Object.entries(node.properties)) {
-      if (kept >= MAX_PROPERTIES) break;
-      const sanitized = sanitizeNode(child, depth + 1);
-      if (!sanitized) continue;
-      properties[name] = sanitized;
-      kept++;
-    }
-    out.properties = properties;
-    if (Array.isArray(out.required)) {
-      // A required name whose schema we dropped would be an instruction the
-      // model cannot follow.
-      const filtered = (out.required as string[]).filter((name) => name in properties);
-      if (filtered.length > 0) out.required = filtered;
-      else delete out.required;
-    }
-  }
-
-  if (node.items !== undefined) {
-    const items = sanitizeNode(node.items, depth + 1);
-    if (items) out.items = items;
-  }
-
-  for (const key of ["anyOf", "oneOf"] as const) {
-    const branches = node[key];
-    if (!Array.isArray(branches)) continue;
-    // A branch that sanitises away (a $ref, say) is dropped; a union with no
-    // branch left is dropped entirely rather than offered as an empty choice.
-    const kept = branches.map((branch) => sanitizeNode(branch, depth + 1)).filter((b): b is Record<string, unknown> => Boolean(b));
-    if (kept.length > 0) out[key] = kept;
-  }
-
-  return out;
-}
-
-/**
- * The parameters object handed to vLLM. Forced to an object root whatever the
- * server declared: the chat-completions contract is that arguments arrive as a
- * JSON object, and a schema saying otherwise produces calls that cannot be
- * parsed.
- */
-export function sanitizeInputSchema(schema: unknown): Record<string, unknown> {
-  const sanitized = sanitizeNode(schema, 1) ?? {};
-  sanitized.type = "object";
-  if (!isPlainObject(sanitized.properties)) sanitized.properties = {};
-  return sanitized;
-}
 
 /** `mcp__{slug}__{tool}` — the name the model sees and the transcript stores. */
 export function mcpToolName(slug: string, toolName: string): string {
@@ -224,15 +84,6 @@ class McpToolReportedError extends Error {
   }
 }
 
-/**
- * One MCP tool as a ToolDefinition.
- *
- * THE TIMEOUT IS OUR OWN. runner.ts wraps every tool in withTimeout, which
- * rejects the promise without cancelling the work behind it — for an outbound
- * HTTP request that means the socket stays open and the body keeps arriving
- * after the model has already been told the call failed. AbortSignal.timeout()
- * on the record's own (shorter) budget is what actually stops it.
- */
 /**
  * Who to say is asking, for a server that has opted in AND a token to prove it
  * with — both, or nothing at all.
@@ -293,6 +144,15 @@ export async function callUrlFor(server: McpServerRecord, ownerId: string): Prom
   return spec.url(keys, ownerId);
 }
 
+/**
+ * One MCP tool as a ToolDefinition.
+ *
+ * THE TIMEOUT IS OUR OWN. runner.ts wraps every tool in withTimeout, which
+ * rejects the promise without cancelling the work behind it — for an outbound
+ * HTTP request that means the socket stays open and the body keeps arriving
+ * after the model has already been told the call failed. AbortSignal.timeout()
+ * on the record's own (shorter) budget is what actually stops it.
+ */
 function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshotOwnerId: string): ToolDefinition {
   const name = mcpToolName(server.slug, tool.name);
   const description = cleanText(tool.description) || `${server.name}의 ${tool.name} 도구입니다.`;
@@ -329,6 +189,13 @@ function toDefinition(server: McpServerRecord, tool: McpToolDescriptor, snapshot
         // The tool answered and said no. Health is untouched, and the model
         // gets the reason as an ordinary failed tool result.
         if (err instanceof McpToolReportedError) throw err;
+        // The server answered, and the answer was about THIS call: the model's
+        // arguments (a JSON-RPC error) or this owner's credential (401/403).
+        // Counting those would let one account's wrong key, or a model retrying
+        // bad arguments three times, quarantine the server for every account.
+        if (err instanceof McpRpcError || (err instanceof McpHttpError && (err.status === 401 || err.status === 403))) {
+          throw err;
+        }
         if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
           noteCallFailure(server.id, `tools/call: ${server.timeoutMs}ms 초과`);
           throw new Error(`${server.name} 응답이 ${server.timeoutMs}ms를 넘어 중단했습니다.`);

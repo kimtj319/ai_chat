@@ -7,6 +7,7 @@ import {
 } from "../api/client";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
+import { errorMessage } from "../state/friendlyError";
 import "./ProhibitionsDialog.css";
 
 /**
@@ -65,7 +66,7 @@ export function ProhibitionsDialog({ onClose }: { onClose: () => void }) {
         setLoaded(res);
         setText(res.markdown);
       })
-      .catch((err) => alive && setError(err instanceof Error ? err.message : String(err)));
+      .catch((err) => alive && setError(errorMessage(err)));
     return () => {
       alive = false;
     };
@@ -93,7 +94,7 @@ export function ProhibitionsDialog({ onClose }: { onClose: () => void }) {
       setText(res.markdown);
       setStatus("저장했습니다. 다음 메시지부터 반영됩니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(null);
     }
@@ -121,7 +122,7 @@ export function ProhibitionsDialog({ onClose }: { onClose: () => void }) {
       setProposal(res.proposal);
       setStatus(`${res.before}개 항목을 ${res.after}개로 묶는 안입니다. 확인하고 적용하세요.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setBusy(null);
     }

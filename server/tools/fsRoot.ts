@@ -34,7 +34,7 @@ function hasHiddenSegment(root: string, target: string): boolean {
   return rel.split(path.sep).some((segment) => segment.startsWith("."));
 }
 
-/** True when `target` is the denied root itself or anything beneath it. */
+/** True when `target` is `root` itself or anything beneath it. */
 function isInside(root: string, target: string): boolean {
   const rel = path.relative(root, target);
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
@@ -59,8 +59,7 @@ export async function resolveInsideRoot(root: string, relativePath: string): Pro
     }
     throw err;
   }
-  const relation = path.relative(realRoot, real);
-  if (relation !== "" && (relation.startsWith("..") || path.isAbsolute(relation))) {
+  if (!isInside(realRoot, real)) {
     throw new Error("Path escapes the allowed root directory");
   }
   // Checked after symlink resolution, so a link pointing into the store is

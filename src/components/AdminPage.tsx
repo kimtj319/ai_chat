@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/client";
-import { AuthError, type AdminUserAction } from "../api/client";
+import type { AdminUserAction } from "../api/client";
 import type { AdminGroup, AdminUser } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { authErrorMessage } from "../auth/messages";
+import { authFailureMessage } from "../auth/messages";
 import {
   adminActions,
   emptyListMessage,
@@ -22,16 +22,8 @@ import { AdminNoticesTab } from "./AdminNoticesTab";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { PageHeader } from "./PageHeader";
+import { RefreshIcon } from "./icons";
 import "./AdminPage.css";
-
-function RefreshIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 11a8 8 0 1 0-.6 4" />
-      <path d="M20 4v7h-7" />
-    </svg>
-  );
-}
 
 /** "2026-09-12" from an ISO timestamp; an unparseable value is shown as-is. */
 function formatDate(value: string): string {
@@ -81,9 +73,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
       setGroups(nextGroups);
       setLoadError(null);
     } catch (error) {
-      const code = error instanceof AuthError ? error.code : null;
-      const fallback = error instanceof Error ? error.message : undefined;
-      setLoadError(authErrorMessage(code, fallback));
+      setLoadError(authFailureMessage(error));
     }
   }, []);
 
@@ -102,9 +92,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
       await load();
       return true;
     } catch (error) {
-      const code = error instanceof AuthError ? error.code : null;
-      const fallback = error instanceof Error ? error.message : undefined;
-      setActionError(authErrorMessage(code, fallback));
+      setActionError(authFailureMessage(error));
       return false;
     } finally {
       setBusyId(null);

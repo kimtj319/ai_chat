@@ -44,12 +44,19 @@ console.log("server/chat/scheduleTime.ts + scheduleRunner.ts + tools/schedule.ts
 
 /* ---------------------------------------------------------------- 가짜 vLLM */
 
+const REASONING_ONLY_MARKER = "추론만 남기는 예약";
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   if (!url.startsWith("http://mock-vllm")) return realFetch(input, init);
   if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "mock-model", max_model_len: 100000 }] }));
   if (url.endsWith("/tokenize")) return new Response(JSON.stringify({ count: 50, max_model_len: 100000 }));
+  // 본문 없이 추론만 내는 모델(wise-lloa-max 가 그랬다). 마무리 호출에도 본문이 없어,
+  // 턴은 추론을 답으로 올린다(contentPromotedFromReasoning).
+  if (typeof init?.body === "string" && init.body.includes(REASONING_ONLY_MARKER)) {
+    const only = `data: ${JSON.stringify({ choices: [{ delta: { reasoning: "날씨를 생각해 보면 맑다." }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`;
+    return new Response(only, { headers: { "content-type": "text/event-stream" } });
+  }
   const text =
     `data: ${JSON.stringify({ choices: [{ delta: { content: "예약 답변입니다" }, finish_reason: null }] })}\n\n` +
     `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n` +
@@ -145,6 +152,29 @@ const conv = await createConversation(owner, { title: "예약", model: "mock-mod
   check("아무도 맡지 않으면 GRACE 뒤 놓침", missed?.status === "missed");
   const afterMiss = await getConversation(owner, conv.id);
   check("…대화에 알린다", afterMiss!.messages.some((m) => m.role === "assistant" && m.content.startsWith("예약 작업을 실행하지 못했습니다")));
+}
+
+/* ------------------------------------------------- 3b. 추론에서 올린 답의 표시 */
+// 화면은 contentPromotedFromReasoning 으로 "이 응답은 reasoning 필드에서 복원되었습니다."
+// 를 붙인다(src/components/MessageItem.tsx). 대화 화면에서 보낸 턴은 이 표시를 남기는데,
+// 예약 실행이 저장하는 메시지에서는 빠져 있었다.
+{
+  const promotedConv = await createConversation(owner, { title: "추론 예약", model: "mock-model" });
+  const now = Date.now();
+  const task = await createSchedule(owner, {
+    conversationId: promotedConv.id,
+    instruction: REASONING_ONLY_MARKER,
+    runAt: new Date(now + 1000),
+    useBrowser: false,
+  });
+  await runDueSchedules(now + 2000);
+  for (let i = 0; i < 50; i++) {
+    if ((await listSchedules(owner)).find((t) => t.id === task.id)?.status === "done") break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const stored = (await getConversation(owner, promotedConv.id))!.messages.at(-1);
+  check("추론만 낸 예약 턴도 답이 남는다", stored?.role === "assistant" && stored.content === "날씨를 생각해 보면 맑다.", JSON.stringify(stored));
+  check("…추론에서 올린 답이라는 표시가 남는다", stored?.contentPromotedFromReasoning === true, JSON.stringify(stored));
 }
 
 /* ---------------------------------------------------------------- 4. 맡기·끝내기 */

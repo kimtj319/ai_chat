@@ -1,5 +1,6 @@
 import type { DraftAttachment } from "../hooks/useAttachmentDraft";
 import { formatBytes, formatTokens, middleEllipsis } from "../attachments/format";
+import { CloseIcon } from "./icons";
 import "./AttachmentChip.css";
 
 /** Enough to show both ends of a name plus its extension inside 220px. */
@@ -11,14 +12,6 @@ function FileIcon() {
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
       <path d="M14 3v5h5" />
       <path d="M9 13h6M9 17h6" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
 }

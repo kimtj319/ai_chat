@@ -12,7 +12,7 @@
  * reason both exist.
  */
 import fs from "node:fs/promises";
-import { readJsonFile, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
 import { documentChunksFile, documentMetaFile, documentSourceFile, documentTextFile, documentsDir, isValidId, ownersRoot } from "./paths.js";
 import type { RagDocument } from "../types.js";
 
@@ -79,21 +79,20 @@ export async function getDocument(ownerId: string, documentId: string): Promise<
 
 /** Newest first, which is the order the page shows them in and the order people look for. */
 export async function listDocuments(ownerId: string): Promise<RagDocument[]> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(documentsDir(ownerId));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
   const docs: RagDocument[] = [];
-  for (const entry of entries) {
+  for (const entry of await readdirOrEmpty(documentsDir(ownerId))) {
     // `.chunks.json` is a sidecar of a document, not a document — matching on
     // ".json" alone would list every document twice, the second time with a
     // null meta that silently disappears.
     if (!entry.endsWith(".json") || entry.endsWith(".chunks.json")) continue;
-    const meta = await readJsonFile<RagDocument>(documentMetaFile(ownerId, entry.slice(0, -".json".length)));
-    if (meta) docs.push(meta);
+    // One unreadable file is skipped, not thrown: through listSharedDocuments
+    // it would otherwise fail the 문서 page for every account, not just this one.
+    try {
+      const meta = await readJsonFile<RagDocument>(documentMetaFile(ownerId, entry.slice(0, -".json".length)));
+      if (meta) docs.push(meta);
+    } catch (err) {
+      console.warn(`[documentStore] skipping corrupt document file "${entry}" (owner ${ownerId}):`, err);
+    }
   }
   docs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   return docs;
@@ -132,15 +131,8 @@ export interface OwnedRagDocument extends RagDocument {
  * 문서 목록을 보여 주는 일이 되므로, 거르는 조건은 여기 한 곳에만 둔다.
  */
 export async function listSharedDocuments(): Promise<OwnedRagDocument[]> {
-  let owners: string[];
-  try {
-    owners = await fs.readdir(ownersRoot());
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
   const docs: OwnedRagDocument[] = [];
-  for (const ownerId of owners) {
+  for (const ownerId of await readdirOrEmpty(ownersRoot())) {
     // 디렉터리 이름이 곧 계정 id 다. 이상한 이름은 우리가 만든 것이 아니다.
     if (!isValidId(ownerId)) continue;
     for (const doc of await listDocuments(ownerId)) {

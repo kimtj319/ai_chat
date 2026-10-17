@@ -208,11 +208,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--outline-variant);
   border-radius: var(--radius-full);
-  background: var(--surface-container-high);
   color: var(--on-surface);
-  box-shadow: var(--shadow-md);
   transition: background-color 0.15s ease, scale var(--press-out) var(--press-ease);
 }
 
@@ -296,8 +293,6 @@
   text-align: center;
   padding: var(--space-9) var(--space-10);
   border-radius: var(--radius-md);
-  background: var(--surface-container-high);
-  box-shadow: var(--shadow-md);
 }
 
 .chat-drop-card svg {
@@ -334,8 +329,6 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  background: var(--surface-container-high);
-  box-shadow: var(--shadow-lg);
 }
 
 .chat-download-usage {

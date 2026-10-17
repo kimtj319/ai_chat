@@ -50,7 +50,7 @@ const SUMMARY_TEMPERATURE = 0.2;
  * The app's own default (DEFAULT_SETTINGS.topP) and Qwen's recommendation for
  * non-thinking mode. Temperature 0.2 with top_p 1.0 is near-greedy decoding,
  * which Qwen's model card warns degenerates into repetition — and a report that
- * repeats is one that burns the whole 8192-token budget.
+ * repeats is one that burns the whole 4096-token budget.
  */
 const SUMMARY_TOP_P = 0.8;
 /**
@@ -218,9 +218,9 @@ const TRUNCATED_NOTE =
  * out of section 2, because copying rows is unbounded. So the test is structural
  * and deterministic: SUMMARY_INSTRUCTION asks for four numbered sections and
  * says explicitly to write 3 and 4, and a report that has started one of them
- * has by definition stopped enumerating and moved on. At 2048 tokens — room for
- * ~50 facts at the measured ~37 tokens each — a report still inside section 2 at
- * the cap is dwelling, not merely thorough.
+ * has by definition stopped enumerating and moved on. At the 2048-token cap these
+ * runs were measured under — room for ~50 facts at the measured ~37 tokens each —
+ * a report still inside section 2 at the cap is dwelling, not merely thorough.
  */
 function isSubstantiveSummary(summary: string): boolean {
   return SUMMARY_LATER_SECTION.test(summary) || SUMMARY_LATER_HEADING.test(summary);

@@ -80,14 +80,14 @@ export function citationSources(toolResults: readonly ToolResultLike[] | undefin
   return sources;
 }
 
+export const CITATION_RULE =
+  "답변에서 이 단락의 내용을 근거로 쓴 문장 끝에 ref 번호를 대괄호로 적으세요. 예: …입니다 [1]. 여러 개면 [1][3]. 여기에 없는 번호는 쓰지 마세요.";
+
 /**
  * 모델에게 보낼 도구 결과. 문서 검색 결과면 단락마다 `ref` 번호를 달고, 그 번호로
  * 근거를 표시하라는 규칙을 함께 싣는다. 번호는 `sources`(이 턴 전체를 센 것)에서
  * 온다 — 앞 라운드에서 이미 나온 단락은 그때 번호를 그대로 받는다.
  */
-export const CITATION_RULE =
-  "답변에서 이 단락의 내용을 근거로 쓴 문장 끝에 ref 번호를 대괄호로 적으세요. 예: …입니다 [1]. 여러 개면 [1][3]. 여기에 없는 번호는 쓰지 마세요.";
-
 export function annotateForModel(tr: ToolResultLike, sources: readonly CitationSource[]): unknown {
   if (!tr.ok || !isRagTool(tr.name)) return tr.result ?? null;
   const payload = payloadOf(tr.result);

@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "./types.js";
+import { requireBoundedText } from "./args.js";
 
 // Two strings can look pixel-identical in a chat window or a log viewer while
 // having completely different bytes underneath — an invisible zero-width
@@ -131,12 +132,7 @@ export const unicodeInspectTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { text: string }) {
-    if (typeof args?.text !== "string" || args.text.length === 0) {
-      throw new Error("text must be a non-empty string");
-    }
-    if (args.text.length > MAX_INPUT_CHARS) {
-      throw new Error(`text too large (${args.text.length} chars, limit ${MAX_INPUT_CHARS})`);
-    }
+    requireBoundedText(args?.text, "text", MAX_INPUT_CHARS);
     const text = args.text;
 
     // Splitting a string with the spread operator / Array.from iterates by

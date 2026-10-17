@@ -8,7 +8,7 @@ import { endpointsSource, listEndpoints } from "./vllm/endpoints.js";
 import { sweepAllAttachments } from "./storage/attachmentStore.js";
 import { sweepEmptyConversations } from "./storage/conversationStore.js";
 import { ensureAdminFromEnv } from "./auth/bootstrap.js";
-import { seedBuiltinServers } from "./mcp/registryStore.js";
+import { seedBuiltinServers } from "./mcp/builtinServers.js";
 import { warm as warmMcpDiscovery } from "./mcp/discovery.js";
 import { startScheduleRunner } from "./chat/scheduleRunner.js";
 
@@ -66,25 +66,27 @@ const server = app.listen(config.port, () => {
 
   // A chat window that was opened and never used leaves a record behind, and
   // nothing else removes it: 91 of them against 6 real conversations after one
-  // day here. Runs after the attachment sweep on purpose — deleting the
-  // conversation takes its attachments with it, so the sweep has less to walk.
+  // day here. Runs before the attachment sweep on purpose (chained below) —
+  // deleting the conversation takes its attachments with it, so the sweep has
+  // less to walk.
   void sweepEmptyConversations()
     .then(({ removed, owners }) => {
       if (removed > 0) {
         console.log(`[server] empty-conversation sweep: removed ${removed} across ${owners} owner(s)`);
       }
     })
-    .catch((err) => console.warn("[server] empty-conversation sweep failed:", err));
-
-  // Uploads that were never attached to a message outlive the browser that made
-  // them; nothing else would ever delete those bytes.
-  void sweepAllAttachments()
-    .then(({ removed, conversations }) => {
-      if (removed > 0 || conversations > 0) {
-        console.log(`[server] attachment sweep: removed ${removed} orphan(s) across ${conversations} conversation(s)`);
-      }
-    })
-    .catch((err) => console.warn("[server] attachment sweep failed:", err));
+    .catch((err) => console.warn("[server] empty-conversation sweep failed:", err))
+    // Uploads that were never attached to a message outlive the browser that made
+    // them; nothing else would ever delete those bytes.
+    .finally(() =>
+      sweepAllAttachments()
+        .then(({ removed, conversations }) => {
+          if (removed > 0 || conversations > 0) {
+            console.log(`[server] attachment sweep: removed ${removed} orphan(s) across ${conversations} conversation(s)`);
+          }
+        })
+        .catch((err) => console.warn("[server] attachment sweep failed:", err)),
+    );
 });
 
 // 서버가 무엇을 듣고 있는지 알아야 "듣기를 멈추는" 종료가 가능하다.

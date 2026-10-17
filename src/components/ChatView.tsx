@@ -1,42 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getShareToken, saveShare } from "../api/client";
-import type { ChatMessage } from "../api/types";
 import { attachmentLimitsFor } from "../attachments/limits";
 import { DROP_SUBTITLE, DROP_TITLE } from "../attachments/messages";
 import { useAttachmentDraft } from "../hooks/useAttachmentDraft";
 import type { useChatStream } from "../hooks/useChatStream";
 import { useFileDrop } from "../hooks/useFileDrop";
+import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useHealthCheck } from "../hooks/useHealthCheck";
-import { conversationTokenTotals } from "../state/conversationOps";
 import { shouldShowAnswerNowButton } from "../state/answerNow";
 import { capabilityOf, kindOf } from "../state/modelCapability";
-import { conversationHistoryFile, downloadJson } from "../state/exportImport";
-import { exportConversationPdf } from "../state/pdfExport";
-import { pushOverlay } from "../ui/overlayStack";
-import { copyText } from "../state/clipboard";
-import { shareHash } from "../routes";
-import { showErrorToast, showToast } from "./Toast";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
 import { AnswerNowButton } from "./AnswerNowButton";
 import { Composer } from "./Composer";
+import { ConversationExportActions } from "./ConversationExportActions";
 import { MessageItem } from "./MessageItem";
-import { shortModelName } from "./ModelSelector";
+import { shortModelName } from "../state/modelCatalog";
 import { useModels } from "../hooks/useModels";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
 import { useRemoteCompaction } from "../hooks/useRemoteCompaction";
 import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
 import { CompactionProgress } from "./CompactionProgress";
+import { ChevronDownIcon, PaperclipIcon } from "./icons";
 import "./ChatView.css";
 import { prefetchBoardList } from "../state/boardCache";
 import { NoticeButton } from "./NoticeButton";
-
-/** How close to the end still counts as "at the bottom".
- *  Wide enough that a chunk landing between the follow scroll and the scroll
- *  event it fires cannot read as the user having moved: a chunk is one token,
- *  which is a line of text at the very most. */
-const BOTTOM_THRESHOLD_PX = 64;
 
 interface ChatViewProps {
   chatStream: ReturnType<typeof useChatStream>;
@@ -59,74 +47,12 @@ function BoardIcon() {
   );
 }
 
-function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v12" />
-      <path d="M7 10l5 5 5-5" />
-      <path d="M4 19.5h16" />
-    </svg>
-  );
-}
-
-/* 공유: 위로 나가는 화살표가 달린 상자 — iOS·Gemini 의 공유 단추와 같은 실루엣이라
-   따로 설명하지 않아도 알아본다. 다운로드(아래로 내려오는 화살표)와 방향이 반대다. */
-function ShareIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 15V3" />
-      <path d="M7.5 7.5 12 3l4.5 4.5" />
-      <path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2" />
-    </svg>
-  );
-}
-
-/** 공유 토큰. 128비트(22자 base64url) — 서버 storage/shareStore.ts 의 최소 길이. */
-function newShareToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-/** 지금 주소에서 해시만 바꾼 공유 링크. 앱이 하위 경로·다른 도메인에 있어도 맞다. */
-function shareLink(token: string): string {
-  const url = new URL(window.location.href);
-  url.hash = shareHash(token);
-  return url.toString();
-}
-
-function PaperclipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21.4 11.1 12.3 20.2a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
-
 function ArrowDownIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12l7 7 7-7" />
     </svg>
   );
-}
-
-/** Drop client-only streaming fields before exporting a conversation to JSON.
- *  This destructures an explicit field list, so a new persisted field has to
- *  be named here or the export silently drops it. */
-function toExportableMessage(message: ClientChatMessage): ChatMessage {
-  const { id, role, content, attachments, reasoning, toolCalls, toolResults, usage, durationMs, error, contentPromotedFromReasoning, createdAt } =
-    message;
-  return { id, role, content, attachments, reasoning, toolCalls, toolResults, usage, durationMs, error, contentPromotedFromReasoning, createdAt };
 }
 
 export function ChatView({
@@ -166,6 +92,7 @@ export function ChatView({
   const listRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
+  const hasConversation = activeConversation !== null;
   // 입력창 묶음(dock)의 키를 --dock-h 로 알린다. 본문은 그만큼 dock 밑으로 들어가
   // 흐르고, 목록 끝에 같은 만큼 여백을 두어 마지막 줄이 입력창에 가리지 않는다.
   // 입력창은 글을 쓰면 늘어나므로 한 번 재지 않고 계속 본다.
@@ -178,70 +105,11 @@ export function ChatView({
     const observer = new ResizeObserver(update);
     observer.observe(dock);
     return () => observer.disconnect();
-  });
+    // The dock mounts and unmounts with the conversation view; while it stays,
+    // the observer sees every change in its height. Re-running on every render
+    // (every streamed token) only re-created the observer and forced a layout.
+  }, [hasConversation]);
   const listInnerRef = useRef<HTMLDivElement>(null);
-
-  // 다운로드 형식 선택(JSON / PDF). 바깥을 누르거나 Esc 면 닫힌다.
-  const [downloadOpen, setDownloadOpen] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
-  const downloadRef = useRef<HTMLDivElement>(null);
-  useEffect(() => (downloadOpen ? pushOverlay() : undefined), [downloadOpen]);
-  useEffect(() => {
-    if (!downloadOpen) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (downloadRef.current && !downloadRef.current.contains(event.target as Node)) setDownloadOpen(false);
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setDownloadOpen(false);
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [downloadOpen]);
-
-  // 공유. 토큰은 미리 알아 둔다 — http 에서는 복사가 누른 그 순간에만 되므로(iOS Safari),
-  // 누른 뒤에 서버에 물어 토큰을 받아서는 복사할 수 없다. 공유한 적이 없으면 누르는 순간
-  // 새로 만들어 링크를 복사하고, 그 토큰으로 서버에 사본을 뜬다.
-  const shareConversationId = activeConversation?.id ?? "";
-  const shareHasMessages = (activeConversation?.messages.length ?? 0) > 0;
-  const [shareToken, setShareToken] = useState<{ conversationId: string; token: string | null } | null>(null);
-  const [shareBusy, setShareBusy] = useState(false);
-  useEffect(() => {
-    if (!shareConversationId || !shareHasMessages) return;
-    let cancelled = false;
-    getShareToken(shareConversationId)
-      .then((token) => {
-        if (!cancelled) setShareToken({ conversationId: shareConversationId, token });
-      })
-      .catch(() => {
-        // 모르면 누를 때 새로 만든다. 서버가 원래 토큰을 돌려주면 그것으로 다시 복사한다.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [shareConversationId, shareHasMessages]);
-
-  function handleShare() {
-    if (!shareConversationId || shareBusy) return;
-    const known = shareToken?.conversationId === shareConversationId ? shareToken.token : null;
-    const proposed = known ?? newShareToken();
-    // 누른 순간에 복사한다(위 설명). copyText 는 http 에서 그 자리에서 바로 복사한다.
-    const copied = copyText(shareLink(proposed));
-    setShareBusy(true);
-    saveShare(shareConversationId, proposed)
-      .then(async (token) => {
-        setShareToken({ conversationId: shareConversationId, token });
-        // 다른 창에서 먼저 공유해 서버의 토큰이 다르면, 그 링크로 다시 복사해 본다.
-        const ok = token === proposed ? await copied : await copyText(shareLink(token));
-        if (ok) showToast("링크가 복사되었습니다");
-        else showToast(`링크를 복사하지 못했습니다. 이 주소를 직접 복사하세요: ${shareLink(token)}`, "error");
-      })
-      .catch(showErrorToast)
-      .finally(() => setShareBusy(false));
-  }
 
   // The attachment draft belongs to the open conversation, so it is owned
   // here rather than in Composer — neither component remounts on a
@@ -257,106 +125,7 @@ export function ChatView({
   const handleDroppedFiles = useCallback((files: File[]) => addFiles(files, "drop"), [addFiles]);
   const { isDragging, dropHandlers } = useFileDrop(handleDroppedFiles);
 
-  // Whether the transcript is still chasing the end of the answer. A ref, not
-  // state: the scroll listener writes it on every scroll event and the append
-  // effect reads it on every streamed chunk, and neither wants a render. The
-  // jump button is the only thing on screen that changes with it, so that gets
-  // the one piece of state.
-  const followBottomRef = useRef(true);
-  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  // 조각이 몇 개 붙든 따라 내리기는 한 프레임에 한 번. 잡혀 있는 동안의 번호를 둔다.
-  const followFrameRef = useRef<number | null>(null);
-
-  const scrollToBottom = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    followBottomRef.current = true;
-    setShowJumpToBottom(false);
-    el.scrollTop = el.scrollHeight;
-  }, []);
-
-  // Keyed on the conversation because ChatView's first render has no
-  // conversation yet and so no list to listen to; the node arrives later.
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-
-    // A programmatic scroll fires the same `scroll` event as a user's, so this
-    // does not try to tell the two apart — it asks the live DOM where the view
-    // sits now, and the threshold above is what makes our own scroll (which
-    // lands at the end) re-arm rather than disarm.
-    // 따라 내리기를 프레임마다 한 번으로 합쳤으므로, 새 조각이 붙은 뒤 그 프레임이 돌기
-    // 전에 이전 스크롤의 이벤트가 늦게 올 수 있다. 그때는 끝에서 멀어 보여도 사용자가
-    // 떠난 것이 아니다 — 위로 움직인 것이 아니고 프레임이 잡혀 있으면 따라가기를 둔다.
-    // 위로 움직였어도 거리가 0 이면 본문이 줄어 브라우저가 scrollTop 을 당긴 것이다.
-    let lastTop = el.scrollTop;
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const movedUp = el.scrollTop < lastTop;
-      lastTop = el.scrollTop;
-      if (movedUp && distance > 1) followBottomRef.current = false;
-      else if (distance <= BOTTOM_THRESHOLD_PX) followBottomRef.current = true;
-      else if (followFrameRef.current === null) followBottomRef.current = false;
-      setShowJumpToBottom(distance > BOTTOM_THRESHOLD_PX && !followBottomRef.current);
-    };
-
-    // 휠·손가락으로 위로 가려는 순간 바로 놓는다. scroll 이벤트를 기다리면 그 사이 잡혀
-    // 있던 프레임이 화면을 다시 끝으로 끌어내려 사용자와 줄다리기를 한다.
-    // 위로 갈 데가 없으면(scrollTop 0) 아무것도 놓지 않는다.
-    const onWheel = (event: WheelEvent) => {
-      if (event.deltaY < 0 && el.scrollTop > 0) followBottomRef.current = false;
-    };
-    let touchY: number | null = null;
-    const onTouchStart = (event: TouchEvent) => {
-      touchY = event.touches[0]?.clientY ?? null;
-    };
-    const onTouchMove = (event: TouchEvent) => {
-      const y = event.touches[0]?.clientY;
-      if (y === undefined) return;
-      // 손가락이 아래로 = 본문이 위로.
-      if (touchY !== null && y > touchY && el.scrollTop > 0) followBottomRef.current = false;
-      touchY = y;
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("wheel", onWheel, { passive: true });
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-    };
-  }, [conversationId]);
-
-  // Another conversation opens at its end with following armed, whatever the
-  // last one was left at. Declared above the append effect so a switch re-arms
-  // before that effect decides whether to scroll.
-  useEffect(() => {
-    followBottomRef.current = true;
-    setShowJumpToBottom(false);
-  }, [conversationId]);
-
-  // 조각이 붙을 때마다가 아니라 다음 프레임에 한 번: 따라가는 중이면 끝으로 내리고,
-  // 아니면 끝에서 얼마나 멀어졌는지만 다시 잰다(본문만 늘면 scroll 이벤트가 없다).
-  useEffect(() => {
-    if (followFrameRef.current !== null) return;
-    followFrameRef.current = requestAnimationFrame(() => {
-      followFrameRef.current = null;
-      const el = listRef.current;
-      if (!el) return;
-      if (followBottomRef.current) el.scrollTop = el.scrollHeight;
-      else setShowJumpToBottom(el.scrollHeight - el.scrollTop - el.clientHeight > BOTTOM_THRESHOLD_PX);
-    });
-  }, [activeConversation?.messages, activeConversation?.id]);
-
-  useEffect(
-    () => () => {
-      if (followFrameRef.current !== null) cancelAnimationFrame(followFrameRef.current);
-    },
-    [],
-  );
+  const { showJumpToBottom, scrollToBottom } = useFollowBottom(listRef, conversationId, activeConversation?.messages);
 
   // 화면 읽기 프로그램용. 흐르는 동안 목록은 aria-busy 라 조각마다 읽지 않고, 끝나면
   // 아래 status 가 한 번만 말한다. 멈추기는 여기서 누른 것만 안다(단축키로 멈추면 "완료").
@@ -433,7 +202,6 @@ export function ChatView({
     );
   }
 
-  const totals = conversationTokenTotals(activeConversation.messages);
   const hasMessages = activeConversation.messages.length > 0;
 
   // Until the first message lands nothing is locked, so the composer follows
@@ -488,82 +256,11 @@ export function ChatView({
             {/* 빈 대화에는 저장·공유할 것이 없다. 꺼 둔 단추를 두면 머리가 왜 안 눌리는지
                 모를 아이콘으로 붐빈다(폰에서는 서랍 토글 옆까지 밀려왔다) — 아예 그리지 않는다. */}
             {hasMessages && (
-              <>
-                <div className="chat-download" ref={downloadRef}>
-                  <button
-                    type="button"
-                    className="btn-icon"
-                    data-tooltip={pdfBusy ? "PDF 만드는 중…" : "대화 기록 저장"}
-                    aria-label="대화 기록 저장"
-                    aria-haspopup="menu"
-                    aria-expanded={downloadOpen}
-                    disabled={pdfBusy}
-                    onClick={() => setDownloadOpen((open) => !open)}
-                  >
-                    <DownloadIcon />
-                  </button>
-                  {downloadOpen && (
-                    <div className="chat-download-menu" role="menu" aria-label="저장 형식">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="chat-download-option"
-                        onClick={() => {
-                          setDownloadOpen(false);
-                          downloadJson(
-                            `${activeConversation.title}.json`,
-                            conversationHistoryFile(
-                              // "" on the record means "use the server default", which tells a
-                              // reader of the file nothing. Name the model that actually
-                              // answered — the same one the header shows.
-                              { ...activeConversation, model: activeConversation.model || current || models[0] || "" },
-                              activeConversation.messages.map(toExportableMessage),
-                            ),
-                          );
-                        }}
-                      >
-                        <span className="chat-download-format">JSON</span>
-                        <span className="chat-download-hint">대화 기록 데이터</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="chat-download-option"
-                        onClick={() => {
-                          setDownloadOpen(false);
-                          const inner = listInnerRef.current;
-                          if (!inner) return;
-                          setPdfBusy(true);
-                          exportConversationPdf(inner, `${activeConversation.title}.pdf`)
-                            .then(() => showToast("PDF 로 저장했습니다."))
-                            .catch(showErrorToast)
-                            .finally(() => setPdfBusy(false));
-                        }}
-                      >
-                        <span className="chat-download-format">PDF</span>
-                        <span className="chat-download-hint">화면과 같은 모습</span>
-                      </button>
-                      {totals.totalTokens > 0 && (
-                        <p className="chat-download-usage">
-                          이 대화 합계 {totals.totalTokens.toLocaleString()} 토큰 (프롬프트 {totals.promptTokens.toLocaleString()} · 완성{" "}
-                          {totals.completionTokens.toLocaleString()})
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                {/* 저장(다운로드) 바로 옆 — 둘 다 "이 대화를 밖으로 내보내는" 일이다. */}
-                <button
-                  type="button"
-                  className="btn-icon"
-                  data-tooltip="공유 링크 복사"
-                  aria-label="대화 공유 — 링크 복사"
-                  disabled={shareBusy}
-                  onClick={handleShare}
-                >
-                  <ShareIcon />
-                </button>
-              </>
+              <ConversationExportActions
+                conversation={activeConversation}
+                transcriptRef={listInnerRef}
+                fallbackModel={current || models[0] || ""}
+              />
             )}
             <NoticeButton />
             <button
@@ -606,7 +303,7 @@ export function ChatView({
                 onClick={openModelSelector}
               >
                 모델 · {modelLabel}
-                <ChevronDownIcon />
+                <ChevronDownIcon aria-hidden="true" />
               </button>
             </div>
           ) : (

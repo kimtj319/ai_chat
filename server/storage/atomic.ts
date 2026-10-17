@@ -21,6 +21,27 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown): Prom
   await writeFileAtomic(filePath, JSON.stringify(data, null, 2));
 }
 
+/** A directory's entries, or [] when it does not exist. Any other error still throws. */
+export async function readdirOrEmpty(dir: string): Promise<string[]> {
+  try {
+    return await fs.readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+/** Remove a file; false when it was already gone. Any other error still throws. */
+export async function unlinkIfPresent(filePath: string): Promise<boolean> {
+  try {
+    await fs.unlink(filePath);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+}
+
 /** The same discipline for raw bytes (attachment payloads), not just JSON. */
 export async function writeFileAtomic(filePath: string, data: Buffer | string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

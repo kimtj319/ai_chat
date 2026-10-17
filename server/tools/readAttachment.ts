@@ -1,5 +1,6 @@
 import type { ToolContext, ToolDefinition } from "./types.js";
 import { getAttachmentMeta, readAttachmentBytes } from "../storage/attachmentStore.js";
+import { requireTrimmed } from "./args.js";
 
 /** One call may return this many characters; the model pages through a bigger file with `offset`. */
 const MAX_CHUNK_CHARS = 40_000;
@@ -39,8 +40,7 @@ export const readAttachmentTool: ToolDefinition = {
   },
   async execute(args: { attachment_id?: unknown; offset?: unknown; length?: unknown }, ctx?: ToolContext) {
     if (!ctx) throw new Error("read_attachment is only available inside a conversation");
-    const id = typeof args?.attachment_id === "string" ? args.attachment_id.trim() : "";
-    if (!id) throw new Error("attachment_id must be a non-empty string");
+    const id = requireTrimmed(args?.attachment_id, "attachment_id");
 
     const meta = await getAttachmentMeta(ctx.ownerId, ctx.conversationId, id);
     if (!meta) throw new Error(`No attachment ${id} in this conversation`);

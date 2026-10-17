@@ -62,7 +62,6 @@ const ROOTS: Array<[string, () => string]> = [
   ["usersDir", P.usersDir],
   ["groupsDir", P.groupsDir],
   ["ownersRoot", P.ownersRoot],
-  ["ownersDir", P.ownersDir],
   ["mcpDir", P.mcpDir],
   ["mcpServersDir", P.mcpServersDir],
   ["mcpSeedMarkerFile", P.mcpSeedMarkerFile],

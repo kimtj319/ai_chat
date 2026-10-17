@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { McpAuthMode, McpServerSummary } from "../api/types";
 import { hasErrors, hostOf, validateDraft, type McpDraftErrors, type McpServerDraft } from "../mcp/rules";
 import { Modal } from "./Modal";
+import { errorMessage } from "../state/friendlyError";
 
 interface McpServerFormProps {
   /** The server being edited, or null when registering a new one. */
@@ -53,7 +54,7 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
       // The registration probe is the server's job: it is the only thing that
       // knows whether the URL actually speaks MCP, and its refusal is already
       // written in Korean.
-      setServerError(error instanceof Error ? error.message : String(error));
+      setServerError(errorMessage(error));
     } finally {
       setBusy(false);
     }

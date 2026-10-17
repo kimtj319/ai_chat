@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { readJsonFile, writeJsonFileAtomic } from "../storage/atomic.js";
-import { isValidId, ownerMcpFile, ownersDir } from "../storage/paths.js";
+import { isValidId, ownerMcpFile, ownersRoot } from "../storage/paths.js";
 import { withLock } from "../storage/mutex.js";
 import type { McpServerRecord, OwnerMcpPrefs } from "../types.js";
 
@@ -147,7 +147,7 @@ export function effectiveServers(servers: McpServerRecord[], prefs: OwnerMcpPref
 async function ownerIdsWithPrefs(): Promise<string[]> {
   let entries: string[];
   try {
-    entries = await fs.readdir(ownersDir());
+    entries = await fs.readdir(ownersRoot());
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;

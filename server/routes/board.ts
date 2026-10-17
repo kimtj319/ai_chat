@@ -8,7 +8,6 @@
  */
 import express from "express";
 import {
-  MAX_TAGS,
   MAX_TITLE_CHARS,
   addReply,
   createPost,
@@ -17,7 +16,7 @@ import {
   listPosts,
   setStatus,
 } from "../storage/boardStore.js";
-import { getUser } from "../storage/userStore.js";
+import { userNamesById } from "../storage/userStore.js";
 import { isValidId } from "../storage/paths.js";
 import type {
   BoardErrorCode,
@@ -27,12 +26,11 @@ import type {
   BoardPostView,
 } from "../types.js";
 import type { Request } from "express";
+import { sendError } from "./respond.js";
 
 export const boardRouter = express.Router();
 
-function fail(res: express.Response, status: number, code: BoardErrorCode, error: string): void {
-  res.status(status).json({ error, code });
-}
+const fail = sendError<BoardErrorCode>;
 
 /** 글을 바꿀 수 있는 사람: 쓴 사람, 또는 관리자. 이 한 줄이 규칙의 전부다. */
 function canManage(req: Request, post: BoardPost): boolean {
@@ -40,16 +38,13 @@ function canManage(req: Request, post: BoardPost): boolean {
 }
 
 /**
- * 계정 id 에 이름을 붙인다. 계정이 지워졌으면 null 로 두고 화면이 id 를 쓴다 —
- * 없는 이름을 지어내지 않는다. 같은 사람이 여러 번 나와도 한 번만 읽는다.
+ * 글 하나를 찾고, 없으면 404 로 답한다(null). 이상한 id 도 같은 404 다.
+ * 권한은 보지 않는다 — 읽기는 모두에게 열려 있고, 바꾸는 쪽이 canManage 를 따로 본다.
  */
-async function nameLookup(ids: Iterable<string>): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  for (const id of new Set(ids)) {
-    const user = await getUser(id).catch(() => null);
-    if (user) names.set(id, user.name);
-  }
-  return names;
+async function loadPostOr404(req: Request, res: express.Response): Promise<BoardPost | null> {
+  const post = isValidId(req.params.id) ? await getPost(req.params.id) : null;
+  if (!post) fail(res, 404, "not_found", "존재하지 않는 글입니다.");
+  return post;
 }
 
 function toSummary(post: BoardPost, names: Map<string, string>, req: Request): BoardPostSummary {
@@ -66,7 +61,8 @@ function toSummary(post: BoardPost, names: Map<string, string>, req: Request): B
 }
 
 async function toView(post: BoardPost, req: Request): Promise<BoardPostView> {
-  const names = await nameLookup([post.authorId, ...post.replies.map((r) => r.authorId)]);
+  // 계정이 지워졌으면 이름은 null — 화면이 id 를 쓴다. 없는 이름을 지어내지 않는다.
+  const names = await userNamesById([post.authorId, ...post.replies.map((r) => r.authorId)]);
   return {
     ...post,
     authorName: names.get(post.authorId) ?? null,
@@ -85,7 +81,7 @@ async function toView(post: BoardPost, req: Request): Promise<BoardPostView> {
 boardRouter.get("/board", async (req, res, next) => {
   try {
     const posts = await listPosts();
-    const names = await nameLookup(posts.map((p) => p.authorId));
+    const names = await userNamesById(posts.map((p) => p.authorId));
     res.json({
       posts: posts.map((p) => toSummary(p, names, req)),
       // 지금 쓰이고 있는 태그. 새 글을 쓸 때 이미 있는 말을 고르게 해서
@@ -99,9 +95,8 @@ boardRouter.get("/board", async (req, res, next) => {
 
 boardRouter.get("/board/:id", async (req, res, next) => {
   try {
-    if (!isValidId(req.params.id)) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
-    const post = await getPost(req.params.id);
-    if (!post) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
+    const post = await loadPostOr404(req, res);
+    if (!post) return;
     res.json({ post: await toView(post, req) });
   } catch (err) {
     next(err);
@@ -145,9 +140,8 @@ boardRouter.post("/board/:id/replies", express.json({ limit: "64kb" }), async (r
 /** 열고 닫기. 여기가 권한이 걸리는 첫 자리다. */
 boardRouter.patch("/board/:id", express.json({ limit: "8kb" }), async (req, res, next) => {
   try {
-    if (!isValidId(req.params.id)) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
-    const post = await getPost(req.params.id);
-    if (!post) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
+    const post = await loadPostOr404(req, res);
+    if (!post) return;
     if (!canManage(req, post)) {
       return fail(res, 403, "forbidden", "글을 쓴 사람과 관리자만 상태를 바꿀 수 있습니다.");
     }
@@ -165,9 +159,8 @@ boardRouter.patch("/board/:id", express.json({ limit: "8kb" }), async (req, res,
 
 boardRouter.delete("/board/:id", async (req, res, next) => {
   try {
-    if (!isValidId(req.params.id)) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
-    const post = await getPost(req.params.id);
-    if (!post) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
+    const post = await loadPostOr404(req, res);
+    if (!post) return;
     if (!canManage(req, post)) {
       return fail(res, 403, "forbidden", "글을 쓴 사람과 관리자만 지울 수 있습니다.");
     }
@@ -177,5 +170,3 @@ boardRouter.delete("/board/:id", async (req, res, next) => {
     next(err);
   }
 });
-
-export { MAX_TAGS };

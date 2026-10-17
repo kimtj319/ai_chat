@@ -19,17 +19,13 @@ import {
   updateNotice,
   type Notice,
 } from "../storage/noticeStore.js";
-import { getUser } from "../storage/userStore.js";
+import { userNamesById } from "../storage/userStore.js";
 
 export const noticesRouter = express.Router();
 
 /** 쓴 사람 이름을 붙인다. 계정이 지워졌으면 null — 화면이 id 를 쓴다. */
 async function withAuthorNames(notices: Notice[]): Promise<Array<Notice & { authorName: string | null }>> {
-  const names = new Map<string, string | null>();
-  for (const id of new Set(notices.map((n) => n.authorId))) {
-    const user = await getUser(id).catch(() => null);
-    names.set(id, user?.name ?? null);
-  }
+  const names = await userNamesById(notices.map((n) => n.authorId));
   return notices.map((n) => ({ ...n, authorName: names.get(n.authorId) ?? null }));
 }
 

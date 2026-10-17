@@ -56,7 +56,7 @@ export class BudgetLeakGate {
     this.mode = applies ? "hold" : "pass";
   }
 
-  /** Whether it is still deciding (for logging). */
+  /** Whether it is still deciding. Only budgetLeak.test.ts reads it. */
   get holding(): boolean {
     return this.mode === "hold";
   }

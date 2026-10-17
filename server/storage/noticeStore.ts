@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, unlinkIfPresent, writeJsonFileAtomic } from "./atomic.js";
 import { isValidId, noticeFile, noticesDir, noticesSeenFile } from "./paths.js";
 import { withLock } from "./mutex.js";
 
@@ -46,7 +46,6 @@ export async function createNotice(input: { authorId: string; title: unknown; bo
     createdAt: now,
     updatedAt: now,
   };
-  await fs.mkdir(noticesDir(), { recursive: true });
   await writeJsonFileAtomic(noticeFile(notice.id), notice);
   return notice;
 }
@@ -93,14 +92,8 @@ export async function updateNotice(noticeId: string, patch: { title?: unknown; b
 
 export async function deleteNotice(noticeId: string): Promise<boolean> {
   if (!isValidId(noticeId)) return false;
-  return withLock(lockFor(noticeId), async () => {
-    try {
-      await fs.unlink(noticeFile(noticeId));
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  // 없는 공지만 false 다. 다른 오류(권한 등)는 "없는 공지" 로 숨기지 않고 던진다.
+  return withLock(lockFor(noticeId), async () => unlinkIfPresent(noticeFile(noticeId)));
 }
 
 /** 이 계정이 공지를 마지막으로 본 때. 한 번도 안 봤으면 null. */

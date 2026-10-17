@@ -5,6 +5,7 @@ import { AppBackdrop } from "./AppBackdrop";
 import { BrandMark } from "./BrandMark";
 import { MessageItem } from "./MessageItem";
 import { SourcePanel } from "./SourcePanel";
+import { errorMessage } from "../state/friendlyError";
 import "./ChatView.css";
 import "./SharedConversationPage.css";
 
@@ -31,7 +32,7 @@ export function SharedConversationPage({ token }: { token: string }) {
         if (!cancelled) setShare(result);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(errorMessage(err));
       });
     return () => {
       cancelled = true;

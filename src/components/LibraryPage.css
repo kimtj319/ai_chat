@@ -238,7 +238,6 @@
   display: inline-block;
   padding: var(--space-1) var(--space-4);
   border-radius: var(--radius-xs);
-  background: var(--surface-container-highest);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
 }
@@ -290,8 +289,6 @@
 .library-credential input {
   flex: 1;
   min-width: 0;
-  background: var(--surface);
-  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-5);
   color: var(--on-surface);

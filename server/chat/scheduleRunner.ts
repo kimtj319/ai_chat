@@ -4,6 +4,7 @@ import { listSchedules, ownersWithSchedules, updateSchedule, type ScheduledTask 
 import type { StoredMessage } from "../types.js";
 import { formatKst } from "./scheduleTime.js";
 import { runConversationTurn } from "./toolLoop.js";
+import { assistantMessageFromTurn } from "./turnMessage.js";
 
 /**
  * 예약 작업 실행 루프.
@@ -25,6 +26,14 @@ export function scheduledPrompt(task: ScheduledTask): string {
   return `[예약 작업 · ${formatKst(new Date(task.runAt)).slice(11, 16)}] ${task.instruction}`;
 }
 
+/** 대화 끝에 메시지 하나를 더한다. 대화가 지워졌으면 null. */
+function pushMessage(ownerId: string, conversationId: string, message: StoredMessage) {
+  return mutateConversation(ownerId, conversationId, (conv) => {
+    conv.messages.push(message);
+    return conv;
+  });
+}
+
 async function appendNotice(ownerId: string, conversationId: string, text: string): Promise<void> {
   const message: StoredMessage = {
     id: crypto.randomUUID(),
@@ -32,42 +41,20 @@ async function appendNotice(ownerId: string, conversationId: string, text: strin
     content: text,
     createdAt: new Date().toISOString(),
   } as StoredMessage;
-  await mutateConversation(ownerId, conversationId, (conv) => {
-    conv.messages.push(message);
-    return conv;
-  });
+  await pushMessage(ownerId, conversationId, message);
 }
 
 async function runOnServer(ownerId: string, task: ScheduledTask): Promise<void> {
   const startedAt = Date.now();
   try {
     const user: StoredMessage = { id: crypto.randomUUID(), role: "user", content: scheduledPrompt(task), createdAt: new Date().toISOString() } as StoredMessage;
-    const conversation = await mutateConversation(ownerId, task.conversationId, (conv) => {
-      conv.messages.push(user);
-      return conv;
-    });
+    const conversation = await pushMessage(ownerId, task.conversationId, user);
     if (!conversation) throw new Error("대화가 지워져 실행하지 못했습니다.");
     const generator = runConversationTurn(conversation, ownerId, AbortSignal.timeout(TURN_TIMEOUT_MS), new AbortController().signal, {});
     let step = await generator.next();
     while (!step.done) step = await generator.next();
     const result = step.value;
-    const assistant: StoredMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: result.content,
-      ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-      ...(result.toolCalls.length ? { toolCalls: result.toolCalls } : {}),
-      ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
-      usage: result.usage,
-      ...(result.error ? { error: result.error } : {}),
-      ...(result.notice ? { notice: result.notice } : {}),
-      durationMs: Date.now() - startedAt,
-      createdAt: new Date().toISOString(),
-    } as StoredMessage;
-    await mutateConversation(ownerId, task.conversationId, (conv) => {
-      conv.messages.push(assistant);
-      return conv;
-    });
+    await pushMessage(ownerId, task.conversationId, assistantMessageFromTurn(result, startedAt));
     await finishSchedule(ownerId, task.id, result.error ? "failed" : "done", result.error);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

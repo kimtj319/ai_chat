@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { config } from "../config.js";
 import { getUser } from "../storage/userStore.js";
 import type { AuthErrorCode, UserRecord } from "../types.js";
+import { sendError } from "../routes/respond.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -48,8 +49,14 @@ export function isPublicApiPath(path: string): boolean {
   return PUBLIC_API_PATHS.has(normalized) || PUBLIC_SHARED_PATH.test(normalized);
 }
 
-function refuse(res: Response, status: number, code: AuthErrorCode, error: string): void {
-  res.status(status).json({ error, code });
+const refuse = sendError<AuthErrorCode>;
+
+/** A sign-in older than the configured lifetime is no longer a sign-in. */
+function sessionExpired(loggedInAt: string | undefined): boolean {
+  if (!loggedInAt) return false;
+  const at = Date.parse(loggedInAt);
+  if (Number.isNaN(at)) return true;
+  return Date.now() - at > config.sessionMaxAgeHours * 60 * 60 * 1000;
 }
 
 /**
@@ -61,14 +68,6 @@ function refuse(res: Response, status: number, code: AuthErrorCode, error: strin
  * moment the file is gone. One small JSON read per request is a price worth
  * paying for an authorisation decision that is never stale.
  */
-/** A sign-in older than the configured lifetime is no longer a sign-in. */
-function sessionExpired(loggedInAt: string | undefined): boolean {
-  if (!loggedInAt) return false;
-  const at = Date.parse(loggedInAt);
-  if (Number.isNaN(at)) return true;
-  return Date.now() - at > config.sessionMaxAgeHours * 60 * 60 * 1000;
-}
-
 export async function attachUser(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.sessionUserId;

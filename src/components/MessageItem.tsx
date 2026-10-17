@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { memo, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { embeddingJson } from "../state/embedding";
 import type { ClientChatMessage } from "../state/types";
 import { CopyButton } from "./CopyButton";
@@ -11,6 +11,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { MessageAttachments } from "./MessageAttachments";
 import { ThinkingPanel } from "./ThinkingPanel";
 import { ToolUsagePanel } from "./ToolUsagePanel";
+import { DocumentDownloads } from "./DocumentDownload";
 import { BrowserActivity } from "./BrowserActivity";
 import "./MessageItem.css";
 import { CompactionProgress } from "./CompactionProgress";
@@ -125,7 +126,7 @@ function MessageEditor({
   );
 }
 
-export function MessageItem({
+function MessageItemView({
   conversationId,
   message,
   attachmentUrlFor,
@@ -214,6 +215,9 @@ export function MessageItem({
           ) : message.content.length > 0 ? (
             <MarkdownRenderer content={message.content} citations={citations} streaming={Boolean(message.streaming)} />
           ) : null}
+
+          {/* 모델이 create_document 로 정리한 문서 — 누르면 그 문서만 받는다. */}
+          {!isUser && <DocumentDownloads toolCalls={message.toolCalls} toolResults={message.toolResults} />}
 
           {message.contentPromotedFromReasoning && (
             <p className="message-note">이 응답은 reasoning 필드에서 복원되었습니다.</p>
@@ -304,3 +308,27 @@ export function MessageItem({
     </div>
   );
 }
+
+/**
+ * 답변이 흘러나오는 동안 대화는 토큰마다 다시 그려진다. 지난 메시지들은 그대로인데도
+ * 마크다운·코드 강조·수식을 매번 다시 해석하던 것을 막는다 — 바뀌지 않은 메시지는 같은
+ * 객체로 남아 있으므로(StoreContext) 그대로 두면 된다.
+ *
+ * 콜백은 ChatView 가 그릴 때마다 새로 만들지만 하는 일은 conversationId 에만 달려 있어
+ * (같은 대화의 다시 생성·재시도·수정) 있고 없음만 비교한다. conversationId 자체는 비교한다.
+ */
+function sameProps(a: MessageItemProps, b: MessageItemProps): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof MessageItemProps>;
+  for (const key of keys) {
+    const x = a[key];
+    const y = b[key];
+    if (typeof x === "function" || typeof y === "function") {
+      if (typeof x !== typeof y) return false;
+      continue;
+    }
+    if (!Object.is(x, y)) return false;
+  }
+  return true;
+}
+
+export const MessageItem = memo(MessageItemView, sameProps);

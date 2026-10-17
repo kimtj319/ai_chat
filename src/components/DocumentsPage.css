@@ -14,9 +14,7 @@
 .documents-filter {
   width: 180px;
   padding: var(--space-3) var(--space-5);
-  border: 1px solid var(--outline-variant);
   border-radius: var(--radius-full);
-  background: var(--surface-container);
   color: inherit;
   font-size: var(--text-xs);
 }
@@ -51,7 +49,6 @@
   overflow-y: auto;
   padding: var(--space-6) var(--space-7);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-container) 55%, transparent);
 }
 
 /* 두 칸은 나란히 서므로 위아래 섹션 사이 여백(.documents-section + .documents-section)이 필요 없다. */

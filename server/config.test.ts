@@ -4,7 +4,13 @@
 // 뜻이므로), 그리고 **설정했는데 살아남지 못하는 값은 문제다**(운영자가 정한
 // 값이 아무 데도 없는 채로 서비스가 뜨기 때문). 앞을 어기면 아무것도 못 띄우고,
 // 뒤를 어기면 예전처럼 조용히 기본값으로 돈다.
-import { assertConfigValid, inspectConfig } from "./config.js";
+//
+// 파서 쪽 검사(검사는 통과했는데 값이 먹지 않는 경우)는 config 를 불러들일 때의
+// 환경을 보므로, 그 값들을 import 보다 먼저 세운다.
+process.env.COOKIE_SECURE = "on";
+process.env.FEEDBACK_DETECT = "off";
+process.env.CONTEXT_COMPACT_RATIO = "0";
+const { assertConfigValid, config, inspectConfig } = await import("./config.js");
 
 let passed = 0;
 const failures: Array<{ name: string; message: string }> = [];
@@ -63,6 +69,44 @@ console.log("server/config.ts — inspectConfig");
     MCP_DEBUG_TOOLS_HASH: "0",
   };
   check("실제 운영값 묶음은 통과한다", errs(ok).length === 0, JSON.stringify(inspectConfig(ok).errors));
+}
+
+/* ------------------------------------------------ 검사를 통과한 값은 실제로 먹는다 */
+
+{
+  // .env.example 이 "0 이면 압축을 끈다" 고 적고 파서도 0 을 받는데, 검사가 막으면
+  // 문서대로 적은 운영자의 서버가 뜨지 않는다.
+  check("압축 비율 0 은 '끄기' 라 통과", !errs({ CONTEXT_COMPACT_RATIO: "0" }).includes("CONTEXT_COMPACT_RATIO"));
+  check("압축 비율이 음수면 막는다", errs({ CONTEXT_COMPACT_RATIO: "-0.1" }).includes("CONTEXT_COMPACT_RATIO"));
+  check("압축 비율 0 은 정말 0 이 된다", config.contextCompactRatio === 0, String(config.contextCompactRatio));
+  // 검사는 on/off 를 받는데 파서가 on 을 모르면, 통과한 설정이 아무 일도 안 한다.
+  check("COOKIE_SECURE=on 은 Secure 를 켠다", config.cookieSecure === true, String(config.cookieSecure));
+  check("FEEDBACK_DETECT=off 는 끈다", config.feedbackDetect === false, String(config.feedbackDetect));
+}
+{
+  // 파서가 읽는데 검사 목록에 없던 키들 — 오타가 조용히 기본값이 되던 자리다.
+  check("CONTEXT_TOOL_STOP_RATIO 도 본다", errs({ CONTEXT_TOOL_STOP_RATIO: "2" }).includes("CONTEXT_TOOL_STOP_RATIO"));
+  check(
+    "CONTEXT_HISTORY_SUMMARY_RATIO 도 본다",
+    errs({ CONTEXT_HISTORY_SUMMARY_RATIO: "x" }).includes("CONTEXT_HISTORY_SUMMARY_RATIO"),
+  );
+  check(
+    "ATTACHMENT_MESSAGE_TOKEN_RATIO 도 본다",
+    errs({ ATTACHMENT_MESSAGE_TOKEN_RATIO: "0" }).includes("ATTACHMENT_MESSAGE_TOKEN_RATIO"),
+  );
+  for (const key of [
+    "ATTACHMENT_INLINE_TEXT_BYTES",
+    "ATTACHMENT_MAX_MESSAGE_BYTES",
+    "ATTACHMENT_DEFAULT_MESSAGE_TOKENS",
+    "ATTACHMENT_MAX_PER_CONVERSATION",
+    "ATTACHMENT_MAX_CONVERSATION_BYTES",
+    "ATTACHMENT_MAX_SESSION_BYTES",
+    "ATTACHMENT_MIN_FREE_DISK_BYTES",
+  ]) {
+    check(`${key} 도 본다`, errs({ [key]: "abc" }).includes(key));
+  }
+  check("MODEL_CAPABILITY_PROBE 도 본다", errs({ MODEL_CAPABILITY_PROBE: "아마" }).includes("MODEL_CAPABILITY_PROBE"));
+  check("FEEDBACK_DETECT 도 본다", errs({ FEEDBACK_DETECT: "아마" }).includes("FEEDBACK_DETECT"));
 }
 
 /* --------------------------------------------------------- 반쪽짜리 설정은 막는다 */

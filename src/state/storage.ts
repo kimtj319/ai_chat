@@ -7,10 +7,12 @@ const STORAGE_KEY = "qwen3-chat:ui-preferences";
 
 export function loadUiPreferences(): UiPreferences {
   const defaults = createDefaultUiPreferences();
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return defaults;
-
+  // getItem itself throws when storage is blocked (Safari "block all cookies",
+  // some webviews: SecurityError). This runs before any error boundary, so a
+  // throw here would render a blank app — fall back to the defaults instead.
   try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<UiPreferences>;
     return {
       theme: parsed.theme ?? defaults.theme,
@@ -26,5 +28,10 @@ export function loadUiPreferences(): UiPreferences {
 }
 
 export function saveUiPreferences(preferences: UiPreferences): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+  // A preference, so losing it (blocked storage, QuotaExceeded) is fine.
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // ignore
+  }
 }

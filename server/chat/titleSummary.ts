@@ -1,4 +1,4 @@
-import { resolveModel, streamChatCompletion, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
 
 /**
  * A short name for a conversation, summarised from the request that started it.
@@ -50,7 +50,7 @@ const INSTRUCTION = [
 function cleanTitle(raw: string): string | null {
   let text = raw.trim();
   // A thinking model that ignored enable_thinking:false leaves its block here.
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  text = stripThinkBlocks(text).trim();
   const firstLine = text.split("\n").map((line) => line.trim()).find((line) => line.length > 0);
   if (!firstLine) return null;
   text = firstLine
@@ -79,37 +79,10 @@ export async function summariseConversationTitle(
     const { model, endpoint } = await resolveModel(requestedModel);
     const prompt = `${INSTRUCTION}\n${trimmed.slice(0, MAX_REQUEST_CHARS)}`;
 
-    async function attempt(maxTokens: number): Promise<{ text: string; thought: boolean }> {
-      const body: ChatCompletionRequestBody = {
-        model,
-        messages: [{ role: "user", content: prompt }],
-        stream: true,
-        // Required by the request type. Nothing here reads the usage back — the
-        // turn beside this one is what reports tokens — but the field is part of
-        // the shape every call to this endpoint sends.
-        stream_options: { include_usage: true },
-        temperature: 0.2,
-        top_p: 0.9,
-        max_tokens: maxTokens,
-        presence_penalty: 0,
-        frequency_penalty: 0,
-        // Naming something is not a reasoning task, and thinking tokens here are
-        // latency and load spent beside a turn the user is actually waiting for.
-        // Not every model obeys it; see THINKING_RETRY_MAX_TOKENS.
-        chat_template_kwargs: { enable_thinking: false },
-      };
-
-      let text = "";
-      let thought = false;
-      const stream = await streamChatCompletion(body, signal, endpoint);
-      for await (const chunk of stream) {
-        if (signal.aborted) break;
-        const delta = chunk.choices?.[0]?.delta;
-        if (delta?.reasoning ?? delta?.reasoning_content) thought = true;
-        if (delta?.content) text += delta.content;
-      }
-      return { text, thought };
-    }
+    // Naming something is not a reasoning task, so thinking is switched off.
+    // Not every model obeys that; see THINKING_RETRY_MAX_TOKENS.
+    const attempt = (maxTokens: number) =>
+      completeWithoutThinking({ model, endpoint, prompt, maxTokens, temperature: 0.2, signal });
 
     const first = await attempt(MAX_TOKENS);
     if (signal.aborted) return null;

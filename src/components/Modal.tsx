@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { pushOverlay } from "../ui/overlayStack";
+import { CloseIcon } from "./icons";
 import "./Modal.css";
 
 interface ModalProps {
@@ -30,6 +31,12 @@ export function Modal({ title, onClose, children, width, size }: ModalProps) {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      // 겹쳐 뜬 대화상자(지우기 확인 등)는 각자 포털이라 서로의 안에 있지 않다.
+      // 맨 위 것만 키를 받는다 — 그러지 않으면 바깥 것의 Tab 가두기가 안쪽
+      // 대화상자에서 포커스를 빼앗는다. 포털은 열린 차례대로 body 끝에 붙으므로
+      // 문서 순서의 마지막이 맨 위다.
+      const modals = document.querySelectorAll('[aria-modal="true"]');
+      if (modals[modals.length - 1] !== dialogRef.current) return;
       if (event.key === "Escape") {
         onClose();
         return;
@@ -114,9 +121,7 @@ export function Modal({ title, onClose, children, width, size }: ModalProps) {
         <div className="modal-header">
           <h2>{title}</h2>
           <button type="button" className="modal-close" onClick={onClose} aria-label="닫기" data-tooltip="닫기">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            <CloseIcon />
           </button>
         </div>
         <div className="modal-body">{children}</div>

@@ -1,14 +1,9 @@
 import type { ToolDefinition } from "./types.js";
-import { config } from "../config.js";
+import { requireTrimmed } from "./args.js";
+import { fetchJsonOrThrow, LEG_TIMEOUT_MS } from "./net/fetchJson.js";
 
 const GEOCODE_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const FORECAST_ENDPOINT = "https://api.open-meteo.com/v1/forecast";
-// Two sequential calls (geocode, then forecast) share the tool's runner
-// budget, so each leg gets 60% of the single-request timeout (6s at the
-// default) — enough for a slow leg, short enough that one cannot eat the whole
-// budget and leave nothing for the other.
-const LEG_TIMEOUT_MS = Math.round(config.toolHttpTimeoutMs * 0.6);
-
 // WMO weather interpretation codes, as used by Open-Meteo's `weather_code`.
 const WEATHER_CODES: Record<number, string> = {
   0: "Clear sky",
@@ -56,14 +51,11 @@ async function geocode(place: string): Promise<GeocodeResult> {
   url.searchParams.set("count", "1");
   url.searchParams.set("language", "en");
   url.searchParams.set("format", "json");
-  let res: Response;
-  try {
-    res = await fetch(url, { signal: AbortSignal.timeout(LEG_TIMEOUT_MS) });
-  } catch (err) {
-    throw new Error(`Geocoding request failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!res.ok) throw new Error(`Geocoding service responded ${res.status}`);
-  const data = (await res.json()) as { results?: GeocodeResult[] };
+  const data = await fetchJsonOrThrow<{ results?: GeocodeResult[] }>(url, {
+    timeoutMs: LEG_TIMEOUT_MS,
+    failed: (detail) => `Geocoding request failed: ${detail}`,
+    status: (status) => `Geocoding service responded ${status}`,
+  });
   const first = data.results?.[0];
   if (!first) {
     throw new Error(
@@ -94,8 +86,7 @@ export const weatherLookupTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { place: string; unit?: "celsius" | "fahrenheit" }) {
-    const place = typeof args?.place === "string" ? args.place.trim() : "";
-    if (!place) throw new Error("place must be a non-empty string");
+    const place = requireTrimmed(args?.place, "place");
     const fahrenheit = args?.unit === "fahrenheit";
 
     const location = await geocode(place);
@@ -111,14 +102,7 @@ export const weatherLookupTool: ToolDefinition = {
     url.searchParams.set("wind_speed_unit", "kmh");
     url.searchParams.set("timezone", "auto");
 
-    let res: Response;
-    try {
-      res = await fetch(url, { signal: AbortSignal.timeout(LEG_TIMEOUT_MS) });
-    } catch (err) {
-      throw new Error(`Forecast request failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (!res.ok) throw new Error(`Forecast service responded ${res.status}`);
-    const data = (await res.json()) as {
+    const data = await fetchJsonOrThrow<{
       current?: {
         time: string;
         temperature_2m: number;
@@ -128,7 +112,11 @@ export const weatherLookupTool: ToolDefinition = {
         weather_code: number;
       };
       timezone?: string;
-    };
+    }>(url, {
+      timeoutMs: LEG_TIMEOUT_MS,
+      failed: (detail) => `Forecast request failed: ${detail}`,
+      status: (status) => `Forecast service responded ${status}`,
+    });
     if (!data.current) throw new Error("Forecast service returned no current conditions");
 
     const c = data.current;

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/client";
 import type { Notice } from "../api/types";
 import { usePopoverFocus } from "../hooks/usePopoverFocus";
-import { pushOverlay } from "../ui/overlayStack";
+import { useDismiss } from "../hooks/useDismiss";
+import { formatDateTime } from "../state/dateTime";
 import "./NoticeButton.css";
 
 function BellIcon() {
@@ -16,13 +17,6 @@ function BellIcon() {
 
 /** 새 공지가 올라왔는지 다시 볼 간격. 탭으로 돌아올 때(focus)도 다시 본다. */
 const REFRESH_MS = 5 * 60 * 1000;
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
 
 /**
  * 채팅 머리 오른쪽의 공지사항 단추.
@@ -59,18 +53,9 @@ export function NoticeButton() {
     };
   }, [refresh]);
 
-  useEffect(() => (open ? pushOverlay() : undefined), [open]);
   // 열면 포커스가 목록으로 들어가고, Esc 는 종 단추로 돌려준다.
   usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
+  useDismiss(open, containerRef, () => setOpen(false));
 
   async function toggle() {
     const next = !open;
@@ -112,7 +97,7 @@ export function NoticeButton() {
                 <li key={notice.id} className="notice-item">
                   <p className="notice-item-title">{notice.title}</p>
                   <p className="notice-item-meta">
-                    {formatDate(notice.createdAt)} · {notice.authorName ?? notice.authorId}
+                    {formatDateTime(notice.createdAt)} · {notice.authorName ?? notice.authorId}
                   </p>
                   {notice.body && <p className="notice-item-body">{notice.body}</p>}
                 </li>

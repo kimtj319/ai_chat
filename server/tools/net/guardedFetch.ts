@@ -24,8 +24,11 @@ export const GITLAB_REDIRECT =
 /** Hard cap while streaming. The runner truncates to its own limit afterwards. */
 const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
+/** What the builtin web tools identify as. */
+export const TOOL_USER_AGENT = "qwen3-web-chat-tool/1.0";
 
-function stripBrackets(hostname: string): string {
+/** `[::1]` → `::1`: URL keeps the brackets on an IPv6 hostname, DNS and isIP want them off. */
+export function stripBrackets(hostname: string): string {
   return hostname.replace(/^\[/, "").replace(/\]$/, "");
 }
 
@@ -56,7 +59,8 @@ export async function assertFetchableUrl(url: URL): Promise<void> {
   await assertPublicHostname(hostname);
 }
 
-async function readBodyCapped(response: Response): Promise<string> {
+/** Read a response body with a hard byte cap, cancelling the stream past it. */
+export async function readBodyCapped(response: Response, maxBytes: number): Promise<string> {
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -68,7 +72,7 @@ async function readBodyCapped(response: Response): Promise<string> {
       if (done) break;
       receivedBytes += value.byteLength;
       text += decoder.decode(value, { stream: true });
-      if (receivedBytes > MAX_DOWNLOAD_BYTES) {
+      if (receivedBytes > maxBytes) {
         await reader.cancel().catch(() => {});
         break;
       }
@@ -79,6 +83,51 @@ async function readBodyCapped(response: Response): Promise<string> {
   return text;
 }
 
+export interface FollowOptions {
+  maxRedirects: number;
+  /** Runs before every hop, the first one included. Throws to refuse it. */
+  assertHop: (url: URL) => Promise<void>;
+  /**
+   * Refuse a redirect that leaves the starting origin. A hop re-sends the same
+   * headers, credentials included, and fetch's own handling — which strips them
+   * on an origin change — is exactly what `redirect: "manual"` turns off.
+   */
+  sameOrigin?: boolean;
+  messages: {
+    noLocation: (status: number) => string;
+    tooMany: string;
+    crossOrigin?: (from: URL, to: URL) => string;
+  };
+}
+
+/**
+ * Redirects followed by hand, so every hop is checked: `redirect: "follow"`
+ * would let a public URL bounce the request onto a private address with nothing
+ * looking at the second one. The body of each 3xx is cancelled so its socket is
+ * released now rather than at GC.
+ */
+export async function followGuarded(startUrl: string | URL, init: RequestInit, options: FollowOptions): Promise<Response> {
+  const start = new URL(startUrl);
+  let current = start;
+  for (let hop = 0; hop <= options.maxRedirects; hop++) {
+    await options.assertHop(current);
+    const res = await fetch(current, { ...init, redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      await res.body?.cancel().catch(() => {});
+      if (!location) throw new Error(options.messages.noLocation(res.status));
+      const next = new URL(location, current);
+      if (options.sameOrigin && next.origin !== start.origin) {
+        throw new Error(options.messages.crossOrigin?.(start, next) ?? `Cross-origin redirect refused: ${next.origin}`);
+      }
+      current = next;
+      continue;
+    }
+    return res;
+  }
+  throw new Error(options.messages.tooMany);
+}
+
 export interface GuardedResponse {
   status: number;
   contentType: string;
@@ -86,27 +135,26 @@ export interface GuardedResponse {
 }
 
 /**
- * Redirects are followed by hand so every hop is checked: `redirect: "follow"`
- * would let a public URL bounce the request onto a private address with nothing
- * looking at the second one.
+ * One timeout for the whole call — every hop and the body read — rather than a
+ * fresh one per hop, which let six hops run for six times the budget after the
+ * runner had already told the model the call timed out.
  */
 export async function guardedFetchText(startUrl: string): Promise<GuardedResponse> {
-  let current = new URL(startUrl);
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertFetchableUrl(current);
-    const res = await fetch(current, {
+  const res = await followGuarded(
+    startUrl,
+    {
       method: "GET",
-      redirect: "manual",
       signal: AbortSignal.timeout(config.toolHttpTimeoutMs),
-      headers: { "User-Agent": "qwen3-web-chat-tool/1.0" },
-    });
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) throw new Error(`Redirect with no Location header (status ${res.status})`);
-      current = new URL(location, current);
-      continue;
-    }
-    return { status: res.status, contentType: res.headers.get("content-type") || "", text: await readBodyCapped(res) };
-  }
-  throw new Error(`Too many redirects (> ${MAX_REDIRECTS})`);
+      headers: { "User-Agent": TOOL_USER_AGENT },
+    },
+    {
+      maxRedirects: MAX_REDIRECTS,
+      assertHop: assertFetchableUrl,
+      messages: {
+        noLocation: (status) => `Redirect with no Location header (status ${status})`,
+        tooMany: `Too many redirects (> ${MAX_REDIRECTS})`,
+      },
+    },
+  );
+  return { status: res.status, contentType: res.headers.get("content-type") || "", text: await readBodyCapped(res, MAX_DOWNLOAD_BYTES) };
 }

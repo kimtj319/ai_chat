@@ -25,6 +25,30 @@ import type { VllmEndpoint } from "../config.js";
  */
 const FILE_NAME = ".model";
 
+/**
+ * 5 seconds. Measured against the real targets: a live endpoint answers in
+ * ~20-60ms, while a closed port on a live host and an unroutable address both
+ * only fail by timing out — so this is the whole cost of a bad paste.
+ */
+const PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * Headers for a request to a serving endpoint. Kept here, in a module with no
+ * vllm imports, so client.ts and capability.ts can both use it — client imports
+ * capability, so capability cannot import client.
+ */
+export function requestHeaders(endpoint: { apiKey?: string }, json: boolean): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (json) headers["Content-Type"] = "application/json";
+  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
+  return headers;
+}
+
+/** The context window a /models entry reports; context_length is OpenRouter's name for it. */
+export function reportedWindow(m: { max_model_len?: unknown; context_length?: unknown }): number | null {
+  return typeof m.max_model_len === "number" ? m.max_model_len : typeof m.context_length === "number" ? m.context_length : null;
+}
+
 function candidatePaths(): string[] {
   if (config.modelEndpointsFile) return [path.resolve(process.cwd(), config.modelEndpointsFile)];
   return [path.resolve(process.cwd(), FILE_NAME), path.join(config.dataDir, FILE_NAME)];
@@ -44,6 +68,11 @@ let cached: FileState = { path: null, mtimeMs: 0, size: 0, endpoints: [] };
  * effect on the next refresh instead of at the next restart.
  */
 let revision = 0;
+
+function resetFileCache(): void {
+  cached = { path: null, mtimeMs: 0, size: 0, endpoints: [] };
+  revision++;
+}
 
 export function endpointsRevision(): number {
   return revision;
@@ -65,10 +94,7 @@ function fileEndpoints(): VllmEndpoint[] {
   }
 
   if (!found) {
-    if (cached.path !== null) {
-      cached = { path: null, mtimeMs: 0, size: 0, endpoints: [] };
-      revision++;
-    }
+    if (cached.path !== null) resetFileCache();
     return cached.endpoints;
   }
   if (cached.path === found.path && cached.mtimeMs === found.mtimeMs && cached.size === found.size) {
@@ -201,8 +227,7 @@ export async function upsertFileEndpoint(endpoint: VllmEndpoint): Promise<void> 
   });
   // Force the next listEndpoints() to re-read even if the mtime granularity
   // would have hidden a write in the same millisecond.
-  cached = { path: null, mtimeMs: 0, size: 0, endpoints: [] };
-  revision++;
+  resetFileCache();
 }
 
 /** Remove an endpoint from the file. False when the file does not define it. */
@@ -224,10 +249,7 @@ export async function removeFileEndpoint(baseUrl: string): Promise<boolean> {
     await writeFileAtomic(target, `${kept.join("\n").replace(/\n+$/, "")}\n`);
     return true;
   });
-  if (removed) {
-    cached = { path: null, mtimeMs: 0, size: 0, endpoints: [] };
-    revision++;
-  }
+  if (removed) resetFileCache();
   return removed;
 }
 
@@ -281,11 +303,9 @@ export interface ProbeResult {
  */
 export async function probeEndpoint(baseUrl: string, apiKey?: string): Promise<ProbeResult> {
   const started = Date.now();
-  const headers: Record<string, string> = {};
-  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/models`, { headers, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+    res = await fetch(`${baseUrl}/models`, { headers: requestHeaders({ apiKey }, false), signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
   } catch (err) {
     return {
       ok: false,
@@ -318,19 +338,10 @@ export async function probeEndpoint(baseUrl: string, apiKey?: string): Promise<P
   if ((listed.object !== undefined && listed.object !== "list") || data.length === 0 || !data.every((m) => typeof m?.id === "string")) {
     return { ok: false, code: "not_vllm", detail: text.slice(0, 60), models: [], maxModelLen: null, latencyMs };
   }
-  const first = data[0]!;
-  const window = typeof first.max_model_len === "number" ? first.max_model_len : typeof first.context_length === "number" ? first.context_length : null;
   return {
     ok: true,
     models: data.map((m) => String(m.id)),
-    maxModelLen: window as number | null,
+    maxModelLen: reportedWindow(data[0]!),
     latencyMs,
   };
 }
-
-/**
- * 5 seconds. Measured against the real targets: a live endpoint answers in
- * ~20-60ms, while a closed port on a live host and an unroutable address both
- * only fail by timing out — so this is the whole cost of a bad paste.
- */
-const PROBE_TIMEOUT_MS = 5000;

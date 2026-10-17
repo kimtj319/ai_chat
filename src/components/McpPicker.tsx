@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { pushOverlay } from "../ui/overlayStack";
+import { inSheet } from "./popoverSheet";
+import { useDismiss } from "../hooks/useDismiss";
 import { useAuth } from "../auth/AuthContext";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
@@ -19,6 +19,7 @@ import {
 import type { McpServerSummary, McpToolSummary } from "../api/types";
 import type { ActiveConversation } from "../state/StoreContext";
 import { useStore } from "../state/StoreContext";
+import { ChevronRightIcon } from "./icons";
 import "./McpPicker.css";
 
 function PlusIcon() {
@@ -33,14 +34,6 @@ function PaperclipIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  );
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 6l6 6-6 6" />
     </svg>
   );
 }
@@ -157,7 +150,6 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
   const [open, setOpen] = useState(false);
 
   // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
-  useEffect(() => (open ? pushOverlay() : undefined), [open]);
   const [query, setQuery] = useState("");
   const [expandedServers, setExpandedServers] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -191,25 +183,14 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
     setSelected(conversation.enabledTools.filter(isMcpToolName));
   }, [conversation.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      // A dialog opened from inside the menu (the Chrome setup guide) is
-      // portalled to <body>; a click in it is not a click away from the menu.
-      // The menu itself is a dialog too, and so is the sheet on a phone, which
-      // sits outside the container. The sheet's scrim closes on its own click:
-      // closing on mousedown would hand the tap's click to whatever lies under it.
-      const target = event.target as Element;
-      if (target.closest?.('[role="dialog"], .popover-sheet-scrim')) return;
-      if (containerRef.current && !containerRef.current.contains(target)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
+  useDismiss(open, containerRef, () => setOpen(false), {
+    // A dialog opened from inside the menu (the Chrome setup guide) is
+    // portalled to <body>; a click in it is not a click away from the menu.
+    // The menu itself is a dialog too, and so is the sheet on a phone, which
+    // sits outside the container. The sheet's scrim closes on its own click:
+    // closing on mousedown would hand the tap's click to whatever lies under it.
+    ignore: (target) => target.closest?.('[role="dialog"], .popover-sheet-scrim') != null,
+  });
 
   function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "ArrowUp" && !open) {
@@ -362,7 +343,7 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
                         </span>
                         <span className="mcp-picker-server-count">{toolNames.length}</span>
                         <span className={`mcp-picker-chevron${expanded ? " open" : ""}`}>
-                          <ChevronIcon />
+                          <ChevronRightIcon />
                         </span>
                       </button>
                     </div>
@@ -439,20 +420,5 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
         </div>,
       )}
     </div>
-  );
-}
-
-/**
- * 폰에서는 팝오버를 바텀시트로: body 로 포털하고 뒤에 스크림을 깐다(누르면 닫힌다).
- * 넓은 화면에서는 제자리에 그대로 둔다. ReasoningControl 도 같은 것을 쓴다.
- */
-export function inSheet(sheet: boolean, onClose: () => void, popover: ReactNode): ReactNode {
-  if (!sheet) return popover;
-  return createPortal(
-    <>
-      <div className="popover-sheet-scrim" aria-hidden="true" onClick={onClose} />
-      {popover}
-    </>,
-    document.body,
   );
 }

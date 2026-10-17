@@ -3,6 +3,7 @@ import * as api from "../api/client";
 import type { MyAccess, PersonalKeyName } from "../api/types";
 import { ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
+import { errorMessage } from "../state/friendlyError";
 import "./PersonalKeysDialog.css";
 
 /**
@@ -98,7 +99,7 @@ function KeyRow({
       setLabel("");
       setMessage({ tone: "ok", text: spec.multi ? "추가했습니다." : "저장했습니다." });
     } catch (error) {
-      setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
+      setMessage({ tone: "danger", text: errorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -111,7 +112,7 @@ function KeyRow({
       onChange((entryId ? await api.deletePersonalKeyEntry(spec.name, entryId) : await api.deletePersonalKey(spec.name)).keys);
       setMessage({ tone: "ok", text: "삭제했습니다." });
     } catch (error) {
-      setMessage({ tone: "danger", text: error instanceof Error ? error.message : String(error) });
+      setMessage({ tone: "danger", text: errorMessage(error) });
     } finally {
       setBusy(false);
     }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ClientChatMessage } from "../state/types";
+import { ChevronRightIcon } from "./icons";
 import "./ThinkingPanel.css";
 
 interface ThinkingPanelProps {
@@ -13,14 +14,6 @@ interface ThinkingPanelProps {
 
 /** 첫 reasoning·첫 content 가 온 시각(epoch ms). 스트림 쪽(WP7)이 채우는 클라이언트 전용 값. */
 type ReasoningTimes = { reasoningStartedAt?: number; reasoningEndedAt?: number };
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  );
-}
 
 function formatSeconds(totalSeconds: number): string {
   if (totalSeconds < 60) return `${totalSeconds}초`;
@@ -85,7 +78,7 @@ export function ThinkingPanel({ message, expectsReasoning }: ThinkingPanelProps)
         disabled={!hasReasoning}
       >
         <span className={`thinking-caret${expanded ? " open" : ""}`}>
-          <ChevronIcon />
+          <ChevronRightIcon />
         </span>
         <span>{header}</span>
       </button>

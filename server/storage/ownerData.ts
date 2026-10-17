@@ -2,11 +2,16 @@ import fs from "node:fs/promises";
 import { ownerDir } from "./paths.js";
 import { isValidId } from "./paths.js";
 import { listDocuments } from "./documentStore.js";
+import { removeModelOwnersOf } from "./modelOwners.js";
 import { ragConfigured, removeDocument, removeOwnerKey } from "../rag/engineIndex.js";
 
 /**
- * Everything one account owns lives under {DATA_DIR}/owners/{id} — its
- * conversations and every attachment inside them. This removes that tree.
+ * Most of what one account owns lives under {DATA_DIR}/owners/{id} — its
+ * conversations, attachments, documents, keys and schedules. This removes that
+ * tree, plus the two records outside it that are keyed by the id: the indexed
+ * document chunks and the model endpoints it registered (model-owners.json).
+ * NOT handled here, still keyed by the bare id: MCP servers it registered
+ * (`createdBy`), board posts (`authorId`) and its conversation shares.
  *
  * It is the one place in this codebase that deletes someone's history on
  * purpose, and it is a deliberate departure from the rule stated in
@@ -26,6 +31,7 @@ export async function deleteOwnerData(ownerId: string): Promise<boolean> {
   // longer removable by anything. It has to go first, while we can still read
   // which chunks were theirs.
   await removeIndexedDocuments(ownerId);
+  await removeModelOwnership(ownerId);
   try {
     await fs.rm(ownerDir(ownerId), { recursive: true, force: true });
     return true;
@@ -52,5 +58,20 @@ async function removeIndexedDocuments(ownerId: string): Promise<void> {
     await removeOwnerKey(ownerId);
   } catch (err) {
     console.warn(`[ownerData] could not remove indexed documents for "${ownerId}":`, err);
+  }
+}
+
+/**
+ * Forget which model endpoints this account registered. Left behind, the next
+ * account registered under the same id would be able to use and delete them
+ * (routes/models.ts). Best-effort for the same reason as the index cleanup
+ * above, and logged loudly, since what is left is exactly that hazard.
+ */
+async function removeModelOwnership(ownerId: string): Promise<void> {
+  try {
+    const removed = await removeModelOwnersOf(ownerId);
+    if (removed > 0) console.log(`[ownerData] forgot ${removed} model endpoint registration(s) of "${ownerId}"`);
+  } catch (err) {
+    console.error(`[ownerData] could not forget the model endpoints registered by "${ownerId}":`, err);
   }
 }

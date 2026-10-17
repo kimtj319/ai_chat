@@ -1,6 +1,6 @@
-import type { Conversation, MessageAttachment, StoredMessage } from "../types.js";
+import type { Conversation, MessageAttachment, StoredMessage, ToolResultRecord } from "../types.js";
 import { composeSystemPrompt } from "./systemPrompt.js";
-import { annotateForModel, citationSources } from "./citations.js";
+import { annotateForModel, citationSources, type CitationSource } from "./citations.js";
 import { activeText, capActive, readProhibitions } from "../storage/prohibitionsStore.js";
 import { readAttachmentBytes } from "../storage/attachmentStore.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
@@ -56,6 +56,17 @@ export interface VllmMessage {
 export const IMAGE_DROPPED_PLACEHOLDER =
   "[첨부 이미지 1장은 컨텍스트 한도 때문에 대화에서 제외되었습니다. 이 이미지에 대해 다시 물으시려면 같은 이미지를 다시 올려 주세요.]";
 
+export interface HistoryBuildOptions {
+  /**
+   * Inserted right after the system prompt, standing in for the messages before
+   * `fromIndex`. This is how a stored history summary reaches the model; see
+   * chat/historySummary.ts.
+   */
+  prelude?: VllmMessage;
+  /** Index of the first message of `conversation.messages` to include. */
+  fromIndex?: number;
+}
+
 /**
  * Build the message list sent to vLLM: the composed system prompt first
  * (default baseline + this conversation's extra instructions), then
@@ -68,17 +79,6 @@ export const IMAGE_DROPPED_PLACEHOLDER =
  * Async because attachments are read from disk here — once per turn, not once
  * per tool round: the tool loop keeps the list this returns and appends to it.
  */
-export interface HistoryBuildOptions {
-  /**
-   * Inserted right after the system prompt, standing in for the messages before
-   * `fromIndex`. This is how a stored history summary reaches the model; see
-   * chat/historySummary.ts.
-   */
-  prelude?: VllmMessage;
-  /** Index of the first message of `conversation.messages` to include. */
-  fromIndex?: number;
-}
-
 export async function buildHistoryMessages(
   conversation: Conversation,
   ownerId: string,
@@ -134,20 +134,26 @@ async function messageToVllm(
     // 그 턴에 모델이 봤던 모양 그대로(인용 번호 포함) 다시 싣는다. 번호가 빠지면
     // 이어지는 답변이 앞 답변의 "[n]" 을 이해하지 못한다.
     const sources = citationSources(message.toolResults);
-    for (const tr of message.toolResults ?? []) {
-      out.push({
-        role: "tool",
-        tool_call_id: tr.id,
-        name: tr.name,
-        content: JSON.stringify(tr.ok ? annotateForModel(tr, sources) : { error: tr.error ?? "tool execution failed" }),
-      });
-    }
+    for (const tr of message.toolResults ?? []) out.push(toolResultMessage(tr, sources));
     if (message.content.trim().length > 0) {
       out.push({ role: "assistant", content: message.content });
     }
     return out;
   }
   return [{ role: "assistant", content: message.content }];
+}
+
+/**
+ * One tool result as the model reads it. The tool loop sends it this way and a
+ * replayed history must send the same bytes, so both build it here.
+ */
+export function toolResultMessage(tr: ToolResultRecord, sources: readonly CitationSource[]): VllmMessage {
+  return {
+    role: "tool",
+    tool_call_id: tr.id,
+    name: tr.name,
+    content: JSON.stringify(tr.ok ? annotateForModel(tr, sources) : { error: tr.error ?? "tool execution failed" }),
+  };
 }
 
 /**
@@ -252,7 +258,7 @@ function fenceLanguage(name: string): string {
   return FENCE_LANGUAGES[ext] ?? "";
 }
 
-/** True for a user message that still carries at least one image part. */
+/** How many image parts a user message still carries; 0 for none. */
 export function imagePartCount(message: VllmMessage): number {
   if (!Array.isArray(message.content)) return 0;
   return message.content.reduce((n, part) => (part.type === "image_url" ? n + 1 : n), 0);

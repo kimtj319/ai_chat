@@ -36,7 +36,6 @@
   gap: var(--space-6);
   padding: var(--space-9) var(--space-10);
   border-radius: var(--radius-lg);
-  background: var(--surface-container);
 }
 
 .conv-settings-card .field {

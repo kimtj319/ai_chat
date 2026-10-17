@@ -3,6 +3,7 @@ import * as api from "../api/client";
 import type { ModelCatalogEntry, ModelEndpoint } from "../api/types";
 import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { ModelEndpointDialog } from "./ModelEndpointDialog";
+import { errorMessage } from "../state/friendlyError";
 
 /** "http://10.0.0.2:30023/v1" → 보이는 조각들. 포트를 안 적었으면 스킴의 기본값을 밝힌다. */
 function partsOf(baseUrl: string): { scheme: string; host: string; port: string; path: string } {
@@ -53,7 +54,7 @@ export function AdminModelsTab() {
       setCatalog(models.catalog);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   }, []);
 

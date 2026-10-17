@@ -3,6 +3,14 @@
  * server/tools/ exporting one of these, register it in server/tools/index.ts,
  * and it's available to the model — see README.md "Adding a tool".
  */
+/**
+ * Reserved namespace for tools discovered from an MCP server, whose names are
+ * `mcp__{slug}__{tool}` (mcp/toolAdapter.ts). tools/index.ts refuses to load a
+ * builtin that uses it. Here rather than in toolAdapter.ts so the registry can
+ * import it without pulling in the MCP client.
+ */
+export const MCP_TOOL_PREFIX = "mcp__";
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -14,10 +22,12 @@ export interface ToolDefinition {
 
 /**
  * Which conversation the call is running in. `ownerId` is the account that owns
- * it (never the browser session id), so a second browser reaches the same files. Only read_attachment needs it —
- * every other tool ignores the second argument — but it is what scopes that
- * tool to one account's own files, so it is part of the contract rather than a
- * global the tool could be tricked out of.
+ * it (never the browser session id), so a second browser reaches the same files.
+ * The tools that read it: read_attachment (scopes it to one account's own
+ * files), web_search (that account's own search key), the schedule tools (which
+ * conversation a task belongs to) and every MCP tool (that account's credential
+ * and personal key). The rest ignore it. It is part of the contract rather than
+ * a global so no tool can be tricked into acting for another account.
  */
 export interface ToolContext {
   ownerId: string;

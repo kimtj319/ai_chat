@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "./types.js";
+import { requireTrimmed } from "./args.js";
 
 interface Rgb {
   r: number;
@@ -93,8 +94,7 @@ export const colorConvertTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { color: string }) {
-    const input = typeof args?.color === "string" ? args.color.trim() : "";
-    if (!input) throw new Error("color must be a non-empty string");
+    const input = requireTrimmed(args?.color, "color");
 
     let rgb = parseHex(input) ?? parseRgb(input);
     if (!rgb) {

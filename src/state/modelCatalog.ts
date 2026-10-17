@@ -70,3 +70,30 @@ export function endpointLabel(entry: ModelCatalogEntry | undefined): EndpointLab
   }
   return { text: `${host}에서 실행 중`, unreachable: false, title: baseUrl };
 }
+
+/** True for an all-caps alphanumeric quantization/format tag such as "FP8" or "INT4". */
+function isFormatTag(token: string): boolean {
+  return /^[A-Z0-9]{2,8}$/.test(token) && /\d/.test(token);
+}
+
+/**
+ * Derive a short, readable label from a raw HF model id — e.g.
+ * "huihui-ai/Huihui-Qwen3.8-27B-abliterated" -> "Qwen3.8-27B (abliterated)"
+ * "Qwen/Qwen3.8-Flash-Next-FP8" -> "Qwen3.8-Flash-Next FP8"
+ * Strips the HF org, drops a leading vendor tag ahead of the "Qwen..." name,
+ * then folds a trailing lowercase qualifier into parens or a trailing
+ * all-caps format tag into a plain suffix.
+ */
+export function shortModelName(id: string): string {
+  const base = id.split("/").pop() ?? id;
+  const parts = base.split("-").filter(Boolean);
+  const qwenIndex = parts.findIndex((part) => /^qwen/i.test(part));
+  const trimmed = qwenIndex > 0 ? parts.slice(qwenIndex) : parts;
+  if (trimmed.length <= 1) return trimmed.join("-") || base;
+
+  const last = trimmed[trimmed.length - 1] ?? "";
+  const head = trimmed.slice(0, -1).join("-");
+  if (isFormatTag(last)) return `${head} ${last}`;
+  if (/^[a-z]+$/.test(last)) return `${head} (${last})`;
+  return trimmed.join("-");
+}

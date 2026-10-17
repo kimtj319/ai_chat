@@ -6,6 +6,8 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DocumentViewer } from "./DocumentViewer";
 import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { PageHeader } from "./PageHeader";
+import { useFileDrop } from "../hooks/useFileDrop";
+import { errorMessage } from "../state/friendlyError";
 import "./DocumentsPage.css";
 
 /**
@@ -71,7 +73,6 @@ export function DocumentsPage({ onBack }: Props) {
   const [filter, setFilter] = useState("");
   const [confirming, setConfirming] = useState<RagDocument[] | null>(null);
   const [viewing, setViewing] = useState<RagDocument | null>(null);
-  const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -204,7 +205,7 @@ export function DocumentsPage({ onBack }: Props) {
           return next;
         });
       } catch (err) {
-        failures.push(`${doc.name}: ${err instanceof Error ? err.message : String(err)}`);
+        failures.push(`${doc.name}: ${errorMessage(err)}`);
       }
     }
     setBusy(new Set());
@@ -233,6 +234,10 @@ export function DocumentsPage({ onBack }: Props) {
   const working = busy.size > 0 || progress !== null;
   const hasAny = documents.length + shared.length > 0;
   const canUpload = enabled && !working;
+  // 파일을 끌 때만, 그리고 자식 행을 넘나들어도 깜박이지 않게(깊이를 센다).
+  const { isDragging, dropHandlers } = useFileDrop((files) => {
+    if (canUpload) void upload(files);
+  });
   const openPicker = () => fileInput.current?.click();
 
   return (
@@ -243,7 +248,8 @@ export function DocumentsPage({ onBack }: Props) {
         subtitle={loading ? "불러오는 중…" : `내 문서 ${documents.length}개${sharedCount > 0 ? ` · 전체 공개 ${sharedCount}개` : ""}`}
         actions={
           <>
-            {documents.length + shared.length > 3 && (
+            {/* 거르는 중이면 문서가 줄어도 칸을 남긴다 — 사라지면 걸린 거르기를 풀 길이 없다. */}
+            {(documents.length + shared.length > 3 || filter !== "") && (
               <input
                 type="search"
                 className="documents-filter"
@@ -272,17 +278,8 @@ export function DocumentsPage({ onBack }: Props) {
 
       <div
         className="documents-body"
-        data-dragging={dragging || undefined}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (enabled && !working) setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          if (enabled && !working) pick(e.dataTransfer.files);
-        }}
+        data-dragging={(isDragging && canUpload) || undefined}
+        {...dropHandlers}
       >
         {/* 알림은 목록과 함께 스크롤되지 않는다. 예전에는 맨 위에만 그려서,
             문서가 여남은 개만 돼도 실패 문구가 화면 밖에 있었다 — 올린 사람

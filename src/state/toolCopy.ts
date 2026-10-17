@@ -111,6 +111,10 @@ export const TOOL_COPY: Record<string, { short: string; long: string }> = {
     short: "크론 표현식의 뜻과 다음 실행 시각을 알려줍니다.",
     long: "분·시·일·월·요일 다섯 자리 크론 표현식을 사람이 읽는 문장으로 풀어주고, 지정한 시간대 기준으로 다음 실행 시각들을 보여줍니다. *, 목록(1,2,3), 범위(1-5), 간격(*/15), 영문 월·요일 약자를 지원합니다. 2월 30일처럼 영원히 오지 않는 조건이면 그렇다고 알려줍니다.",
   },
+  create_document: {
+    short: "정리한 내용을 내려받을 문서로 만듭니다.",
+    long: "모델이 정리한 본문(마크다운)을 문서로 만들어 대화에 다운로드 상자를 띄웁니다. 상자에서 PDF·Markdown·TXT 로 받을 수 있습니다. 머리의 대화 저장과 달리 주고받은 대화 전체가 아니라 정리한 문서 하나만 받습니다. 파일은 누르는 순간 브라우저에서 만들어지고 서버에 따로 저장되지 않습니다.",
+  },
   url_parse: {
     short: "URL을 구성 요소로 분해합니다.",
     long: "URL을 스킴, 호스트, 포트, 경로와 각 구간, 쿼리 파라미터, 프래그먼트로 나눠 보여줍니다. 쿼리는 퍼센트 디코딩해 이름과 값의 쌍으로 주고 같은 키가 여러 번 나와도 순서대로 유지합니다. 호스트가 IP인지 도메인인지, 퓨니코드라면 원래 유니코드 형태가 무엇인지도 알려줍니다. 비밀번호는 있는지 여부만 알리고 값은 보여주지 않습니다.",
@@ -275,6 +279,11 @@ export const PARAM_COPY: Record<string, Record<string, string>> = {
     count: "보여 줄 다음 실행 시각의 개수입니다(기본 5, 최대 20).",
     timezone: '일정을 해석할 시간대입니다. 예: "Asia/Seoul". 기본은 UTC입니다.',
   },
+  create_document: {
+    title: "문서 제목입니다. 받는 파일의 이름이 됩니다.",
+    content: "문서 본문 전체입니다(마크다운: 제목·목록·표 사용 가능).",
+    format: "사용자가 원한 형식입니다(pdf·md·txt). 상자에서 첫 단추가 됩니다.",
+  },
   url_parse: {
     url: '분해할 전체 주소입니다. 예: "https://user:pass@example.com:8443/a/b?x=1&x=2#frag"',
   },
@@ -306,6 +315,7 @@ export const TOOL_VERBS: Record<string, string> = {
   http_fetch: "웹 페이지 읽기",
   get_current_time: "시간 확인",
   calculator: "계산",
+  create_document: "문서 만들기",
 };
 
 const GENERIC_VERB = "도구 사용";

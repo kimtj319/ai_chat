@@ -65,18 +65,6 @@ export function levelEnabled(level: Level): boolean {
   return RANK[level] >= RANK[configuredLevel()];
 }
 
-/**
- * 평소에는 안 남기지만 문제를 쫓을 때 켜는 줄.
- *
- * console.log 를 쓰지 않는 이유: 지금 있는 121줄은 전부 "남아야 하는" 줄이고,
- * 레벨을 도입하면서 그것들을 하나씩 분류하는 것은 이 작업의 범위가 아니다.
- * 새로 더하는 상세 기록만 이 문을 쓰면, 기존 동작은 그대로 두고도 LOG_LEVEL 로
- * 조절할 수 있는 자리가 생긴다.
- */
-export function debug(...args: unknown[]): void {
-  if (levelEnabled("debug")) console.log(...args);
-}
-
 /* --------------------------------------------------------------- console */
 
 let installed = false;

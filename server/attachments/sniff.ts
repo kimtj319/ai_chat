@@ -175,10 +175,7 @@ function refusedImageMime(buf: Buffer): string | null {
   return null;
 }
 
-/**
- * Classify an upload. `declaredMime` is accepted only as a tiebreaker for the
- * stored text mime; it never decides the kind.
- */
+/** Classify an upload. */
 export function sniffAttachment(buf: Buffer, limits: { maxImageBytes: number; maxTextBytes: number }): SniffResult {
   if (buf.length === 0) {
     return { ok: false, status: 400, code: "unsupported_type", message: "빈 파일은 올릴 수 없습니다." };

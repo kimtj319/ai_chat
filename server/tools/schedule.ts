@@ -41,6 +41,7 @@ export const scheduleTaskTool: ToolDefinition = {
       },
     },
     required: ["run_at", "instruction"],
+    additionalProperties: false,
   },
   async execute(args: { run_at?: string; instruction?: string; use_browser?: boolean }, ctx?: ToolContext) {
     const { ownerId, conversationId, browserControl } = requireContext(ctx);
@@ -67,7 +68,7 @@ export const listScheduledTasksTool: ToolDefinition = {
   name: "list_scheduled_tasks",
   category: "schedule",
   description: "List the user's scheduled tasks (pending ones and recent results), with their ids and times in Korea time.",
-  parameters: { type: "object", properties: {} },
+  parameters: { type: "object", properties: {}, additionalProperties: false },
   async execute(_args: unknown, ctx?: ToolContext) {
     const { ownerId, conversationId } = requireContext(ctx);
     const tasks = await listSchedules(ownerId);
@@ -91,6 +92,7 @@ export const cancelScheduledTaskTool: ToolDefinition = {
     type: "object",
     properties: { id: { type: "string", description: "Scheduled task id." } },
     required: ["id"],
+    additionalProperties: false,
   },
   async execute(args: { id?: string }, ctx?: ToolContext) {
     const { ownerId } = requireContext(ctx);

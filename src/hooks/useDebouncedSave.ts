@@ -13,13 +13,18 @@ export function useDebouncedSave<T>(value: T, save: (value: T) => Promise<unknow
   const isFirstRun = useRef(true);
   const saveRef = useRef(save);
   saveRef.current = save;
+  // The change the timer has not saved yet. Leaving the panel (뒤로, or a
+  // conversation switch that unmounts the composer) must not drop it.
+  const pendingRef = useRef<{ value: T } | null>(null);
 
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false;
       return;
     }
+    pendingRef.current = { value };
     const timeout = setTimeout(() => {
+      pendingRef.current = null;
       setStatus("saving");
       saveRef.current(value)
         .then(() => setStatus("saved"))
@@ -27,6 +32,20 @@ export function useDebouncedSave<T>(value: T, save: (value: T) => Promise<unknow
     }, delayMs);
     return () => clearTimeout(timeout);
   }, [value, delayMs]);
+
+  // Unmount only: save what is still pending right away. `save` is the closure
+  // from the last render, so it still targets the conversation it was edited in
+  // (the store guards the late response by conversation id). Nothing is left on
+  // screen to show a failure, so it is swallowed.
+  useEffect(
+    () => () => {
+      const pending = pendingRef.current;
+      if (!pending) return;
+      pendingRef.current = null;
+      saveRef.current(pending.value).catch(() => undefined);
+    },
+    [],
+  );
 
   return status;
 }

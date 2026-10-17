@@ -15,10 +15,8 @@ import crypto from "node:crypto";
 import express, { Router } from "express";
 import { config } from "../config.js";
 import { isValidId } from "../storage/paths.js";
-import { getUser } from "../storage/userStore.js";
-import { withLock } from "../storage/mutex.js";
+import { userNamesById } from "../storage/userStore.js";
 import { sniffAttachment } from "../attachments/sniff.js";
-import { pdfToText } from "../rag/pdf.js";
 import {
   deleteDocumentFiles,
   getDocument,
@@ -29,15 +27,26 @@ import {
   type OwnedRagDocument,
   documentSourcePath,
   readDocumentText,
-  saveDocumentChunks,
   saveDocumentMeta,
   saveDocumentSource,
   saveDocumentText,
 } from "../storage/documentStore.js";
-import { RagEngineError, countChunks, indexDocument, ragConfigured, reindexScope, removeDocument } from "../rag/engineIndex.js";
+import { RagEngineError, countChunks, ragConfigured, reindexScope, removeDocument } from "../rag/engineIndex.js";
+import {
+  MIN_PDF_CHARS,
+  NO_TEXT_IN_PDF,
+  extractPdf,
+  indexLock,
+  isPdf,
+  readScope,
+  runIndex,
+  tooLargeMessage,
+  tooLargePdfMessage,
+} from "../rag/documentIndexing.js";
 import { describeReport, preprocess } from "../rag/preprocess.js";
 import { partName, splitForIndexing } from "../rag/split.js";
 import type { RagDocument, RagDocumentScope, SharedRagDocument } from "../types.js";
+import { sendError } from "./respond.js";
 
 export const documentsRouter = Router();
 
@@ -83,21 +92,7 @@ type DocumentErrorCode =
   | "invalid_input"
   | "index_failed";
 
-function fail(res: express.Response, status: number, code: DocumentErrorCode, error: string) {
-  res.status(status).json({ error, code });
-}
-
-/**
- * Indexing is serialised per account.
- *
- * Not a rate limit — a queue. The engine embeds every chunk as it indexes, so
- * two uploads at once do not go twice as fast; they contend for the same
- * embedder and both get slower. One at a time per person keeps the cost of a
- * large upload paid by the person who asked for it.
- */
-function indexLock<T>(ownerId: string, fn: () => Promise<T>): Promise<T> {
-  return withLock(`rag:${ownerId}`, fn);
-}
+const fail = sendError<DocumentErrorCode>;
 
 function requireEnabled(res: express.Response): boolean {
   if (ragConfigured()) return true;
@@ -130,11 +125,7 @@ documentsRouter.get("/documents", async (req, res, next) => {
  * 지어내지 않는다. 같은 소유자가 여러 문서를 올렸어도 계정은 한 번만 읽는다.
  */
 async function withOwnerNames(docs: OwnedRagDocument[]): Promise<SharedRagDocument[]> {
-  const names = new Map<string, string>();
-  for (const ownerId of new Set(docs.map((d) => d.ownerId))) {
-    const user = await getUser(ownerId).catch(() => null);
-    if (user) names.set(ownerId, user.name);
-  }
+  const names = await userNamesById(docs.map((d) => d.ownerId));
   return docs.map((d) => ({ ...d, ownerName: names.get(d.ownerId) ?? null }));
 }
 
@@ -255,8 +246,8 @@ documentsRouter.post(
           chunks: countChunks(part.text),
           chunkedBy: "rule",
           scope,
+          // runIndex writes the "not finished yet" failure before indexing.
           status: "failed",
-          error: "색인이 아직 끝나지 않았습니다.",
           createdAt: now,
           updatedAt: now,
         };
@@ -312,50 +303,55 @@ function sendFail(res: express.Response, code: DocumentErrorCode, error: string)
 documentsRouter.patch("/documents/:id", express.json({ limit: "8kb" }), async (req, res, next) => {
   try {
     if (!requireEnabled(res)) return;
-    const doc = await loadOwn(req.ownerId, req.params.id);
-    if (!doc) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
+    const found = await loadOwn(req.ownerId, req.params.id);
+    if (!found) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
 
     const scope = readScope((req.body as { scope?: unknown } | undefined)?.scope);
     if (scope === null || scope === undefined) {
       return fail(res, 400, "invalid_input", "공개 범위는 private 또는 shared 여야 합니다.");
     }
 
-    // 색인이 이미 끝난 문서는 청크를 그대로 두고 권한만 바꾼다 — 문서가
-    // 조금도 안 바뀌었는데 매번 처음부터(특히 LLM 청킹을) 다시 하는 것은
-    // 낭비이고, 큰 문서일수록 그 낭비가 응답 없는 수십 초로 불어난다.
-    // 실패했던 문서만 원문부터 다시 자르는 아래 경로로 간다 — 그 문서는
-    // 지금 청크가 마지막 성공분과 같다는 보장이 없기 때문이다.
-    const existingChunks = doc.status === "ready" ? await readDocumentChunks(req.ownerId, doc.id) : null;
-    // 저장된 청크 수가 색인 때 기록한 수와 같을 때만 빠른 경로를 탄다. 권한이 걸린
-    // 자리라서다: 빠른 경로는 같은 DOCID 를 덮어쓸 뿐 지우지 않으므로, 수가 모자라면
-    // 남은 옛 청크가 **이전 권한 그대로** 검색에 걸린다 — 공개→비공개 전환에서
-    // 그것은 비공개 문서가 모두에게 보인다는 뜻이다. 어긋나면 옛 청크를 기록된 수만큼
-    // 지우고 다시 넣는 아래의 전체 경로로 간다.
-    if (existingChunks && existingChunks.length > 0 && existingChunks.length === doc.chunks) {
-      const chunkTexts = existingChunks.map((c) => (typeof c === "string" ? c : c.text));
-      try {
-        await indexLock(req.ownerId, () =>
-          reindexScope({ docId: doc.id, ownerId: req.ownerId, title: doc.name, scope, chunkTexts }),
-        );
-      } catch (err) {
-        const message = err instanceof RagEngineError ? err.message : err instanceof Error ? err.message : String(err);
-        return res.status(502).json({ error: message, code: "index_failed", document: doc });
+    // 여기부터는 색인 잠금 안에서, 문서를 **다시 읽고** 한다. 위에서 읽은 뒤 잠금을
+    // 기다리는 사이에 DELETE 가 청크와 파일을 지웠다면, 읽어 둔 사본으로 계속하는
+    // 것은 지운 문서의 청크를 요청한 범위(공개일 수도 있다)로 다시 넣고 메타 파일을
+    // 새로 쓰는 일이다 — 지운 문서가 목록과 모두의 검색에 돌아온다.
+    await indexLock(req.ownerId, async () => {
+      const doc = await loadOwn(req.ownerId, found.id);
+      if (!doc) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
+
+      // 색인이 이미 끝난 문서는 청크를 그대로 두고 권한만 바꾼다 — 문서가
+      // 조금도 안 바뀌었는데 매번 처음부터(특히 LLM 청킹을) 다시 하는 것은
+      // 낭비이고, 큰 문서일수록 그 낭비가 응답 없는 수십 초로 불어난다.
+      // 실패했던 문서만 원문부터 다시 자르는 아래 경로로 간다 — 그 문서는
+      // 지금 청크가 마지막 성공분과 같다는 보장이 없기 때문이다.
+      const existingChunks = doc.status === "ready" ? await readDocumentChunks(req.ownerId, doc.id) : null;
+      // 저장된 청크 수가 색인 때 기록한 수와 같을 때만 빠른 경로를 탄다. 권한이 걸린
+      // 자리라서다: 빠른 경로는 같은 DOCID 를 덮어쓸 뿐 지우지 않으므로, 수가 모자라면
+      // 남은 옛 청크가 **이전 권한 그대로** 검색에 걸린다 — 공개→비공개 전환에서
+      // 그것은 비공개 문서가 모두에게 보인다는 뜻이다. 어긋나면 옛 청크를 기록된 수만큼
+      // 지우고 다시 넣는 아래의 전체 경로로 간다.
+      if (existingChunks && existingChunks.length > 0 && existingChunks.length === doc.chunks) {
+        const chunkTexts = existingChunks.map((c) => (typeof c === "string" ? c : c.text));
+        try {
+          await reindexScope({ docId: doc.id, ownerId: req.ownerId, title: doc.name, scope, chunkTexts });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return res.status(502).json({ error: message, code: "index_failed", document: doc });
+        }
+        const updated: RagDocument = { ...doc, scope, updatedAt: new Date().toISOString() };
+        await saveDocumentMeta(req.ownerId, updated);
+        return res.json({ document: updated });
       }
-      const updated: RagDocument = { ...doc, scope, updatedAt: new Date().toISOString() };
-      await saveDocumentMeta(req.ownerId, updated);
-      return res.json({ document: updated });
-    }
 
-    const text = await readDocumentText(req.ownerId, doc.id);
-    if (text === null) return fail(res, 404, "not_found", "문서 원문을 찾을 수 없습니다.");
+      const text = await readDocumentText(req.ownerId, doc.id);
+      if (text === null) return fail(res, 404, "not_found", "문서 원문을 찾을 수 없습니다.");
 
-    const stored = await indexLock(req.ownerId, () =>
-      runIndex(req.ownerId, { ...doc, scope, chunks: countChunks(text) }, text, { previousChunks: doc.chunks }),
-    );
-    if (stored.status === "failed") {
-      return res.status(502).json({ error: stored.error, code: "index_failed", document: stored });
-    }
-    res.json({ document: stored });
+      const stored = await runIndex(req.ownerId, { ...doc, scope, chunks: countChunks(text) }, text, { previousChunks: doc.chunks });
+      if (stored.status === "failed") {
+        return res.status(502).json({ error: stored.error, code: "index_failed", document: stored });
+      }
+      res.json({ document: stored });
+    });
   } catch (err) {
     next(err);
   }
@@ -365,19 +361,24 @@ documentsRouter.patch("/documents/:id", express.json({ limit: "8kb" }), async (r
 documentsRouter.post("/documents/:id/retry", async (req, res, next) => {
   try {
     if (!requireEnabled(res)) return;
-    const doc = await loadOwn(req.ownerId, req.params.id);
-    if (!doc) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
+    const found = await loadOwn(req.ownerId, req.params.id);
+    if (!found) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
 
-    const text = await readDocumentText(req.ownerId, doc.id);
-    if (text === null) return fail(res, 404, "not_found", "문서 원문을 찾을 수 없습니다.");
+    // Re-read under the lock, for the same reason PATCH does: a DELETE may have
+    // removed the document while this request waited for its turn.
+    await indexLock(req.ownerId, async () => {
+      const doc = await loadOwn(req.ownerId, found.id);
+      if (!doc) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
 
-    const stored = await indexLock(req.ownerId, () =>
-      runIndex(req.ownerId, { ...doc, chunks: countChunks(text) }, text, { previousChunks: doc.chunks }),
-    );
-    if (stored.status === "failed") {
-      return res.status(502).json({ error: stored.error, code: "index_failed", document: stored });
-    }
-    res.json({ document: stored });
+      const text = await readDocumentText(req.ownerId, doc.id);
+      if (text === null) return fail(res, 404, "not_found", "문서 원문을 찾을 수 없습니다.");
+
+      const stored = await runIndex(req.ownerId, { ...doc, chunks: countChunks(text) }, text, { previousChunks: doc.chunks });
+      if (stored.status === "failed") {
+        return res.status(502).json({ error: stored.error, code: "index_failed", document: stored });
+      }
+      res.json({ document: stored });
+    });
   } catch (err) {
     next(err);
   }
@@ -455,8 +456,14 @@ documentsRouter.delete("/documents/:id", async (req, res, next) => {
 
     // Engine first. The other order leaves a document that has vanished from
     // the page but still answers searches, with nothing left to delete it by.
-    await indexLock(req.ownerId, () => removeDocument(doc.id, doc.chunks));
-    await deleteDocumentFiles(req.ownerId, doc.id);
+    // Both inside the index lock, and on a fresh read: a PATCH or retry queued
+    // behind this then finds the document gone instead of re-indexing it.
+    await indexLock(req.ownerId, async () => {
+      const current = await loadOwn(req.ownerId, doc.id);
+      if (!current) return;
+      await removeDocument(current.id, current.chunks);
+      await deleteDocumentFiles(req.ownerId, current.id);
+    });
     res.status(204).end();
   } catch (err) {
     if (err instanceof RagEngineError) {
@@ -465,44 +472,6 @@ documentsRouter.delete("/documents/:id", async (req, res, next) => {
     next(err);
   }
 });
-
-/** `%PDF-` 로 시작하는가. 확장자가 아니라 바이트로 가린다 — 이름은 누구나 바꾼다. */
-function isPdf(buf: Buffer): boolean {
-  return buf.length > 5 && buf.subarray(0, 5).toString("latin1") === "%PDF-";
-}
-
-/** 글자가 이보다 적으면 스캔본으로 본다. 쪽 번호 몇 개로 "글이 있다" 고 할 수는 없다. */
-const MIN_PDF_CHARS = 200;
-
-const NO_TEXT_IN_PDF =
-  "이 PDF 에서 글자를 찾지 못했습니다. 종이를 스캔해 넣은 문서이거나 내용이 전부 그림입니다 — " +
-  "그런 파일은 글자가 아니라 사진이라 검색할 수 없습니다. 글자로 된 PDF 이거나 .txt·.md 파일이면 됩니다.";
-
-function extractPdf(buf: Buffer): string {
-  try {
-    return pdfToText(buf);
-  } catch {
-    // 깨진 PDF 한 건이 업로드 전체를 500 으로 만들 이유가 없다. 글자가
-    // 없는 것과 같이 취급하면 사용자가 읽을 수 있는 설명이 나간다.
-    return "";
-  }
-}
-
-function tooLargePdfMessage(): string {
-  return `PDF 가 너무 큽니다. ${Math.round(config.ragPdfMaxBytes / (1024 * 1024))}MB까지 올릴 수 있습니다.`;
-}
-
-function tooLargeMessage(): string {
-  const kb = Math.round(config.ragDocMaxBytes / 1024);
-  return `문서가 너무 큽니다. ${kb}KB까지 올릴 수 있습니다. 나누어 올려 주세요.`;
-}
-
-/** `undefined` = not given, `null` = given but not a scope. Kept apart because they mean different answers. */
-function readScope(raw: unknown): RagDocumentScope | null | undefined {
-  if (raw === undefined || raw === null || raw === "") return undefined;
-  if (raw === "private" || raw === "shared") return raw;
-  return null;
-}
 
 async function loadOwn(ownerId: string, id: unknown): Promise<RagDocument | null> {
   if (typeof id !== "string" || !isValidId(id)) return null;
@@ -524,53 +493,4 @@ async function loadReadable(
   if (typeof id !== "string") return null;
   const shared = await findSharedDocument(id);
   return shared ? { ownerId: shared.ownerId, doc: shared } : null;
-}
-
-/**
- * Index, and record what happened either way.
- *
- * A failure is STORED, not just returned: the document stays on the page marked
- * as failed, with its text kept, so it can be retried or removed. Throwing away
- * the upload because the engine was busy would make the person do the work
- * again for a reason that had nothing to do with them.
- */
-async function runIndex(
-  ownerId: string,
-  meta: RagDocument,
-  text: string,
-  { previousChunks, onProgress }: { previousChunks: number; onProgress?: (done: number, total: number) => void },
-): Promise<RagDocument> {
-  const pending: RagDocument = { ...meta, status: "failed", error: "색인이 아직 끝나지 않았습니다.", updatedAt: new Date().toISOString() };
-  await saveDocumentMeta(ownerId, pending);
-  try {
-    const result = await indexDocument({
-      docId: meta.id,
-      ownerId,
-      title: meta.name,
-      text,
-      scope: meta.scope,
-      previousChunks,
-      ...(onProgress ? { onProgress } : {}),
-    });
-    // The chunk bodies are kept so the viewer can show what was actually
-    // indexed. Re-cutting the text later would not reproduce them when the
-    // boundaries came from a model.
-    await saveDocumentChunks(ownerId, meta.id, result.texts);
-    const ready: RagDocument = {
-      ...meta,
-      // The real count, replacing the estimate written before indexing.
-      chunks: result.chunks,
-      chunkedBy: result.method,
-      status: "ready",
-      updatedAt: new Date().toISOString(),
-    };
-    delete ready.error;
-    await saveDocumentMeta(ownerId, ready);
-    return ready;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const failed: RagDocument = { ...pending, error: message, updatedAt: new Date().toISOString() };
-    await saveDocumentMeta(ownerId, failed);
-    return failed;
-  }
 }

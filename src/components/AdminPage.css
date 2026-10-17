@@ -66,8 +66,6 @@
 }
 
 .admin-filters {
-  display: flex;
-  gap: var(--space-3);
   margin-bottom: var(--space-9);
 }
 
@@ -78,7 +76,6 @@
   border: none;
   border-radius: var(--radius-full);
   padding: var(--space-4) var(--space-8);
-  background: var(--surface-container);
   color: var(--on-surface-variant);
   font-size: var(--text-sm);
   transition: background-color 0.15s ease, color 0.15s ease, scale var(--press-out) var(--press-ease);
@@ -143,7 +140,6 @@
 .admin-table-scroll {
   overflow-x: auto;
   border-radius: var(--radius-md);
-  background: var(--surface-container-high);
 }
 
 .admin-table {
@@ -236,7 +232,6 @@
   padding: var(--space-6) var(--space-7);
   margin-bottom: var(--space-6);
   border-radius: var(--radius-sm);
-  background: var(--surface-container);
 }
 
 .admin-groups-head {
@@ -262,8 +257,6 @@
 
 .admin-group-add input,
 .admin-group-rename input {
-  background: var(--surface);
-  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: var(--space-3) var(--space-5);
   color: var(--on-surface);
@@ -337,8 +330,6 @@
 }
 
 .admin-cell-group select {
-  background: var(--surface-container);
-  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-4);
   color: var(--on-surface);
@@ -368,7 +359,6 @@
   gap: var(--space-6);
   padding: var(--space-8) var(--space-9);
   border-radius: var(--radius-lg);
-  background: var(--surface-container);
 }
 
 .admin-model-head {
@@ -467,7 +457,6 @@
   gap: var(--space-5);
   padding: var(--space-8) var(--space-9);
   border-radius: var(--radius-lg);
-  background: var(--surface-container);
 }
 
 .admin-notice-form .field {

@@ -29,9 +29,9 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
       "title, address, visible text, and a numbered list of elements you can act on, like [e12]. " +
       "The user is signed in to their own accounts there, so do only what the user asked for. " +
       "Opens a background tab unless new_tab is false. The first visit to a site asks the user for permission; " +
+      "if they refuse you get an error — do not try that site again. " +
       "Use it only for work to do NOW: if the user's request names a time (\"11시에 …\", \"30분 뒤에 …\"), " +
-      "call schedule_task instead and do not open anything now. " +
-      "if they refuse you get an error — do not try that site again.",
+      "call schedule_task instead and do not open anything now.",
     parameters: {
       type: "object",
       properties: {
@@ -39,6 +39,7 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
         new_tab: { type: "boolean", description: "false reuses the tab of the most recent browser action. Default true." },
       },
       required: ["url"],
+      additionalProperties: false,
     },
     execute: relayed,
   },
@@ -55,6 +56,7 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
         tab_id: tabId,
         text_offset: { type: "integer", description: "Character offset to continue reading the page text from." },
       },
+      additionalProperties: false,
     },
     execute: relayed,
   },
@@ -72,6 +74,7 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
         tab_id: tabId,
       },
       required: ["ref"],
+      additionalProperties: false,
     },
     execute: relayed,
   },
@@ -91,6 +94,7 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
         tab_id: tabId,
       },
       required: ["ref", "text"],
+      additionalProperties: false,
     },
     execute: relayed,
   },
@@ -104,6 +108,7 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
         direction: { type: "string", enum: ["down", "up", "top", "bottom"], description: "Default down." },
         tab_id: tabId,
       },
+      additionalProperties: false,
     },
     execute: relayed,
   },
@@ -111,14 +116,14 @@ export const BROWSER_TOOLS: ToolDefinition[] = [
     name: "browser_back",
     category: "browser",
     description: "Go back to the previous page in the tab, like the browser's back button, and return that page.",
-    parameters: { type: "object", properties: { tab_id: tabId } },
+    parameters: { type: "object", properties: { tab_id: tabId }, additionalProperties: false },
     execute: relayed,
   },
   {
     name: "browser_tabs",
     category: "browser",
     description: "List the user's open Chrome tabs on sites they have allowed, with their tab ids. Tabs on other sites are not shown.",
-    parameters: { type: "object", properties: {} },
+    parameters: { type: "object", properties: {}, additionalProperties: false },
     execute: relayed,
   },
 ];

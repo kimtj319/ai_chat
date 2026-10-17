@@ -52,7 +52,7 @@
 }
 
 /* Notices are cards tinted with their own meaning, not slabs of colour. */
-:is(.message-note, .endpoint-warning, .library-warning, .tool-detail-warning) {
+:is(.endpoint-warning, .library-warning, .tool-detail-warning) {
   border: 1px solid color-mix(in srgb, var(--warning) 22%, transparent);
   box-shadow: inset 0 1px 0 var(--glass-card-highlight);
 }
@@ -123,6 +123,9 @@
 .btn-primary,
 .btn-danger {
   border: 1px solid transparent;
+}
+
+.btn-primary {
   box-shadow:
     0 4px 14px color-mix(in srgb, var(--primary) 30%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.28);
@@ -186,7 +189,6 @@
 .board-tab {
   margin-bottom: 0;
   padding: var(--space-3) var(--space-7);
-  border-bottom: none;
   border-radius: var(--radius-full);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -194,10 +196,10 @@
 .board-tab[data-selected] {
   background: var(--primary-container);
   color: var(--on-primary-container);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
-.admin-filter.active,
-.board-tab[data-selected] {
+.admin-filter.active {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
@@ -213,8 +215,8 @@
 }
 
 /* Every page's way back is the same glass circle (library, documents, tools,
-   admin, board — the board's one also steps back from a post to the list). */
-:is([data-back-to-chat], .board-back) {
+   admin, board). */
+[data-back-to-chat] {
   background: var(--glass-control);
   border: 1px solid var(--glass-card-border);
   box-shadow:
@@ -236,6 +238,7 @@
   background: color-mix(in srgb, var(--warning) 7%, var(--glass-control));
   border: 1px solid color-mix(in srgb, var(--warning) 16%, transparent);
   border-left: 3px solid color-mix(in srgb, var(--warning) 60%, transparent);
+  box-shadow: inset 0 1px 0 var(--glass-card-highlight);
 }
 
 /* An off switch has to read as a switch, not as an empty slot. */

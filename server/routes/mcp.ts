@@ -1,6 +1,6 @@
-import { Router, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { requireAdmin } from "../middleware/auth.js";
-import { assertRegisterableUrl, probeMcpServer, type McpToolDescriptor } from "../mcp/client.js";
+import { assertRegisterableUrl, probeMcpServer } from "../mcp/client.js";
 import { DISCOVERY_BUDGET_MS, ensureFresh, invalidate, prime, refresh, scheduleRefresh, snapshot } from "../mcp/discovery.js";
 import {
   adoptionCountFor,
@@ -11,8 +11,8 @@ import {
   setAdoption,
   setCredential,
   setHidden,
-  type AdoptionCounts,
 } from "../mcp/ownerPrefs.js";
+import { summarize, summaryContext } from "../mcp/serverSummary.js";
 import { toolSummaries } from "../mcp/toolAdapter.js";
 import {
   clampTimeoutMs,
@@ -35,7 +35,8 @@ import {
   updateServer,
 } from "../mcp/registryStore.js";
 import { listUsers } from "../storage/userStore.js";
-import type { McpErrorCode, McpServerRecord, McpServerSummary, OwnerMcpPrefs } from "../types.js";
+import type { McpErrorCode, McpServerRecord, McpServerSummary } from "../types.js";
+import { sendError } from "./respond.js";
 
 /**
  * The MCP registry API.
@@ -54,9 +55,7 @@ import type { McpErrorCode, McpServerRecord, McpServerSummary, OwnerMcpPrefs } f
 
 export const mcpRouter = Router();
 
-function fail(res: Response, status: number, code: McpErrorCode, error: string): void {
-  res.status(status).json({ error, code });
-}
+const fail = sendError<McpErrorCode>;
 
 const CREDENTIAL_MAX_CHARS = 4096;
 
@@ -74,66 +73,15 @@ function mayEdit(server: McpServerRecord, userId: string, isAdmin: boolean): boo
   return isAdmin || server.createdBy === userId;
 }
 
-/**
- * The URL WITHOUT ITS QUERY, because a key can live there: the Alpha Vantage
- * builtin carries `?apikey=` since that server accepts no auth header, and this
- * summary goes to every signed-in account. The host is unaffected.
- */
-function publicUrl(raw: string): string {
-  try {
-    const url = new URL(raw);
-    url.search = "";
-    return url.toString();
-  } catch {
-    return raw.split("?")[0]!;
+/** The server named in the path, or null once a 404 has been sent. */
+async function loadServerOr404(req: Request, res: Response): Promise<{ id: string; server: McpServerRecord } | null> {
+  const id = normalizeServerId(req.params.id);
+  const server = id ? await getServer(id) : null;
+  if (!server || !id) {
+    fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    return null;
   }
-}
-
-function summarize(
-  server: McpServerRecord,
-  prefs: OwnerMcpPrefs,
-  counts: AdoptionCounts,
-  totalAccounts: number,
-  tools: McpToolDescriptor[],
-): McpServerSummary {
-  const url = publicUrl(server.url);
-  let host: string;
-  try {
-    host = new URL(server.url).host;
-  } catch {
-    host = url;
-  }
-  const state = snapshot(server.id);
-  return {
-    id: server.id,
-    name: server.name,
-    slug: server.slug,
-    description: server.description,
-    url,
-    host,
-    transport: server.transport,
-    origin: server.origin,
-    status: server.status,
-    createdBy: server.createdBy,
-    createdAt: server.createdAt,
-    updatedAt: server.updatedAt,
-    adoptedCount: adoptionCountFor(server, counts, totalAccounts),
-    authMode: server.authMode,
-    ...(server.authHeaderName ? { authHeaderName: server.authHeaderName } : {}),
-    requiresCredential: server.authMode === "header",
-    hasCredential: Boolean(prefs.credentials[server.id]),
-    health: state.health,
-    // The same adapter the prompt uses, so the list never advertises a tool the
-    // model was not actually given (a dropped name, a schema over budget).
-    tools: toolSummaries(server, tools),
-    ...(server.disabledReason ? { disabledReason: server.disabledReason } : {}),
-  };
-}
-
-/** Everything a summary needs that is the same for every server in one response. */
-async function summaryContext(ownerId: string): Promise<{ prefs: OwnerMcpPrefs; counts: AdoptionCounts; totalAccounts: number }> {
-  const [prefs, counts, users] = await Promise.all([readOwnerPrefs(ownerId), countAdoptions(), listUsers()]);
-  return { prefs, counts, totalAccounts: users.length };
+  return { id, server };
 }
 
 /**
@@ -261,9 +209,9 @@ mcpRouter.post("/mcp/servers", async (req, res, next) => {
  */
 mcpRouter.patch("/mcp/servers/:id", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
     if (!mayEdit(server, req.ownerId, req.user?.role === "admin")) {
       return fail(res, 403, "forbidden", "등록한 사용자 또는 관리자만 수정할 수 있습니다.");
     }
@@ -357,9 +305,9 @@ mcpRouter.patch("/mcp/servers/:id", async (req, res, next) => {
  */
 mcpRouter.delete("/mcp/servers/:id", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
     const isAdmin = req.user?.role === "admin";
     if (!mayEdit(server, req.ownerId, isAdmin)) {
       return fail(res, 403, "forbidden", "등록한 사용자 또는 관리자만 삭제할 수 있습니다.");
@@ -370,10 +318,9 @@ mcpRouter.delete("/mcp/servers/:id", async (req, res, next) => {
     const others = Math.max(total - (selfAdopted ? 1 : 0), 0);
     if (!isAdmin && others > 0) {
       return res.status(409).json({
-        error: "in_use",
+        error: `다른 사용자 ${others}명이 사용 중이라 삭제할 수 없습니다. 관리자에게 비활성화를 요청해 주세요.`,
         code: "in_use",
         adoptedCount: others,
-        message: `다른 사용자 ${others}명이 사용 중이라 삭제할 수 없습니다. 관리자에게 비활성화를 요청해 주세요.`,
       });
     }
     const removed = await deleteServer(id);
@@ -399,9 +346,9 @@ mcpRouter.delete("/mcp/servers/:id", async (req, res, next) => {
  */
 mcpRouter.put("/mcp/servers/:id/adoption", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { server } = found;
     const adopted = (req.body ?? {}).adopted;
     if (typeof adopted !== "boolean") return fail(res, 400, "invalid_input", "adopted는 true 또는 false여야 합니다.");
     const prefs = await setAdoption(req.ownerId, server, adopted);
@@ -420,9 +367,9 @@ mcpRouter.put("/mcp/servers/:id/adoption", async (req, res, next) => {
  */
 mcpRouter.put("/mcp/servers/:id/hidden", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id } = found;
     const hidden = (req.body ?? {}).hidden;
     if (typeof hidden !== "boolean") return fail(res, 400, "invalid_input", "hidden은 true 또는 false여야 합니다.");
     const prefs = await setHidden(req.ownerId, id, hidden);
@@ -438,9 +385,9 @@ mcpRouter.put("/mcp/servers/:id/hidden", async (req, res, next) => {
  */
 mcpRouter.put("/mcp/servers/:id/credential", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
     const raw = (req.body ?? {}).credential;
     if (raw !== null && typeof raw !== "string") {
       return fail(res, 400, "invalid_input", "credential은 문자열 또는 null이어야 합니다.");
@@ -461,9 +408,9 @@ mcpRouter.put("/mcp/servers/:id/credential", async (req, res, next) => {
 /** POST /api/mcp/servers/:id/probe — discovery now, with this owner's credential. */
 mcpRouter.post("/mcp/servers/:id/probe", async (req, res, next) => {
   try {
-    const id = normalizeServerId(req.params.id);
-    const server = id ? await getServer(id) : null;
-    if (!server || !id) return fail(res, 404, "not_found", "존재하지 않는 MCP 서버입니다.");
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
     const credential = await getCredential(req.ownerId, id);
     const state = await refresh(server, credential);
     res.json({ health: state.health, tools: toolSummaries(server, state.tools) });

@@ -1,4 +1,4 @@
-import { streamChatCompletion, countPromptTokens, estimatePromptTokens, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { streamChatCompletion, countPromptTokens, estimatePromptTokens, stripThinkBlocks, type ChatCompletionRequestBody } from "../vllm/client.js";
 import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { SAFETY_MARGIN_TOKENS } from "./contextBudget.js";
@@ -6,8 +6,6 @@ import { buildHistoryMessages, type HistoryBuildOptions, type VllmMessage } from
 import { saveHistorySummary } from "../storage/conversationStore.js";
 import { DEFAULT_SETTINGS } from "../types.js";
 import type { Conversation, HistorySummary, StoredMessage } from "../types.js";
-
-export type { HistorySummary } from "../types.js";
 
 /**
  * Summarises a conversation's older turns ONCE, stores the summary on the
@@ -279,14 +277,6 @@ export function historyBuildOptions(conversation: Conversation): HistoryBuildOpt
   return { prelude: renderHistorySummary(active.summary), fromIndex: active.index + 1 };
 }
 
-/** system prompt -> stored summary (if any) -> the messages after it. */
-export async function buildHistoryWithSummary(
-  conversation: Conversation,
-  ownerId: string,
-): Promise<VllmMessage[]> {
-  return buildHistoryMessages(conversation, ownerId, historyBuildOptions(conversation));
-}
-
 export interface HistorySummaryInput {
   conversation: Conversation;
   model: string;
@@ -497,8 +487,7 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
  * a runaway one must not be stored at full length whatever max_tokens did.
  */
 function cleanSummary(raw: string): string | null {
-  const text = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+  const text = stripThinkBlocks(raw)
     // The model copies the "[이전 요약]" marker off the transcript it was given
     // (measured), which then sits under this module's own header as a second,
     // contradictory label. One line, always at the top when it appears.

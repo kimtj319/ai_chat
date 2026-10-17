@@ -14,8 +14,18 @@ type OwnerMap = Record<string, string>;
 const LOCK = "model-owners";
 const key = (baseUrl: string) => baseUrl.trim().toLowerCase();
 
+/** 권한을 볼 때 쓴다. 못 읽으면 "등록자 없음" 으로 넘어간다 — 요청을 실패시키지 않는다. */
 export async function readModelOwners(): Promise<OwnerMap> {
   return (await readJsonFile<OwnerMap>(modelOwnersFile()).catch(() => null)) ?? {};
+}
+
+/**
+ * 고쳐 쓸 때 쓴다. 이 파일은 모든 계정이 함께 쓰고 통째로 다시 쓰이므로, 읽기
+ * 실패는 쓰기 실패여야 한다 — 빈 것으로 보고 계속하면 다음 쓰기가 제 항목 하나만
+ * 남기고, 다른 계정은 모두 자기 엔드포인트를 잃는다(vllm/access.ts owns).
+ */
+async function readForUpdate(): Promise<OwnerMap> {
+  return (await readJsonFile<OwnerMap>(modelOwnersFile())) ?? {};
 }
 
 export async function modelOwnerOf(baseUrl: string): Promise<string | null> {
@@ -24,17 +34,33 @@ export async function modelOwnerOf(baseUrl: string): Promise<string | null> {
 
 export async function setModelOwner(baseUrl: string, ownerId: string): Promise<void> {
   await withLock(LOCK, async () => {
-    const owners = await readModelOwners();
+    const owners = await readForUpdate();
     await writeJsonFileAtomic(modelOwnersFile(), { ...owners, [key(baseUrl)]: ownerId });
   });
 }
 
 export async function removeModelOwner(baseUrl: string): Promise<void> {
   await withLock(LOCK, async () => {
-    const owners = await readModelOwners();
+    const owners = await readForUpdate();
     if (!(key(baseUrl) in owners)) return;
     delete owners[key(baseUrl)];
     await writeJsonFileAtomic(modelOwnersFile(), owners);
+  });
+}
+
+/**
+ * 이 계정이 등록한 엔드포인트의 등록자 기록을 모두 지운다(계정 삭제). 엔드포인트
+ * 자체는 .model 에 등록자 없이 남는다 — 공용 자원 계정만 쓸 수 있다. 남겨 두면 같은
+ * id 로 다음에 가입한 사람이 그 엔드포인트를 쓰고 지울 수 있게 된다. 지운 수를 돌려준다.
+ */
+export async function removeModelOwnersOf(ownerId: string): Promise<number> {
+  return withLock(LOCK, async () => {
+    const owners = await readForUpdate();
+    const mine = Object.keys(owners).filter((baseUrl) => owners[baseUrl] === ownerId);
+    if (mine.length === 0) return 0;
+    for (const baseUrl of mine) delete owners[baseUrl];
+    await writeJsonFileAtomic(modelOwnersFile(), owners);
+    return mine.length;
   });
 }
 

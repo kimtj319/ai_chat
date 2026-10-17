@@ -1,4 +1,4 @@
-import { streamChatCompletion, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { streamChatCompletion, type ChatCompletionRequestBody, type VllmStreamChunk } from "../vllm/client.js";
 import { config, type VllmEndpoint } from "../config.js";
 import type { VllmMessage } from "./historyBuilder.js";
 
@@ -109,6 +109,11 @@ export function startTurnDeadline(
   };
 }
 
+/** A cancelled fetch (AbortError) or a stream loop that saw its signal fire ("aborted-by-user"). */
+export function isAbortError(err: unknown): boolean {
+  return err instanceof Error && (err.name === "AbortError" || err.message === "aborted-by-user");
+}
+
 function excerptReasoning(reasoning: string): string {
   const text = reasoning.trim();
   if (text.length <= MAX_REASONING_CHARS) return text;
@@ -164,6 +169,9 @@ function instruction(reasoning: string, reason: WrapUpReason): string {
  * Runs on the CLIENT's signal, not the expired one: when a deadline sends it
  * here the deadline has already done its job, and this call is what the user is
  * now waiting for.
+ *
+ * Usage goes to `onUsage` rather than being dropped: on a turn that ends here
+ * this call is often every visible completion token the turn produced.
  */
 export async function* streamWrapUpAnswer(input: {
   model: string;
@@ -174,6 +182,7 @@ export async function* streamWrapUpAnswer(input: {
   topP: number;
   reason: WrapUpReason;
   clientSignal: AbortSignal;
+  onUsage: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
 }): AsyncGenerator<string, void, void> {
   const body: ChatCompletionRequestBody = {
     model: input.model,
@@ -191,7 +200,58 @@ export async function* streamWrapUpAnswer(input: {
   const stream = await streamChatCompletion(body, input.clientSignal, input.endpoint);
   for await (const chunk of stream) {
     if (input.clientSignal.aborted) return;
+    if (chunk.usage) input.onUsage(chunk.usage);
     const delta = chunk.choices?.[0]?.delta?.content;
     if (delta) yield delta;
+  }
+}
+
+/**
+ * 마무리 답변(지금 답변하기·안전 상한·빈 답변 복구)에 넘길 이력.
+ *
+ * 예전에는 도구 루프가 시작되기 **전**의 이력(baseMessages)을 넘겼다. 그래서
+ * 마무리 답변은 이번 턴의 도구 결과를 한 번도 보지 못했고, 도구를 다섯 번 부른
+ * 뒤에 "지금 답변하기" 를 누르면 "요청하신 도구 호출을 아직 수행하지 않았습니다"
+ * 라고 답했다(2026-09-23 운영 서버 실측). 사용자가 원한 것은 "그 시점까지 모은 정보로
+ * 답하라" 이고, 모은 정보의 대부분이 바로 그 도구 결과다.
+ *
+ * 끝에 결과가 붙지 않은 tool_calls 가 남아 있으면 뗀다. 도구 호출과 결과는 실행이
+ * 끝난 뒤 한꺼번에 쌓이므로 보통은 짝이 맞지만, 짝 없는 tool_calls 는 서버가 400 으로
+ * 거절하므로 한 줄로 막아 둔다.
+ */
+export function messagesForWrapUp(messages: VllmMessage[]): VllmMessage[] {
+  const out = messages.slice();
+  for (let i = out.length - 1; i >= 0; i--) {
+    const m = out[i]!;
+    if (m.role !== "assistant" || !m.tool_calls || m.tool_calls.length === 0) continue;
+    const answered = new Set(out.slice(i + 1).filter((x) => x.role === "tool").map((x) => x.tool_call_id));
+    if (m.tool_calls.every((tc) => answered.has(tc.id))) break;
+    out.splice(i); // 짝 없는 호출부터 끝까지 버린다
+    break;
+  }
+  return out;
+}
+
+/**
+ * 모은 결과까지 넣어 마무리 답변을 시도하고, **첫 글자가 나오기 전에** 실패하면
+ * 도구 결과 없이 한 번 더 시도한다. 결과를 넣으면 컨텍스트가 넘칠 수 있는데, 그때
+ * 아무 답도 없는 것보다 추론만으로라도 답하는 편이 낫다. 이미 글자가 나간 뒤의
+ * 실패는 되돌릴 수 없으므로 그대로 던진다. 사용자가 끊은 것도 그대로 던진다.
+ */
+export async function* wrapUpWithFallback(
+  args: Omit<Parameters<typeof streamWrapUpAnswer>[0], "baseMessages">,
+  withResults: VllmMessage[],
+  withoutResults: VllmMessage[],
+): AsyncGenerator<string, void, void> {
+  let yielded = false;
+  try {
+    for await (const delta of streamWrapUpAnswer({ ...args, baseMessages: withResults })) {
+      yielded = true;
+      yield delta;
+    }
+  } catch (err) {
+    if (yielded || isAbortError(err)) throw err;
+    console.warn("[chat] 도구 결과를 넣은 마무리 답변이 실패해, 결과 없이 다시 시도합니다:", err);
+    yield* streamWrapUpAnswer({ ...args, baseMessages: withoutResults });
   }
 }

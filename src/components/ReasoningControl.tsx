@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { pushOverlay } from "../ui/overlayStack";
+import { useRef, useState, type KeyboardEvent } from "react";
+import { useDismiss } from "../hooks/useDismiss";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { usePopoverFocus } from "../hooks/usePopoverFocus";
-import { inSheet } from "./McpPicker";
+import { inSheet } from "./popoverSheet";
 import { normalizeReasoningLevel, normalizeReasoningMode, type ReasoningLevel, type ReasoningMode } from "../api/types";
 import { MAX_THINKING_TOKEN_BUDGET, MIN_THINKING_TOKEN_BUDGET } from "../state/defaults";
+import { ChevronDownIcon } from "./icons";
 import "./ReasoningControl.css";
 
 // 라벨은 한국어로 — 영어 라벨에 한국어 힌트를 붙이면 한 줄을 두 번 읽게 됐다.
@@ -30,14 +31,6 @@ const MODES: Array<{ value: ReasoningMode; label: string; hint: string }> = [
   { value: "external", label: "제한 없음", hint: "끝까지 기다립니다" },
   { value: "normal", label: "3분 제한", hint: "3분이 지나면 생각을 끊고 답합니다" },
 ];
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
 
 interface ReasoningControlProps {
   level: ReasoningLevel;
@@ -72,31 +65,18 @@ export function ReasoningControl({
   const mode = normalizeReasoningMode(rawMode);
   const [open, setOpen] = useState(false);
 
-  // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
-  useEffect(() => (open ? pushOverlay() : undefined), [open]);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  // 폰에서는 바텀시트(McpPicker 의 inSheet 참고).
+  // 폰에서는 바텀시트(popoverSheet 의 inSheet 참고).
   const sheet = useMediaQuery("(max-width: 640px)");
   usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
   const currentLabel = LEVELS.find((option) => option.value === level)?.label ?? level;
 
-  useEffect(() => {
-    if (!open) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      // 폰의 시트는 body 로 포털되어 containerRef 밖에 있다. 스크림은 제 click 으로 닫는다.
-      if (popoverRef.current?.contains(target) || (target as Element).closest?.(".popover-sheet-scrim")) return;
-      if (containerRef.current && !containerRef.current.contains(target)) {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
+  useDismiss(open, containerRef, () => setOpen(false), {
+    // 폰의 시트는 body 로 포털되어 containerRef 밖에 있다. 스크림은 제 click 으로 닫는다.
+    ignore: (target) => popoverRef.current?.contains(target) === true || target.closest?.(".popover-sheet-scrim") != null,
+  });
 
   function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "ArrowDown" && !open) {

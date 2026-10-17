@@ -4,7 +4,6 @@
   gap: var(--space-4);
   margin: var(--space-3) 0 var(--space-5);
   padding: var(--space-5);
-  border: 1px solid var(--outline-variant);
   border-radius: var(--radius-md);
   background: var(--surface-container-high);
 }

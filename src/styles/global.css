@@ -205,7 +205,6 @@ a {
 
 .btn-secondary {
   background: transparent;
-  color: var(--on-surface-variant);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -276,7 +275,6 @@ a {
 }
 
 .btn-icon:hover:not(:disabled) {
-  background: var(--surface-container-highest);
   color: var(--on-surface);
 }
 
@@ -325,8 +323,6 @@ a {
 .field input[type="number"],
 .field textarea,
 .field select {
-  background: var(--surface-container);
-  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: var(--space-4) var(--space-5);
   color: var(--on-surface);

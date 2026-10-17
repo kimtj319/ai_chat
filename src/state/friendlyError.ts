@@ -44,3 +44,8 @@ export function friendlyError(raw: string | undefined | null): string | null {
   }
   return GENERIC;
 }
+
+/** 잡은 예외의 원문 한 줄. Error 가 아닌 것이 던져져도 문자열로 바꾼다. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

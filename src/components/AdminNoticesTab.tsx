@@ -4,13 +4,7 @@ import type { Notice } from "../api/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { showErrorToast, showToast } from "./Toast";
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
+import { formatDateTime } from "../state/dateTime";
 
 /**
  * 관리자 메뉴 › 공지사항 — 쓰고, 고치고, 삭제한다. 올린 공지는 모든 계정의 채팅 머리
@@ -108,8 +102,8 @@ export function AdminNoticesTab() {
                 <div className="admin-notice-text">
                   <p className="admin-notice-title">{notice.title}</p>
                   <p className="admin-notice-meta">
-                    {formatDate(notice.createdAt)} · {notice.authorName ?? notice.authorId}
-                    {notice.updatedAt !== notice.createdAt && ` · ${formatDate(notice.updatedAt)} 고침`}
+                    {formatDateTime(notice.createdAt)} · {notice.authorName ?? notice.authorId}
+                    {notice.updatedAt !== notice.createdAt && ` · ${formatDateTime(notice.updatedAt)} 고침`}
                   </p>
                   {notice.body && <p className="admin-notice-body">{notice.body}</p>}
                 </div>

@@ -20,7 +20,7 @@ process.env.MODEL_ENDPOINTS_FILE = "";
 
 const { parseEndpointEntries } = await import("../config.js");
 const { probeEndpoint, upsertFileEndpoint, listEndpoints } = await import("./endpoints.js");
-const { fetchCatalog } = await import("./client.js");
+const { fetchCatalog, checkHealth } = await import("./client.js");
 
 let passed = 0;
 const failures: string[] = [];
@@ -138,6 +138,17 @@ try {
   check("낡은 모델은 목록에서 빠진다", !(await fetchCatalog(undefined, true)).some((e) => e.id === "stale"));
   check("  그리고 그 사실은 세 번 갱신해도 한 번만 남긴다", exclusions.length === 1, `${exclusions.length}회: ${exclusions[0] ?? ""}`);
   stale.close();
+
+  // ---- the health check lists models without probing them: a probe waits up to
+  // 20s per call (capability.ts), and /api/health is what start_web.sh polls.
+  const healthHits: string[] = [];
+  const healthServer = await fakeServer({ object: "list", data: [{ id: "never-probed" }] }, healthHits);
+  await upsertFileEndpoint({ label: "Health", baseUrl: healthServer.url, apiKey: "" });
+  const health = await checkHealth();
+  const row = health.endpoints.find((e) => e.baseUrl === healthServer.url);
+  check("상태 확인은 /models 로 모델 목록을 낸다", row?.ok === true && JSON.stringify(row.models) === '["never-probed"]', JSON.stringify(row));
+  check("  모델에 탐침 요청을 보내지 않는다", healthHits.length === 0, JSON.stringify(healthHits));
+  healthServer.close();
 } finally {
   await fs.rm(dataDir, { recursive: true, force: true });
 }

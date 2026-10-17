@@ -52,7 +52,7 @@ Separate what you know from what you are inferring. If you are unsure, say so on
 
 /**
  * Sent whenever a request goes out with tools switched off, because the baseline
- * above still announces "Tools are available to you". Left unsaid, the model
+ * above still has a Tools section. Left unsaid, the model
  * keeps emitting tool-call syntax that vLLM's parser turns into a `tool_calls`
  * finish with empty content — measured: the turn ended with a completely blank
  * answer and no error.

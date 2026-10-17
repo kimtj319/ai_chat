@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import express, { Router, type ErrorRequestHandler } from "express";
 import { config } from "../config.js";
 import { isValidId } from "../storage/paths.js";
-import { getConversation } from "../storage/conversationStore.js";
 import {
   conversationAttachmentUsage,
   deleteAttachment,
@@ -17,6 +16,9 @@ import { sniffAttachment } from "../attachments/sniff.js";
 import { attachmentBudget, describeCost, textPromptTokens } from "../attachments/budget.js";
 import { resolveModel } from "../vllm/client.js";
 import type { AttachmentErrorCode, MessageAttachment } from "../types.js";
+import { ownConversationOr404 } from "./conversations.js";
+import { createTokenBucket } from "./rateLimit.js";
+import { sendError } from "./respond.js";
 
 export const attachmentsRouter = Router();
 
@@ -46,36 +48,10 @@ function safeName(raw: unknown): string {
   return cleaned.slice(0, MAX_NAME_CHARS) || FALLBACK_NAME;
 }
 
-function fail(res: express.Response, status: number, code: AttachmentErrorCode, error: string) {
-  res.status(status).json({ error, code });
-}
+const fail = sendError<AttachmentErrorCode>;
 
-/**
- * In-memory token bucket, 30 uploads a minute per account by default. In
- * memory on purpose: it protects this process's disk and CPU, and a restart
- * losing the counters is not a security property anyone relies on.
- */
-const RATE_WINDOW_MS = 60_000;
-const buckets = new Map<string, { tokens: number; last: number }>();
-
-function takeUploadToken(ownerId: string): boolean {
-  const capacity = config.attachmentUploadsPerMinute;
-  const now = Date.now();
-  const bucket = buckets.get(ownerId) ?? { tokens: capacity, last: now };
-  bucket.tokens = Math.min(capacity, bucket.tokens + ((now - bucket.last) / RATE_WINDOW_MS) * capacity);
-  bucket.last = now;
-  const allowed = bucket.tokens >= 1;
-  if (allowed) bucket.tokens -= 1;
-  buckets.set(ownerId, bucket);
-  // Accounts only grow, so a full bucket that has not been touched in five
-  // windows is dropped rather than kept forever.
-  if (buckets.size > 1000) {
-    for (const [key, value] of buckets) {
-      if (now - value.last > 5 * RATE_WINDOW_MS) buckets.delete(key);
-    }
-  }
-  return allowed;
-}
+/** 30 uploads a minute per account by default (ATTACHMENT_UPLOADS_PER_MINUTE). */
+const takeUploadToken = createTokenBucket(60_000);
 
 /** Free space on DATA_DIR, or null where statfs is unavailable (then the check is skipped). */
 async function freeDiskBytes(): Promise<number | null> {
@@ -96,11 +72,10 @@ attachmentsRouter.post(
   async (req, res, next) => {
     try {
       const conversationId = req.params.id;
-      if (!isValidId(conversationId)) return res.status(404).json({ error: "Not found" });
-      const conversation = await getConversation(req.ownerId, conversationId);
-      if (!conversation) return res.status(404).json({ error: "Not found" });
+      const conversation = await ownConversationOr404(req, res);
+      if (!conversation) return;
 
-      if (!takeUploadToken(req.ownerId)) {
+      if (!takeUploadToken(req.ownerId, config.attachmentUploadsPerMinute)) {
         return fail(res, 429, "rate_limited", `업로드가 너무 잦습니다. 1분에 ${config.attachmentUploadsPerMinute}개까지 올릴 수 있습니다.`);
       }
 

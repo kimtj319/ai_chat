@@ -10,26 +10,9 @@ import {
 } from "../state/embedding";
 import { downloadJson } from "../state/exportImport";
 import { CopyButton } from "./CopyButton";
-import { shortModelName } from "./ModelSelector";
+import { shortModelName } from "../state/modelCatalog";
+import { ChevronRightIcon, DownloadIcon } from "./icons";
 import "./EmbeddingResult.css";
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v12" />
-      <path d="M7 10l5 5 5-5" />
-      <path d="M4 19.5h16" />
-    </svg>
-  );
-}
 
 interface EmbeddingResultProps {
   embedding: MessageEmbedding;
@@ -86,7 +69,7 @@ export function EmbeddingResult({ embedding, usage }: EmbeddingResultProps) {
           aria-expanded={expanded}
         >
           <span className={`embedding-caret${expanded ? " open" : ""}`}>
-            <ChevronIcon />
+            <ChevronRightIcon />
           </span>
           <span>{expanded ? "전체 벡터 접기" : `전체 벡터 보기 (${preview.total.toLocaleString()}개)`}</span>
         </button>

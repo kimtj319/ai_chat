@@ -16,6 +16,7 @@
  *
  * 새 계약 타입을 더할 때: 아래에 `Expect<Mutual<...>>` 한 줄을 더한다.
  */
+import type { CompactionKind as ServerCompactionKind } from "../../server/chat/compactionProgress";
 import type * as Server from "../../server/types";
 import type * as Client from "./types";
 
@@ -62,6 +63,8 @@ type _RagDocumentScope = Expect<Mutual<Server.RagDocumentScope, Client.RagDocume
 type _ReasoningLevel = Expect<Mutual<Server.ReasoningLevel, Client.ReasoningLevel>>;
 type _ReasoningMode = Expect<Mutual<Server.ReasoningMode, Client.ReasoningMode>>;
 type _UserRole = Expect<Mutual<Server.UserRole, Client.UserRole>>;
+type _HistorySummary = Expect<Mutual<Server.HistorySummary, Client.HistorySummary>>;
+type _CompactionKind = Expect<Mutual<ServerCompactionKind, Client.CompactionKind>>;
 
 /**
  * 위의 타입 별칭들은 어디에도 쓰이지 않는다 — 쓰이지 않아도 컴파일러는 검사한다.
@@ -96,4 +99,6 @@ export type ContractChecked = [
   _ReasoningLevel,
   _ReasoningMode,
   _UserRole,
+  _HistorySummary,
+  _CompactionKind,
 ];

@@ -1,7 +1,8 @@
-import { Component, cloneElement, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { Component, cloneElement, isValidElement, useEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import { gfm } from "./markdownGfm";
+import { remarkBreakTags } from "./markdownBreaks";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import type { CitationSource } from "../state/citations";
@@ -95,12 +96,12 @@ interface MarkdownRendererProps {
 }
 
 /**
- * 열 너비가 줄어들지 않는 표. 표는 행이 하나씩 붙으며 그려지는데, 자동 배치는
- * 행마다 열 너비를 다시 정해 표가 좌우로 들쭉날쭉했다. 첫 행의 각 칸이 지금까지
- * 가졌던 가장 넓은 너비를 최소 너비로 붙잡아 두면, 열은 넓어질 수만 있어 곧
- * 자리를 잡고 그대로 간다.
+ * 가로로 넘치면 스크롤되는 표. 열 너비는 브라우저의 자동 배치에 맡긴다 — 예전에는
+ * 흔들림을 막으려고 지나간 너비를 최소 너비로 붙잡았는데, 내용 없는 머리 줄의
+ * 고른 너비까지 붙잡아 답이 끝날 때까지 첫 열이 넓게 남았다. 흔들림은 이제
+ * stableStreamingMarkdown 이 첫 데이터 행 전의 표를 감춰서 막는다.
  */
-function StableTable(props: ComponentPropsWithoutRef<"table">) {
+function ScrollableTable(props: ComponentPropsWithoutRef<"table">) {
   const ref = useRef<HTMLTableElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 가로로 넘칠 때만 오른쪽 끝에 흐림 표시(data-overflow)를 건다.
@@ -122,16 +123,6 @@ function StableTable(props: ComponentPropsWithoutRef<"table">) {
       observer?.disconnect();
     };
   }, []);
-  const widths = useRef<number[]>([]);
-  useLayoutEffect(() => {
-    const row = ref.current?.querySelector("tr");
-    if (!row) return;
-    Array.from(row.children).forEach((cell, i) => {
-      const width = Math.ceil((cell as HTMLElement).getBoundingClientRect().width);
-      if (width > (widths.current[i] ?? 0)) widths.current[i] = width;
-      (cell as HTMLElement).style.minWidth = `${widths.current[i]}px`;
-    });
-  });
   return (
     <div className="md-table-scroll" ref={scrollRef}>
       <table ref={ref} {...props} />
@@ -158,14 +149,16 @@ export function MarkdownRenderer({ content: raw, citations, streaming = false }:
   const content = streaming ? stableStreamingMarkdown(raw) : raw;
   const byNumber = useMemo(() => new Map((citations ?? []).map((c) => [c.n, c])), [citations]);
   const remarkPlugins = useMemo(
-    () => (byNumber.size > 0 ? [gfm, remarkMath, remarkCitations(new Set(byNumber.keys()))] : [gfm, remarkMath]),
+    () => (byNumber.size > 0
+        ? [gfm, remarkMath, remarkBreakTags, remarkCitations(new Set(byNumber.keys()))]
+        : [gfm, remarkMath, remarkBreakTags]),
     [byNumber],
   );
   const components = useMemo(
     () => ({
       pre: PreRenderer,
       code: CodeRenderer,
-      table: ({ node: _node, ...rest }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) => <StableTable {...rest} />,
+      table: ({ node: _node, ...rest }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) => <ScrollableTable {...rest} />,
       a: ({ href, children }: { href?: string; children?: ReactNode }) => {
         const cite = href?.startsWith("#cite-") ? byNumber.get(Number(href.slice(6))) : undefined;
         if (cite) return <CitationLink source={cite} />;

@@ -1,0 +1,90 @@
+/* 모델이 정리한 문서의 다운로드 상자 — 답변 아래, 첨부 칩과 같은 무게의 카드. */
+.doc-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-6);
+  padding: var(--space-6) var(--space-7);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border: 1px solid var(--field-border);
+  box-shadow: inset 0 1px 0 var(--glass-card-highlight);
+}
+
+.doc-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.doc-card-text {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.doc-card-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+
+.doc-card-meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.doc-card-actions .btn {
+  gap: var(--space-2);
+}
+
+/* PDF 를 찍으려고 화면 밖에 그리는 종이. 보이지 않지만 그려져야 찍힌다(display:none 이면 빈 종이). */
+.doc-pdf-sheet {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 794px;
+  pointer-events: none;
+}
+
+/* 블록마다 따로 찍으므로(pdfExport.ts) 바깥 여백은 찍히지 않는다 — 여백이 있으면 글자가
+   찍는 상자 아래로 밀려 빈칸이 된다. 블록 사이는 gap(찍는 쪽이 읽는다)으로, 소제목 위의
+   숨은 padding 으로 준다. */
+.doc-pdf-sheet .markdown-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 56px 64px;
+  background: #ffffff;
+  color: var(--on-surface);
+}
+
+.doc-pdf-sheet .markdown-body > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.doc-pdf-sheet .markdown-body > :is(h2, h3, h4):not(:first-child) {
+  padding-top: 14px;
+}

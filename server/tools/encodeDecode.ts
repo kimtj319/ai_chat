@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "./types.js";
+import { requireBoundedText } from "./args.js";
 
 const MAX_INPUT_CHARS = 100_000;
 
@@ -95,12 +96,7 @@ export const encodeDecodeTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { operation: Operation; text: string }) {
-    if (typeof args?.text !== "string" || args.text.length === 0) {
-      throw new Error("text must be a non-empty string");
-    }
-    if (args.text.length > MAX_INPUT_CHARS) {
-      throw new Error(`text too large (${args.text.length} chars, limit ${MAX_INPUT_CHARS})`);
-    }
+    requireBoundedText(args?.text, "text", MAX_INPUT_CHARS);
     if (!OPERATIONS.includes(args.operation)) {
       throw new Error(`Unknown operation: "${args.operation}"`);
     }

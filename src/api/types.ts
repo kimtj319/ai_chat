@@ -369,7 +369,8 @@ export type ModelEndpointErrorCode =
   | "forbidden"
   | "write_failed"
   | "models_required"
-  | "unknown_models";
+  | "unknown_models"
+  | "invalid_models";
 
 export interface ModelsResponse {
   models: string[];
@@ -739,3 +740,38 @@ export type CompactionKind = "history" | "research";
 export type CompactionStatusResponse =
   | { active: false }
   | { active: true; kind: CompactionKind; progress: number; startedAt: string };
+
+/** 내 "하지 말 것" 목록. 서버 routes/prohibitions.ts. */
+export interface ProhibitionsResponse {
+  markdown: string;
+  /** 대화에 반영되는 부분의 글자 수. */
+  activeChars: number;
+  limitChars: number;
+  /** activeChars / limitChars 가 이 비율을 넘으면 정리를 권한다. */
+  warnRatio: number;
+  fileMaxChars: number;
+  pendingCount: number;
+}
+
+/** 공유 링크로 연 대화의 사본. 서버 routes/share.ts. */
+export interface SharedConversation {
+  token: string;
+  title: string;
+  model: string;
+  sharedAt: string;
+  messages: ChatMessage[];
+}
+
+/** 예약 작업. 서버 storage/scheduleStore.ts 와 같은 모양. */
+export interface ScheduledTask {
+  id: string;
+  conversationId: string;
+  instruction: string;
+  runAt: string;
+  useBrowser: boolean;
+  status: "pending" | "running" | "done" | "failed" | "missed" | "cancelled";
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  note?: string;
+}

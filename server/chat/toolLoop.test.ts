@@ -39,12 +39,14 @@ process.env.CONTEXT_MAX_COMPACTIONS = "2";
 process.env.REASONING_PROFILES = "";
 
 const { runConversationTurn } = await import("./toolLoop.js");
+const { completeBrowserAction } = await import("./browserBridge.js");
 const { invalidateCatalog } = await import("../vllm/client.js");
 const { DEFAULT_SETTINGS } = await import("../types.js");
 const { DEFAULT_SYSTEM_PROMPT } = await import("./systemPrompt.js");
 const { config } = await import("../config.js");
 type Conversation = import("../types.js").Conversation;
 type StoredMessage = import("../types.js").StoredMessage;
+type ChatEvent = import("./toolLoop.js").ChatEvent;
 
 let passed = 0;
 const failures: Array<{ name: string; message: string }> = [];
@@ -77,7 +79,10 @@ interface ChatCall {
 }
 
 /** 시나리오마다 "메인 라운드" 요청에 무엇을 답할지 정하는 훅. */
-type MainRoundHandler = (call: ChatCall, roundIndex: number) => { content?: string; toolCall?: { name: string; arguments: unknown } };
+type MainRoundHandler = (
+  call: ChatCall,
+  roundIndex: number,
+) => { content?: string; toolCall?: { name: string; arguments: unknown }; toolCalls?: Array<{ name: string; arguments: unknown }> };
 
 let mainRoundHandler: MainRoundHandler = () => ({ content: "ok" });
 /**
@@ -196,20 +201,19 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       });
     }
     const answer = mainRoundHandler({ body }, roundIndex);
-    if (answer.toolCall) {
+    const toolCalls = answer.toolCalls ?? (answer.toolCall ? [answer.toolCall] : null);
+    if (toolCalls) {
       return sseResponse([
         {
           choices: [
             {
               delta: {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: `call_${roundIndex}`,
-                    type: "function",
-                    function: { name: answer.toolCall.name, arguments: JSON.stringify(answer.toolCall.arguments) },
-                  },
-                ],
+                tool_calls: toolCalls.map((call, index) => ({
+                  index,
+                  id: index === 0 ? `call_${roundIndex}` : `call_${roundIndex}_${index}`,
+                  type: "function",
+                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                })),
               },
               finish_reason: null,
             },
@@ -259,12 +263,19 @@ function makeConversation(overrides: Partial<Conversation>): Conversation {
   } as Conversation;
 }
 
-async function runTurn(conversation: Conversation, answerNowSignal?: AbortSignal) {
+async function runTurn(
+  conversation: Conversation,
+  answerNowSignal?: AbortSignal,
+  // 이벤트마다 불린다. 크롬 동작에 답하거나, 특정 시점에 중지(client)를 누를 때 쓴다.
+  hooks: { browserControl?: boolean; onEvent?: (event: ChatEvent, client: AbortController) => void } = {},
+) {
   invalidateCatalog();
   const controller = new AbortController();
   // 시나리오 A/B/C 는 "지금 답변하기" 를 안 눌러서, 절대 끊기지 않는 신호를
   // 기본값으로 준다.
-  const gen = runConversationTurn(conversation, "owner-1", controller.signal, answerNowSignal ?? new AbortController().signal);
+  const gen = runConversationTurn(conversation, "owner-1", controller.signal, answerNowSignal ?? new AbortController().signal, {
+    browserControl: hooks.browserControl === true,
+  });
   const events: Array<{ type: string; message?: string; [k: string]: unknown }> = [];
   let result: Awaited<ReturnType<typeof gen.next>>["value"];
   for (;;) {
@@ -274,6 +285,7 @@ async function runTurn(conversation: Conversation, answerNowSignal?: AbortSignal
       break;
     }
     events.push(step.value as (typeof events)[number]);
+    hooks.onEvent?.(step.value, controller);
   }
   const notices = events.filter((e) => e.type === "notice").map((e) => String(e.message));
   return { events, result: result!, notices };
@@ -468,6 +480,13 @@ async function runTurn(conversation: Conversation, answerNowSignal?: AbortSignal
     mainRoundCalls === 2,
     String(mainRoundCalls),
   );
+  // 끊긴 첫 호출은 사용량을 못 받았으니, 남는 것은 마무리 호출의 사용량(가짜 vLLM 의
+  // 10/10/20)뿐이다. 예전에는 마무리 호출의 사용량을 버려서 0 이었다.
+  check(
+    "시나리오 D: 마무리 호출의 사용량이 턴 사용량에 들어간다",
+    result.usage.promptTokens === 10 && result.usage.completionTokens === 10 && result.usage.totalTokens === 20,
+    JSON.stringify(result.usage),
+  );
 }
 
 /* ============================================================== 시나리오 E */
@@ -505,6 +524,97 @@ async function runTurn(conversation: Conversation, answerNowSignal?: AbortSignal
     toolMessages.some((m) => String(m.content).includes("4104676")),
     JSON.stringify(toolMessages),
   );
+}
+
+/* ============================================================== 시나리오 F */
+// 크롬 도구를 같은 인자로 너무 많이 부를 때의 거절 문구. 크롬 도구의 한도는 8회인데,
+// 거절 문구가 보통 도구의 한도(3회)를 말하면 모델은 틀린 사정을 듣는다.
+{
+  resetCallCounters();
+  registeredModels.set("model-f", 200_000);
+  mainRoundHandler = (call) =>
+    call.body.tool_choice === "auto"
+      ? { toolCall: { name: "browser_scroll", arguments: { direction: "down" } } }
+      : { content: "본 만큼 정리했습니다." };
+
+  const conversation = makeConversation({ model: "model-f", enabledTools: [] });
+  const { result } = await runTurn(conversation, undefined, {
+    browserControl: true,
+    onEvent: (event) => {
+      if (event.type === "browser_action") completeBrowserAction("owner-1", conversation.id, event.callId, { ok: true, result: "scrolled" });
+    },
+  });
+
+  const refused = result.toolResults.filter((r) => !r.ok);
+  check("시나리오 F: 같은 스크롤 8회는 실행되고 9번째만 거절된다", result.toolResults.length === 9 && refused.length === 1, JSON.stringify(result.toolResults.map((r) => r.ok)));
+  check(
+    "시나리오 F: 거절 문구는 크롬 도구의 한도(8번)를 말한다",
+    refused[0]?.error?.includes("8번 넘게") === true,
+    String(refused[0]?.error),
+  );
+}
+
+/* ============================================================== 시나리오 G */
+// 한 라운드에 도구 호출이 여럿일 때, 앞 호출 도중 "지금 답변하기" 가 오면 남은 호출은
+// 실행하지 않는다. 예전에는 남은 호출이 하나씩 끝까지 돌았고(호출마다 최대
+// TOOL_TIMEOUT_MS), 마무리 답변은 그 뒤에야 시작됐다.
+{
+  resetCallCounters();
+  registeredModels.set("model-g", 200_000);
+  const answerNowController = new AbortController();
+  mainRoundHandler = (call, roundIndex) => {
+    if (roundIndex === 0) {
+      return {
+        toolCalls: [
+          { name: "browser_open", arguments: { url: "https://example.com" } },
+          { name: "calculator", arguments: { expression: "2026^2" } },
+        ],
+      };
+    }
+    return { content: "모은 만큼으로 답합니다." };
+  };
+
+  const conversation = makeConversation({ model: "model-g", enabledTools: ["calculator"] });
+  // 크롬 동작이 걸린 순간(첫 호출 도중)에 누른다. 크롬 쪽 기다림은 신호로 바로 끝난다.
+  const { result } = await runTurn(conversation, answerNowController.signal, {
+    browserControl: true,
+    onEvent: (event) => {
+      if (event.type === "browser_action") answerNowController.abort();
+    },
+  });
+
+  const calc = result.toolResults.find((r) => r.name === "calculator");
+  check("시나리오 G: 두 호출 모두 기록은 남는다", result.toolResults.length === 2, JSON.stringify(result.toolResults));
+  check("시나리오 G: 중지 뒤의 계산기 호출은 실행하지 않는다", calc?.ok === false && calc.durationMs === 0, JSON.stringify(calc));
+  check("시나리오 G: 그래도 마무리 답변으로 끝난다", !result.error && result.content === "모은 만큼으로 답합니다.", `${result.error} / ${result.content}`);
+}
+
+/* ============================================================== 시나리오 H */
+// 마무리 답변 도중 중지. 스트림은 이미 끊긴 신호를 보면 조용히 끝나는데(vllm/client.ts
+// parseSseStream), 그것을 정상 종료로 받으면 반쯤 쓴 마무리 답변이 완성된 답변으로
+// 저장되고 오류도 없다. 본 루프처럼 "취소됨" 으로 끝나야 한다.
+{
+  resetCallCounters();
+  registeredModels.set("model-h", 50_000);
+  const answerNowController = new AbortController();
+  hangNextMainRound = () => answerNowController.abort();
+  mainRoundHandler = () => ({ content: "마무리 답변의 앞부분" });
+
+  const conversation = makeConversation({ model: "model-h", enabledTools: ["calculator"] });
+  let stoppedDuringWrapUp = false;
+  const { result, events } = await runTurn(conversation, answerNowController.signal, {
+    onEvent: (event, client) => {
+      // 마무리 답변의 첫 글자가 나온 순간 중지를 누른다.
+      if (event.type === "content" && !stoppedDuringWrapUp) {
+        stoppedDuringWrapUp = true;
+        client.abort();
+      }
+    },
+  });
+
+  check("시나리오 H: 마무리 답변이 시작된 뒤에 중지했다", stoppedDuringWrapUp);
+  check("시나리오 H: 턴은 '취소됨' 으로 끝난다", result.error === "Cancelled by client.", JSON.stringify(result.error));
+  check("시나리오 H: 화면에도 오류 이벤트가 간다", events.some((e) => e.type === "error"), JSON.stringify(events.map((e) => e.type)));
 }
 
 console.log("");

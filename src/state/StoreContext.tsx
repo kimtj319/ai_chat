@@ -10,7 +10,6 @@ import {
 } from "react";
 import * as api from "../api/client";
 import type {
-  Conversation,
   ConversationSettings,
   ConversationSummary,
   ReasoningLevel,
@@ -18,164 +17,12 @@ import type {
   Session,
 } from "../api/types";
 import type { ImportedConversationShell } from "./exportImport";
-import { loadUiPreferences, saveUiPreferences } from "./storage";
+import { saveUiPreferences } from "./storage";
+import { init, reducer, type ActiveConversation } from "./storeReducer";
 import type { ClientChatMessage, ThemeMode, UiPreferences } from "./types";
+import { errorMessage } from "./friendlyError";
 
-/** The active conversation, with client-side streaming state on its messages. */
-export interface ActiveConversation extends Omit<Conversation, "messages"> {
-  messages: ClientChatMessage[];
-}
-
-interface State {
-  ui: UiPreferences;
-  session: Session | null;
-  conversations: ConversationSummary[];
-  conversationsLoading: boolean;
-  conversationsError: string | null;
-  activeConversationId: string | null;
-  activeConversation: ActiveConversation | null;
-  activeConversationLoading: boolean;
-  activeConversationError: string | null;
-}
-
-type Action =
-  | { type: "SET_UI"; patch: Partial<UiPreferences> }
-  | { type: "SET_SESSION"; session: Session }
-  | { type: "SET_CONVERSATIONS_LOADING" }
-  | { type: "SET_CONVERSATIONS"; conversations: ConversationSummary[] }
-  | { type: "SET_CONVERSATIONS_ERROR"; error: string }
-  | { type: "REMOVE_CONVERSATION_SUMMARY"; id: string }
-  | { type: "SET_ACTIVE_ID"; id: string | null }
-  | { type: "SET_ACTIVE_LOADING" }
-  | { type: "SET_ACTIVE_CONVERSATION"; conversation: Conversation }
-  | { type: "SET_ACTIVE_ERROR"; error: string }
-  | { type: "PATCH_ACTIVE_META"; patch: Partial<Conversation> }
-  | { type: "APPEND_ACTIVE_MESSAGE"; conversationId: string; message: ClientChatMessage }
-  | { type: "PATCH_ACTIVE_MESSAGE"; conversationId: string; messageId: string; patch: Partial<ClientChatMessage> }
-  | { type: "REPLACE_ACTIVE_MESSAGE"; conversationId: string; tempId: string; message: ClientChatMessage }
-  | { type: "SET_ACTIVE_MESSAGES"; conversationId: string; messages: ClientChatMessage[] };
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "SET_UI":
-      return { ...state, ui: { ...state.ui, ...action.patch } };
-
-    case "SET_SESSION":
-      return { ...state, session: action.session };
-
-    case "SET_CONVERSATIONS_LOADING":
-      return { ...state, conversationsLoading: true, conversationsError: null };
-
-    case "SET_CONVERSATIONS": {
-      // The turn that just ended can settle the conversation's kind on the
-      // server (an embedding model makes it an embedding conversation). The
-      // refreshed summary carries that; the active record we are holding was
-      // fetched before the turn and does not, so without this it keeps
-      // offering chat affordances until the conversation is reopened.
-      const active = state.activeConversation;
-      const summary = active ? action.conversations.find((c) => c.id === active.id) : undefined;
-      return {
-        ...state,
-        conversations: action.conversations,
-        activeConversation:
-          active && summary && summary.kind !== active.kind ? { ...active, kind: summary.kind } : active,
-        conversationsLoading: false,
-        conversationsError: null,
-      };
-    }
-
-    case "SET_CONVERSATIONS_ERROR":
-      return { ...state, conversationsLoading: false, conversationsError: action.error };
-
-    case "REMOVE_CONVERSATION_SUMMARY":
-      return { ...state, conversations: state.conversations.filter((c) => c.id !== action.id) };
-
-    case "SET_ACTIVE_ID":
-      return {
-        ...state,
-        activeConversationId: action.id,
-        activeConversation: null,
-        activeConversationError: null,
-      };
-
-    case "SET_ACTIVE_LOADING":
-      return { ...state, activeConversationLoading: true, activeConversationError: null };
-
-    case "SET_ACTIVE_CONVERSATION":
-      if (action.conversation.id !== state.activeConversationId) return state;
-      return {
-        ...state,
-        activeConversation: action.conversation as ActiveConversation,
-        activeConversationLoading: false,
-        activeConversationError: null,
-      };
-
-    case "SET_ACTIVE_ERROR":
-      return { ...state, activeConversationLoading: false, activeConversationError: action.error };
-
-    case "PATCH_ACTIVE_META": {
-      if (!state.activeConversation) return state;
-      return { ...state, activeConversation: { ...state.activeConversation, ...action.patch } };
-    }
-
-    case "APPEND_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: [...state.activeConversation.messages, action.message],
-        },
-      };
-    }
-
-    case "PATCH_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: state.activeConversation.messages.map((m) =>
-            m.id === action.messageId ? { ...m, ...action.patch } : m,
-          ),
-        },
-      };
-    }
-
-    case "REPLACE_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: state.activeConversation.messages.map((m) => (m.id === action.tempId ? action.message : m)),
-        },
-      };
-    }
-
-    case "SET_ACTIVE_MESSAGES": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return { ...state, activeConversation: { ...state.activeConversation, messages: action.messages } };
-    }
-
-    default:
-      return state;
-  }
-}
-
-function init(): State {
-  return {
-    ui: loadUiPreferences(),
-    session: null,
-    conversations: [],
-    conversationsLoading: true,
-    conversationsError: null,
-    activeConversationId: null,
-    activeConversation: null,
-    activeConversationLoading: false,
-    activeConversationError: null,
-  };
-}
+export type { ActiveConversation } from "./storeReducer";
 
 /**
  * 열려 있는 대화 그 자체. **토큰 하나마다 바뀐다.**
@@ -262,7 +109,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "SET_CONVERSATIONS", conversations });
       } catch (error) {
         if (cancelled) return;
-        dispatch({ type: "SET_CONVERSATIONS_ERROR", error: error instanceof Error ? error.message : String(error) });
+        dispatch({ type: "SET_CONVERSATIONS_ERROR", error: errorMessage(error) });
       }
     }
     void bootstrap();
@@ -293,7 +140,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const conversations = await api.listConversations();
       dispatch({ type: "SET_CONVERSATIONS", conversations });
     } catch (error) {
-      dispatch({ type: "SET_CONVERSATIONS_ERROR", error: error instanceof Error ? error.message : String(error) });
+      dispatch({ type: "SET_CONVERSATIONS_ERROR", error: errorMessage(error) });
     }
   }, []);
 
@@ -305,7 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const conversation = await api.getConversation(id);
       dispatch({ type: "SET_ACTIVE_CONVERSATION", conversation });
     } catch (error) {
-      dispatch({ type: "SET_ACTIVE_ERROR", error: error instanceof Error ? error.message : String(error) });
+      dispatch({ type: "SET_ACTIVE_ERROR", id, error: errorMessage(error) });
     }
   }, []);
 
@@ -352,7 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (id: string, title: string) => {
       const updated = await api.patchConversation(id, { title });
       if (state.activeConversationId === id) {
-        dispatch({ type: "PATCH_ACTIVE_META", patch: { title: updated.title, updatedAt: updated.updatedAt } });
+        dispatch({ type: "PATCH_ACTIVE_META", conversationId: id, patch: { title: updated.title, updatedAt: updated.updatedAt } });
       }
       await refreshConversations();
     },
@@ -364,7 +211,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const id = state.activeConversationId;
       if (!id) return;
       const updated = await api.patchConversation(id, { systemPrompt });
-      dispatch({ type: "PATCH_ACTIVE_META", patch: { systemPrompt: updated.systemPrompt, updatedAt: updated.updatedAt } });
+      dispatch({
+        type: "PATCH_ACTIVE_META",
+        conversationId: id,
+        patch: { systemPrompt: updated.systemPrompt, updatedAt: updated.updatedAt },
+      });
     },
     [state.activeConversationId],
   );
@@ -374,7 +225,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const id = state.activeConversationId;
       if (!id) return;
       const updated = await api.patchConversation(id, { settings });
-      dispatch({ type: "PATCH_ACTIVE_META", patch: { settings: updated.settings, updatedAt: updated.updatedAt } });
+      dispatch({ type: "PATCH_ACTIVE_META", conversationId: id, patch: { settings: updated.settings, updatedAt: updated.updatedAt } });
     },
     [state.activeConversationId],
   );
@@ -384,7 +235,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const id = state.activeConversationId;
       if (!id) return;
       const updated = await api.patchConversation(id, { enabledTools });
-      dispatch({ type: "PATCH_ACTIVE_META", patch: { enabledTools: updated.enabledTools, updatedAt: updated.updatedAt } });
+      dispatch({
+        type: "PATCH_ACTIVE_META",
+        conversationId: id,
+        patch: { enabledTools: updated.enabledTools, updatedAt: updated.updatedAt },
+      });
     },
     [state.activeConversationId],
   );
@@ -398,12 +253,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!id) return;
       const previous = activeConversationRef.current?.model ?? "";
       if (previous === model) return;
-      dispatch({ type: "PATCH_ACTIVE_META", patch: { model } });
+      dispatch({ type: "PATCH_ACTIVE_META", conversationId: id, patch: { model } });
       try {
         const updated = await api.patchConversation(id, { model });
-        dispatch({ type: "PATCH_ACTIVE_META", patch: { model: updated.model, updatedAt: updated.updatedAt } });
+        dispatch({ type: "PATCH_ACTIVE_META", conversationId: id, patch: { model: updated.model, updatedAt: updated.updatedAt } });
       } catch (error) {
-        dispatch({ type: "PATCH_ACTIVE_META", patch: { model: previous } });
+        dispatch({ type: "PATCH_ACTIVE_META", conversationId: id, patch: { model: previous } });
         throw error;
       }
     },

@@ -12,13 +12,9 @@
   /* ---- Primitives: neutrals ---- */
   --p-neutral-0: #1c1d1f;
   --p-neutral-10: #0d0d0d;
-  --p-neutral-20: #282a2c;
   --p-neutral-22: #1e1f20;
-  --p-neutral-25: #333537;
   --p-neutral-87: #ececec;
   --p-neutral-92: #f0f4f9;
-  --p-neutral-94: #e9eef6;
-  --p-neutral-98: #f8fafd;
   --p-neutral-100: #ffffff;
   --p-neutral-variant-30: #444746;
   --p-neutral-variant-60: #c4c7c5;
@@ -30,7 +26,6 @@
      Gemini on #1b1b1b, none of them on black. Measured across the move, body
      contrast is unchanged (15.03:1 -> 15.04:1) because the text lifted with the
      ground; only the halation went. ---- */
-  --p-sidebar-dark: #232427;
   --p-app-canvas-dark: #17181a;
   --p-nav-selected-dark: #333438;
   /* Light counterpart. One step below the sidebar's own tone, because the
@@ -60,12 +55,9 @@
   --p-red-40: #b3261e;
   --p-red-80: #f2b8b5;
   --p-red-bg-light: #fceeee;
-  --p-red-bg-dark: #3a1113;
   --p-red-on-dark: #601410;
   --p-amber-30: #7a4e00;
   --p-amber-80: #fdd663;
-  --p-amber-bg-light: #fef3d8;
-  --p-amber-bg-dark: #3a2e00;
   --p-green-30: #146c2e;
   --p-green-80: #6dd58c;
 
@@ -200,10 +192,6 @@
   --outline-variant: var(--p-neutral-variant-60);
 
   /* Gemini-reference layout surfaces */
-  /* Light: the sidebar steps one tone off the white canvas so the two
-     panes read as separate surfaces, the same way the dark theme splits
-     them (sidebar #1b1c1d vs canvas #0e0e0f). */
-  --sidebar-surface: var(--p-neutral-92);
   --app-canvas: var(--p-neutral-100);
   --composer-surface: var(--p-neutral-100);
   --nav-selected-bg: var(--p-nav-selected-light);
@@ -297,7 +285,6 @@
     --outline-variant: var(--p-neutral-variant-30);
 
     /* Gemini-reference layout surfaces */
-    --sidebar-surface: var(--p-sidebar-dark);
     --app-canvas: var(--p-app-canvas-dark);
     --composer-surface: var(--p-neutral-22);
     --nav-selected-bg: var(--p-nav-selected-dark);
@@ -373,7 +360,6 @@
   --outline-variant: var(--p-neutral-variant-30);
 
   /* Gemini-reference layout surfaces */
-  --sidebar-surface: var(--p-sidebar-dark);
   --app-canvas: var(--p-app-canvas-dark);
   --composer-surface: var(--p-neutral-22);
   --nav-selected-bg: var(--p-nav-selected-dark);
@@ -433,7 +419,9 @@
   --backdrop-3: rgba(217, 101, 112, 0.36);
 }
 
-:root[data-theme="light"] {
+/* .light-sheet: 테마와 상관없이 라이트로 그리는 영역(문서 PDF 를 찍는 종이, DocumentDownload.tsx). */
+:root[data-theme="light"],
+.light-sheet {
   --surface: var(--p-neutral-100);
   --surface-container: rgba(118, 128, 150, 0.09);
   --surface-container-high: rgba(255, 255, 255, 0.62);

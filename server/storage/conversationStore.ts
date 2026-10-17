@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
-import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, unlinkIfPresent, writeJsonFileAtomic } from "./atomic.js";
 import { conversationsDir, conversationFile, isValidId, ownersRoot } from "./paths.js";
 import { withLock } from "./mutex.js";
 import { deleteConversationAttachments } from "./attachmentStore.js";
@@ -26,17 +26,11 @@ function lockKey(ownerId: string, conversationId: string): string {
 
 export async function listConversations(ownerId: string): Promise<ConversationSummary[]> {
   const dir = conversationsDir(ownerId);
-  let entries: string[];
-  try {
-    entries = await fs.readdir(dir);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
+  const entries = await readdirOrEmpty(dir);
 
   const summaries: ConversationSummary[] = [];
   for (const entry of entries) {
-    if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
+    if (!entry.endsWith(".json")) continue;
     const id = entry.slice(0, -".json".length);
     if (!isValidId(id)) continue;
     try {
@@ -175,16 +169,11 @@ export async function sweepEmptyConversations(): Promise<{ removed: number; owne
 export async function deleteConversation(ownerId: string, conversationId: string): Promise<boolean> {
   if (!isValidId(conversationId)) return false;
   return withLock(lockKey(ownerId, conversationId), async () => {
-    try {
-      await fs.unlink(conversationFile(ownerId, conversationId));
-      // Inside the same lock: the conversation is gone, so nothing can ever
-      // reference these bytes again, and the sweep would only find them later.
-      await deleteConversationAttachments(ownerId, conversationId);
-      return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
+    if (!(await unlinkIfPresent(conversationFile(ownerId, conversationId)))) return false;
+    // Inside the same lock: the conversation is gone, so nothing can ever
+    // reference these bytes again, and the sweep would only find them later.
+    await deleteConversationAttachments(ownerId, conversationId);
+    return true;
   });
 }
 

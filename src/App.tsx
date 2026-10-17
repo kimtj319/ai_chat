@@ -21,12 +21,10 @@ import { useAuth } from "./auth/AuthContext";
 import { useChatStream } from "./hooks/useChatStream";
 import { useScheduleRunner } from "./browser/scheduler";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { useMediaQuery } from "./hooks/useMediaQuery";
-import { FOCUSABLE } from "./hooks/usePopoverFocus";
+import { useDrawer } from "./hooks/useDrawer";
 import { useScrollbarFade } from "./hooks/useScrollbarFade";
 import { useTheme } from "./hooks/useTheme";
 import { HASHES, shareTokenFromHash, viewFromHash } from "./routes";
-import { pushOverlay } from "./ui/overlayStack";
 import type { View } from "./routes";
 import { loadUiPreferences } from "./state/storage";
 import { StoreProvider, useStore } from "./state/StoreContext";
@@ -126,11 +124,11 @@ export default function App() {
   );
 }
 
-/** 열려 있으면 X, 닫혀 있으면 삼선 — 버튼 하나가 두 가지 일을 하므로 모양도 둘이다. */
-function MenuIcon({ open }: { open: boolean }) {
+/** 삼선. 서랍이 열려 있는 동안은 이 단추가 없고 서랍 안의 닫기 단추를 쓴다. */
+function MenuIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      {open ? <path d="M18 6 6 18M6 6l12 12" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+      <path d="M4 7h16M4 12h16M4 17h16" />
     </svg>
   );
 }
@@ -171,98 +169,18 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
       });
   }, [session, conversationsLoading, activeConversationId, createConversation]);
 
-  // 좁은 화면에서는 사이드바가 붙박이 칸을 그만두고 떠 있는 서랍이 된다.
-  // 기준점은 CSS 와 같은 1024px 이다 — 여기서 구조가 바뀌고(스크림·Esc·자동
-  // 닫기), 저기서 모양이 바뀐다.
-  const narrow = useMediaQuery("(max-width: 1024px)");
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const drawerToggleRef = useRef<HTMLButtonElement>(null);
-  const drawerWasOpen = useRef(false);
-  const shellRef = useRef<HTMLDivElement>(null);
+  const { narrow, drawerOpen, setDrawerOpen, drawerModal, drawerToggleRef, shellRef, navigateFromDrawer } = useDrawer({
+    view,
+    activeConversationId,
+    sidebarCollapsed: ui.sidebarCollapsed,
+    navigate,
+  });
   const mainRef = useRef<HTMLElement>(null);
-  // 열린 서랍은 대화상자다: 그 밖은 inert 로 막고(Tab·스크린리더 모두), 포커스를 안으로
-  // 데려간다. 닫을 때 메뉴 단추로 돌려주는 것은 아래 effect 가 맡는다.
-  const drawerModal = narrow && drawerOpen;
-  // 서랍을 닫으면 포커스를 메뉴 단추로 돌려준다. 닫기 단추가 숨은 서랍 안에 포커스를
-  // 쥔 채 남으면, iOS 에서 그 뒤의 본문이 손가락 스크롤을 받지 못하는 일이 있다
-  // (키보드 사용자에게도 포커스가 사라진 것처럼 보인다).
-  useEffect(() => {
-    if (drawerWasOpen.current && !drawerOpen) {
-      const active = document.activeElement as HTMLElement | null;
-      if (active?.closest(".sidebar")) active.blur();
-      requestAnimationFrame(() => drawerToggleRef.current?.focus({ preventScroll: true }));
-    }
-    drawerWasOpen.current = drawerOpen;
-  }, [drawerOpen]);
-
-  // <aside> 는 Sidebar 의 것이라 역할은 여기서 DOM 에 직접 단다. 사이드바가 접힘
-  // 선호값에 따라 다른 <aside> 를 그리므로 그것이 바뀔 때도 다시 단다.
-  useEffect(() => {
-    const aside = shellRef.current?.querySelector<HTMLElement>(":scope > aside.sidebar");
-    if (!aside) return;
-    if (!drawerModal) {
-      aside.removeAttribute("role");
-      aside.removeAttribute("aria-modal");
-      aside.removeAttribute("aria-label");
-      return;
-    }
-    aside.setAttribute("role", "dialog");
-    aside.setAttribute("aria-modal", "true");
-    aside.setAttribute("aria-label", "메뉴");
-  }, [drawerModal, ui.sidebarCollapsed]);
-
-  useEffect(() => {
-    if (!drawerModal) return;
-    const aside = shellRef.current?.querySelector<HTMLElement>(":scope > aside.sidebar");
-    // 미끄러져 들어오는 중이라 스크롤은 막는다.
-    aside?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
-  }, [drawerModal]);
-
-  // 서랍은 무엇을 고르면 닫힌다. 무엇을 골랐는지는 주소와 열린 대화가 말해 주므로
-  // 사이드바 안의 버튼 하나하나에 손을 댈 필요가 없다 — 설정 팝오버처럼
-  // 화면을 옮기지 않는 것을 눌렀을 때 서랍이 닫히지 않는 것도 같은 이유다.
-  //
-  // 예외는 뒤로 가기다. 서랍에서 라이브러리·문서로 갔다가 뒤로(왼쪽 끝에서 쓸어 넘기기,
-  // 브라우저 뒤로) 오면 떠났던 자리, 곧 열린 서랍으로 돌아와야 한다. 떠날 때 그 기록에
-  // 표시를 남기고(navigateFromDrawer), 돌아와 한 번 쓰면 지운다 — 남겨 두면 그 화면에서
-  // 대화를 고를 때마다 서랍이 다시 열린다.
-  useEffect(() => {
-    const state = window.history.state as { drawerOpen?: boolean } | null;
-    const reopen = narrow && state?.drawerOpen === true;
-    if (reopen) window.history.replaceState({ ...state, drawerOpen: undefined }, "");
-    setDrawerOpen(reopen);
-    // narrow 는 일부러 뺀다 — 폭이 바뀐 것은 무엇을 고른 것이 아니다(아래 effect 가 맡는다).
-  }, [view, activeConversationId]);
-
-  /** 서랍에서 다른 화면으로 갈 때. 지금 기록에 "서랍이 열려 있었다" 를 남긴다. */
-  function navigateFromDrawer(target: View) {
-    if (narrow && drawerOpen && HASHES[target] !== window.location.hash) {
-      window.history.replaceState({ ...(window.history.state ?? {}), drawerOpen: true }, "");
-    }
-    navigate(target);
-  }
-
-  // 창을 넓히면 서랍이라는 개념 자체가 사라진다. 열린 채로 두면 넓은 화면에
-  // 쓸모없는 스크림만 남는다.
-  useEffect(() => {
-    if (!narrow) setDrawerOpen(false);
-  }, [narrow]);
-
-  // 열려 있는 동안은 Esc 가 서랍의 몫이다 — 생성 중단과 겹치지 않게.
-  useEffect(() => (drawerOpen ? pushOverlay() : undefined), [drawerOpen]);
-
-  useEffect(() => {
-    if (!drawerOpen) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setDrawerOpen(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen]);
   const showLibrary = view === "library";
   const showDocuments = view === "documents";
   const showBoard = view === "board";
-  const showAdmin = view === "admin" && onOpenAdmin !== null;
+  // `view` is already "chat" for a non-administrator on #/admin (App coerces it).
+  const showAdmin = view === "admin";
   const showTools = view === "tools";
   const showSettings = view === "settings";
 
@@ -281,25 +199,6 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
     },
     onStop: chatStream.stopGeneration,
   });
-
-  // Ctrl/Cmd+K(대화 검색)는 사이드바가 맡는다. 좁은 화면에서 서랍이 닫혀 있으면 검색 칸이
-  // 보이지 않으므로 서랍을 먼저 열고, 서랍이 제 첫 항목으로 포커스를 옮긴 뒤 검색 칸으로 보낸다.
-  useEffect(() => {
-    if (!narrow || drawerOpen) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
-      if (event.code !== "KeyK" && event.key.toLowerCase() !== "k") return;
-      event.preventDefault();
-      setDrawerOpen(true);
-      window.setTimeout(() => {
-        const input = document.querySelector<HTMLInputElement>(".sidebar-search-input");
-        input?.focus();
-        input?.select();
-      }, 60);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [narrow, drawerOpen]);
 
   return (
     <div
@@ -332,12 +231,12 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
           ref={drawerToggleRef}
           type="button"
           className="btn-icon app-drawer-toggle"
-          aria-label={drawerOpen ? "메뉴 닫기" : "메뉴 열기"}
-          aria-expanded={drawerOpen}
-          data-tooltip={drawerOpen ? "메뉴 닫기" : "메뉴 열기"}
-          onClick={() => setDrawerOpen((open) => !open)}
+          aria-label="메뉴 열기"
+          aria-expanded={false}
+          data-tooltip="메뉴 열기"
+          onClick={() => setDrawerOpen(true)}
         >
-          <MenuIcon open={drawerOpen} />
+          <MenuIcon />
         </button>
       )}
 
@@ -348,12 +247,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
       )}
 
       <Sidebar
-        conversationSettingsOpen={showSettings}
-        toolsPanelOpen={showTools}
-        libraryOpen={showLibrary}
-        documentsOpen={showDocuments}
-        boardOpen={showBoard}
-        adminOpen={showAdmin}
+        view={view}
         onOpenConversationSettings={() => navigateFromDrawer("settings")}
         onOpenToolsPanel={() => navigateFromDrawer("tools")}
         onOpenLibrary={() => navigateFromDrawer("library")}
@@ -384,7 +278,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
           />
         )}
         {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
-        {!showLibrary && !showDocuments && !showBoard && !showAdmin && !showTools && !showSettings && <SourcePanel />}
+        {view === "chat" && <SourcePanel />}
       </main>
     </div>
   );

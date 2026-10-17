@@ -3,6 +3,7 @@ import * as api from "../api/client";
 import type { DocumentChunk, RagDocument } from "../api/types";
 import { LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
+import { errorMessage } from "../state/friendlyError";
 import "./DocumentViewer.css";
 
 /**
@@ -43,7 +44,7 @@ export function DocumentViewer({ document, onClose }: Props) {
         setText(t);
         setChunks(c.chunks);
       } catch (err) {
-        if (alive) setError(err instanceof Error ? err.message : String(err));
+        if (alive) setError(errorMessage(err));
       }
     })();
     return () => {

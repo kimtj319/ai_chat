@@ -1,195 +1,35 @@
 import { Fragment, useEffect, useRef, useState, type ChangeEvent } from "react";
-import { pushOverlay } from "../ui/overlayStack";
-import { useAuth } from "../auth/AuthContext";
+import { useDismiss } from "../hooks/useDismiss";
 import { useModels } from "../hooks/useModels";
+import type { View } from "../routes";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
 import { parseImportedConversations } from "../state/exportImport";
-import { filterByTitle, groupConversationsByDate, splitMatch } from "../state/conversationGroups";
+import { filterByTitle, groupConversationsByDate } from "../state/conversationGroups";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
-import { CapabilityIcon } from "./CapabilityIcon";
-import { ChangePasswordDialog } from "./ChangePasswordDialog";
-import { PersonalKeysDialog } from "./PersonalKeysDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ConversationRow } from "./ConversationRow";
 import { showErrorToast, showToast } from "./Toast";
-import { ModelEndpointDialog } from "./ModelEndpointDialog";
 import { ModelSelector } from "./ModelSelector";
+import { SidebarSettings } from "./SidebarSettings";
+import {
+  BackIcon,
+  CloseIcon,
+  DocumentIcon,
+  EditIcon,
+  GearIcon,
+  LibraryIcon,
+  PanelIcon,
+  SearchIcon,
+  SlidersIcon,
+  WrenchIcon,
+} from "./icons";
 import "./Sidebar.css";
 
-function PanelIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M9 5v14" />
-    </svg>
-  );
-}
-
-function EditIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18" />
-      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-      <path d="M10 11v6M14 11v6" />
-    </svg>
-  );
-}
-
-function SlidersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <circle cx="9" cy="6" r="1.75" fill="currentColor" stroke="none" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <circle cx="15" cy="12" r="1.75" fill="currentColor" stroke="none" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="10" cy="18" r="1.75" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function WrenchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 7.3a4.5 4.5 0 0 1-6.02 4.24L7 19.5l-2.5-2.5 7.96-7.98A4.5 4.5 0 0 1 17.7 3l-3.2 3.2 1.5 1.5 3.2-3.2c.5.75.8 1.65.8 2.8Z" />
-    </svg>
-  );
-}
-
-function LibraryIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H8v16H5.5A1.5 1.5 0 0 1 4 18.5Z" />
-      <path d="M11 4h2.5A1.5 1.5 0 0 1 15 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11Z" />
-      <path d="m17.4 6.6 1.9-.5a1 1 0 0 1 1.2.7l2.2 8.4" />
-    </svg>
-  );
-}
-
-/** A sheet with lines on it. Deliberately not the library's books: one holds
- *  tools, this holds text, and at rail size the difference has to be the shape. */
-function DocumentIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
-      <path d="M14 3v5h5" />
-      <path d="M9 13h6" />
-      <path d="M9 17h4" />
-    </svg>
-  );
-}
-
-function UploadIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 15V3" />
-      <path d="M7 8l5-5 5 5" />
-      <path d="M4 19.5h16" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.32 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-    </svg>
-  );
-}
-
-function ServerIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="7" rx="2" />
-      <rect x="3" y="13" width="18" height="7" rx="2" />
-      <path d="M7 7.5h.01M7 16.5h.01" />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3l7.5 3v5.5c0 4.4-3.1 8.4-7.5 9.5-4.4-1.1-7.5-5.1-7.5-9.5V6Z" />
-      <path d="M9.5 12l1.8 1.8 3.4-3.6" />
-    </svg>
-  );
-}
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 5l-7 7 7 7" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m20 20-4.2-4.2" />
-    </svg>
-  );
-}
-
-function KeyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="12" r="4" />
-      <path d="M12 12h9" />
-      <path d="M17.5 12v3.5" />
-      <path d="M20.5 12v2.5" />
-    </svg>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="5" y="11" width="14" height="9" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 4h3.5A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5H14" />
-      <path d="M10 16l-4-4 4-4" />
-      <path d="M6 12h9" />
-    </svg>
-  );
-}
-
 interface SidebarProps {
-  conversationSettingsOpen: boolean;
-  toolsPanelOpen: boolean;
-  libraryOpen: boolean;
-  documentsOpen: boolean;
-  boardOpen: boolean;
-  /** 관리자 메뉴 화면 — 사이드바 항목은 없지만 "새 대화" 가 선택된 것처럼 보이면 안 된다. */
-  adminOpen?: boolean;
+  /** The page in the body. The admin page has no row here, but "새 대화" must
+   *  not look selected while it is open either. */
+  view: View;
   onOpenConversationSettings: () => void;
   onOpenToolsPanel: () => void;
   onOpenLibrary: () => void;
@@ -207,12 +47,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  conversationSettingsOpen,
-  toolsPanelOpen,
-  libraryOpen,
-  documentsOpen,
-  boardOpen,
-  adminOpen = false,
+  view,
   onOpenConversationSettings,
   onOpenToolsPanel,
   onOpenLibrary,
@@ -232,11 +67,14 @@ export function Sidebar({
     renameConversation,
     selectConversation,
     importConversation,
-    setTheme,
     setSidebarCollapsed,
   } = useStore();
   // 모델 이름·버튼 활성 여부에만 쓴다. 흐르는 값이지만 이 셋만 따라 움직이면 된다.
   const { activeConversation } = useActiveConversation();
+  const libraryOpen = view === "library";
+  const documentsOpen = view === "documents";
+  const conversationSettingsOpen = view === "settings";
+  const toolsPanelOpen = view === "tools";
 
   // The subtitle under the model name says where that model actually runs, so
   // it has to follow the *selected* model, not the first catalog entry.
@@ -244,10 +82,7 @@ export function Sidebar({
   const selectedModelId = resolveSelectedModelId(catalog, current, activeConversation?.model ?? null, ui.lastModel);
   const endpoint = endpointLabel(catalog.find((entry) => entry.id === selectedModelId));
 
-  const { me, logout } = useAuth();
-
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -256,13 +91,6 @@ export function Sidebar({
   const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 메뉴가 떠 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
-  useEffect(() => (settingsOpen ? pushOverlay() : undefined), [settingsOpen]);
-  const [endpointsOpen, setEndpointsOpen] = useState(false);
-
-  const [confirmLogout, setConfirmLogout] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [keysOpen, setKeysOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   // 폰에서는 서랍 전체가 스크롤된다(Sidebar.css). 설정 화면은 서랍을 덮는 칸이라
@@ -275,23 +103,7 @@ export function Sidebar({
   // Close the bottom-row settings popover on outside click / Esc — purely
   // presentational open/closed state, mirrors the pattern used by the
   // composer's reasoning dropdown.
-  useEffect(() => {
-    if (!settingsOpen) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
-        setSettingsOpen(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setSettingsOpen(false);
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [settingsOpen]);
+  useDismiss(settingsOpen, settingsRef, () => setSettingsOpen(false), { escape: true });
 
   // Ctrl/Cmd+K: 대화 제목 검색으로. 접힌 레일에는 검색 칸이 없어 펼치고, 설정 화면이
   // 덮여 있으면 걷는다. 좁은 화면에서 서랍이 닫혀 있으면 검색 칸이 보이지 않아 포커스가
@@ -330,17 +142,12 @@ export function Sidebar({
     void createConversation().catch(reportError);
   }
 
-  function startEditing(id: string, currentTitle: string) {
-    setEditingId(id);
-    setEditValue(currentTitle);
-  }
-
-  async function commitEditing() {
-    const id = editingId;
+  async function commitRename(id: string, title: string) {
+    if (editingId !== id) return;
     setEditingId(null);
-    if (!id || editValue.trim().length === 0) return;
+    if (title.trim().length === 0) return;
     try {
-      await renameConversation(id, editValue.trim());
+      await renameConversation(id, title.trim());
     } catch (error) {
       reportError(error);
     }
@@ -379,143 +186,6 @@ export function Sidebar({
       showToast("파일을 가져오지 못했습니다. 올바른 JSON 형식인지 확인해 주세요.", "error");
     }
   }
-
-  // One definition, rendered by both the full sidebar and the collapsed
-  // rail, so the two can never drift apart. 겉모양만 다르다: 펼친 사이드바에서는
-  // 사이드바 전체를 덮는 설정 화면(sidebar-settings-page)이 되고, 68px 레일에는 그
-  // 화면을 둘 자리가 없어 옆으로 뜨는 팝오버로 남는다.
-  const settingsItems = (
-    <>
-      <p className="sidebar-settings-heading">계정</p>
-      <div className="sidebar-account">
-        <span className="sidebar-account-name">{me?.name ?? "알 수 없는 사용자"}</span>
-        <span className="sidebar-account-id">
-          {me?.id ?? "-"}
-          {me?.role === "admin" && <span className="sidebar-account-role">관리자</span>}
-        </span>
-      </div>
-
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
-          setPasswordOpen(true);
-        }}
-      >
-        <KeyIcon />
-        <span>비밀번호 변경</span>
-      </button>
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
-          setKeysOpen(true);
-        }}
-      >
-        <LockIcon />
-        <span>개인 키 (API 키·토큰)</span>
-      </button>
-      {onOpenAdmin && (
-        <button
-          type="button"
-          className="sidebar-settings-action"
-          onClick={() => {
-            setSettingsOpen(false);
-            onOpenAdmin();
-          }}
-        >
-          <ShieldIcon />
-          <span>관리자 메뉴</span>
-        </button>
-      )}
-
-      {/* 모델 서버 연동은 서버 전체에 걸리는 설정이라 관리자에게만 보인다. */}
-      {me?.role === "admin" && (
-        <>
-          <p className="sidebar-settings-heading">모델</p>
-          <button
-            type="button"
-            className="sidebar-settings-action"
-            onClick={() => {
-              setSettingsOpen(false);
-              setEndpointsOpen(true);
-            }}
-          >
-            <ServerIcon />
-            <span>모델 연동</span>
-          </button>
-        </>
-      )}
-
-      <p className="sidebar-settings-heading">대화</p>
-      {/* 파일 입력(fileInputRef)은 메뉴 쪽에 그대로 있다 — 설정 화면은 그 위에 덮일 뿐이라
-          닫혀도 입력이 사라지지 않고, 파일 창이 닫힌 뒤의 onChange 를 받는다. */}
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
-          handleImportClick();
-        }}
-      >
-        <UploadIcon />
-        <span>대화 가져오기 (JSON)</span>
-      </button>
-
-      <p className="sidebar-settings-heading">테마</p>
-      <div className="sidebar-theme">
-        {(["system", "light", "dark"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={`theme-option${ui.theme === mode ? " active" : ""}`}
-            onClick={() => setTheme(mode)}
-          >
-            {mode === "system" ? "시스템" : mode === "light" ? "라이트" : "다크"}
-          </button>
-        ))}
-      </div>
-      {/* Last, and behind a rule: leaving is not a setting, and it is the
-          one item here you do not want to hit while aiming for another. */}
-      <div className="sidebar-settings-divider" role="presentation" />
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
-          setConfirmLogout(true);
-        }}
-      >
-        <LogoutIcon />
-        <span>로그아웃</span>
-      </button>
-    </>
-  );
-  const settingsMenu = settingsOpen && <div className="sidebar-settings-popover">{settingsItems}</div>;
-
-  // Overlays: they position themselves, so it does not matter which branch
-  // renders them, only that every branch does.
-  const settingsDialogs = (
-    <>
-      {endpointsOpen && <ModelEndpointDialog onClose={() => setEndpointsOpen(false)} />}
-      {passwordOpen && <ChangePasswordDialog onClose={() => setPasswordOpen(false)} />}
-      {keysOpen && <PersonalKeysDialog onClose={() => setKeysOpen(false)} />}
-    {confirmLogout && (
-      <ConfirmDialog
-        title="로그아웃할까요?"
-        message={`${me?.name ?? ""} (${me?.id ?? ""}) 계정에서 로그아웃합니다.`}
-        confirmLabel="로그아웃"
-        onCancel={() => setConfirmLogout(false)}
-        onConfirm={() => {
-          setConfirmLogout(false);
-          void logout();
-        }}
-      />
-    )}
-    </>
-  );
 
   if (ui.sidebarCollapsed) {
     // Collapsed rail: the menu's actions stay reachable as icons (labels move
@@ -601,10 +271,14 @@ export function Sidebar({
           >
             <GearIcon />
           </button>
-          {settingsMenu}
+          <SidebarSettings
+            popover
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            onOpenAdmin={onOpenAdmin}
+            onImport={handleImportClick}
+          />
         </div>
-
-        {settingsDialogs}
       </aside>
     );
   }
@@ -619,14 +293,7 @@ export function Sidebar({
   // and the only clue that the row lies is the screen itself.
   const visibleConversations = filterByTitle(conversations, query);
 
-  const isFreshView =
-    (!activeConversation || activeConversation.messages.length === 0) &&
-    !conversationSettingsOpen &&
-    !toolsPanelOpen &&
-    !libraryOpen &&
-    !documentsOpen &&
-    !boardOpen &&
-    !adminOpen;
+  const isFreshView = (!activeConversation || activeConversation.messages.length === 0) && view === "chat";
 
   return (
     <aside ref={asideRef} className={`sidebar${settingsOpen ? " settings-open" : ""}`}>
@@ -775,82 +442,23 @@ export function Sidebar({
         {groupConversationsByDate(visibleConversations).map((group) => (
           <Fragment key={group.key}>
             <p className="sidebar-section-label">{group.label}</p>
-            {group.items.map((conversation) => {
-              const match = splitMatch(conversation.title, query);
-              return (
-                <div
-                  key={conversation.id}
-                  className={`sidebar-item${conversation.id === activeConversationId ? " active" : ""}`}
-                  onClick={() => {
-                    onShowChat();
-                    void selectConversation(conversation.id);
-                  }}
-                >
-                  <CapabilityIcon kind={conversation.kind} className="sidebar-item-kind" />
-
-                  {editingId === conversation.id ? (
-                    <input
-                      autoFocus
-                      className="sidebar-item-input"
-                      value={editValue}
-                      onChange={(event) => setEditValue(event.target.value)}
-                      onBlur={() => void commitEditing()}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") void commitEditing();
-                        if (event.key === "Escape") setEditingId(null);
-                      }}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  ) : (
-                    <span
-                      className="sidebar-item-title"
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        startEditing(conversation.id, conversation.title);
-                      }}
-                      data-tooltip={conversation.title}
-                    >
-                      {match ? (
-                        <>
-                          {match[0]}
-                          <mark className="sidebar-item-match">{match[1]}</mark>
-                          {match[2]}
-                        </>
-                      ) : (
-                        conversation.title
-                      )}
-                    </span>
-                  )}
-
-                  <div className="sidebar-item-actions">
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      data-tooltip="이름 변경"
-                      aria-label={`「${conversation.title}」 대화 이름 변경`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        startEditing(conversation.id, conversation.title);
-                      }}
-                    >
-                      <EditIcon />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      data-tooltip="삭제"
-                      aria-label={`「${conversation.title}」 대화 삭제`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setPendingDelete({ id: conversation.id, title: conversation.title });
-                      }}
-                    >
-                      <TrashIcon />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {group.items.map((conversation) => (
+              <ConversationRow
+                key={conversation.id}
+                conversation={conversation}
+                query={query}
+                active={conversation.id === activeConversationId}
+                editing={editingId === conversation.id}
+                onSelect={() => {
+                  onShowChat();
+                  void selectConversation(conversation.id);
+                }}
+                onStartEdit={() => setEditingId(conversation.id)}
+                onCancelEdit={() => setEditingId(null)}
+                onRename={commitRename}
+                onDelete={() => setPendingDelete({ id: conversation.id, title: conversation.title })}
+              />
+            ))}
           </Fragment>
         ))}
       </div>
@@ -905,10 +513,15 @@ export function Sidebar({
           </button>
           <h2 className="sidebar-settings-page-title">설정</h2>
         </div>
-        <div className="sidebar-settings-page-body">{settingsItems}</div>
+        <div className="sidebar-settings-page-body">
+          <SidebarSettings
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            onOpenAdmin={onOpenAdmin}
+            onImport={handleImportClick}
+          />
+        </div>
       </div>
-
-      {settingsDialogs}
 
       {pendingDelete && (
         <ConfirmDialog

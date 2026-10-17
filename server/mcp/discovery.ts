@@ -44,6 +44,12 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 /** One refresh per server at a time; a second caller joins the first one's promise. */
 const inFlight = new Map<string, Promise<CacheEntry>>();
+/**
+ * Bumped by invalidate(). A refresh that started against the old record (its
+ * URL or auth since edited) still finishes, and must not write what the OLD
+ * server said over the new one.
+ */
+const generation = new Map<string, number>();
 
 const EMPTY_TOOLS: McpToolDescriptor[] = [];
 
@@ -83,7 +89,10 @@ export async function refresh(server: McpServerRecord, credential?: string): Pro
     await existing.catch(() => undefined);
     return snapshot(server.id);
   }
-  const run = doRefresh(server, credential).finally(() => inFlight.delete(server.id));
+  const run: Promise<CacheEntry> = doRefresh(server, credential, generation.get(server.id) ?? 0).finally(() => {
+    // Only our own entry: after an invalidate() the slot may hold a newer refresh.
+    if (inFlight.get(server.id) === run) inFlight.delete(server.id);
+  });
   inFlight.set(server.id, run);
   await run.catch(() => undefined);
   return snapshot(server.id);
@@ -101,7 +110,7 @@ export async function ensureFresh(server: McpServerRecord, credential?: string):
   return refresh(server, credential);
 }
 
-async function doRefresh(server: McpServerRecord, credential?: string): Promise<CacheEntry> {
+async function doRefresh(server: McpServerRecord, credential: string | undefined, startedAt: number): Promise<CacheEntry> {
   const resolved =
     server.authMode === "header" && credential === undefined ? await findDiscoveryCredential(server) : credential;
   const result = await probeMcpServer(
@@ -112,6 +121,7 @@ async function doRefresh(server: McpServerRecord, credential?: string): Promise<
     },
     AbortSignal.timeout(DISCOVERY_BUDGET_MS),
   );
+  if ((generation.get(server.id) ?? 0) !== startedAt) return baseEntry(server.id);
   return result.ok
     ? recordSuccess(server, result.tools)
     : recordFailure(server.id, `${result.stage ?? "probe"}: ${result.error ?? "실패"}`);
@@ -132,7 +142,7 @@ function baseEntry(serverId: string): CacheEntry {
 
 /**
  * A server may be allowed to contribute only some of what it offers (the record
- * carries the list; registryStore.ts sets it on a builtin). The cut belongs
+ * carries the list; builtinServers.ts sets it on a builtin). The cut belongs
  * HERE, before the hash: everything downstream — the identity kept across a
  * refresh, the health verdict, the debug hash — is defined by the array this
  * function stores, so a list filtered any later would not be the list those
@@ -211,7 +221,18 @@ function recordFailure(serverId: string, error: string): CacheEntry {
 export function noteCallSuccess(serverId: string): void {
   const entry = cache.get(serverId);
   if (!entry || entry.consecutiveFailures === 0) return;
-  cache.set(serverId, { ...entry, consecutiveFailures: 0, quarantinedUntil: 0 });
+  // The health too, or the UI keeps showing a server that just answered as down
+  // until the next discovery.
+  cache.set(serverId, {
+    ...entry,
+    health: {
+      state: entry.tools.length > 0 ? "ok" : "degraded",
+      checkedAt: new Date().toISOString(),
+      ...(entry.health.toolCount !== undefined ? { toolCount: entry.health.toolCount } : {}),
+    },
+    consecutiveFailures: 0,
+    quarantinedUntil: 0,
+  });
 }
 
 export function noteCallFailure(serverId: string, error: string): void {
@@ -229,6 +250,7 @@ export function prime(server: McpServerRecord, tools: McpToolDescriptor[]): Disc
 
 /** Forget everything about a server — its URL or auth changed, or it is gone. */
 export function invalidate(serverId: string): void {
+  generation.set(serverId, (generation.get(serverId) ?? 0) + 1);
   cache.delete(serverId);
   inFlight.delete(serverId);
 }

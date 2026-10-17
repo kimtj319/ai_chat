@@ -85,9 +85,7 @@
 .mcp-picker-search {
   width: 100%;
   padding: var(--space-3) var(--space-6);
-  border: none;
   border-radius: var(--radius-full);
-  background: var(--surface-container);
   color: var(--on-surface);
   font-size: var(--text-sm);
 }

@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import { config } from "../config.js";
 import crypto from "node:crypto";
 import { hashPassword, isStrongEnough, MIN_PASSWORD_LENGTH, verifyPassword } from "../auth/password.js";
@@ -10,17 +10,17 @@ import {
   normalizeUserId,
   setUserPassword,
 } from "../storage/userStore.js";
-import { setSessionUser, signInOnFreshSession, signOutOtherSessions } from "../storage/sessionStore.js";
+import { clearSessionUser, signInOnFreshSession, signOutOtherSessions } from "../storage/sessionStore.js";
 import { setSessionCookie } from "../middleware/session.js";
 import { toPublicUser } from "../types.js";
 import { isPrivilegedUser } from "../auth/privilege.js";
 import type { AuthErrorCode } from "../types.js";
+import { clientAddress, createTokenBucket } from "./rateLimit.js";
+import { sendError } from "./respond.js";
 
 export const authRouter = Router();
 
-function fail(res: Response, status: number, code: AuthErrorCode, error: string): void {
-  res.status(status).json({ error, code });
-}
+const fail = sendError<AuthErrorCode>;
 
 /**
  * Login rate limiting: the same in-memory token bucket the upload route uses,
@@ -35,33 +35,7 @@ function fail(res: Response, status: number, code: AuthErrorCode, error: string)
  * The id bucket is keyed on the NORMALISED id, so trying "Alice" and "alice"
  * spends one bucket rather than two.
  */
-const RATE_WINDOW_MS = 60_000;
-const buckets = new Map<string, { tokens: number; last: number }>();
-
-function takeToken(key: string, capacity: number): boolean {
-  const now = Date.now();
-  const bucket = buckets.get(key) ?? { tokens: capacity, last: now };
-  bucket.tokens = Math.min(capacity, bucket.tokens + ((now - bucket.last) / RATE_WINDOW_MS) * capacity);
-  bucket.last = now;
-  const allowed = bucket.tokens >= 1;
-  if (allowed) bucket.tokens -= 1;
-  buckets.set(key, bucket);
-  if (buckets.size > 1000) {
-    for (const [existing, value] of buckets) {
-      if (now - value.last > 5 * RATE_WINDOW_MS) buckets.delete(existing);
-    }
-  }
-  return allowed;
-}
-
-/** Test seam: the verification script needs a clean slate between cases. */
-export function resetLoginRateLimit(): void {
-  buckets.clear();
-}
-
-function clientAddress(req: Request): string {
-  return req.ip || req.socket?.remoteAddress || "unknown";
-}
+const takeToken = createTokenBucket(60_000);
 
 /**
  * POST /api/auth/signup — register. The account starts `pending` and cannot
@@ -173,7 +147,7 @@ function dummyHash(): Promise<string> {
 authRouter.post("/auth/logout", async (req, res, next) => {
   try {
     if (req.sessionUserId) {
-      await setSessionUser(req.sessionId, null);
+      await clearSessionUser(req.sessionId);
       console.log(`[auth] logout ${req.sessionUserId}`);
     }
     res.status(204).end();
@@ -242,11 +216,15 @@ authRouter.post("/auth/password", async (req, res, next) => {
  * A pending or blocked account gets its own code here too, so a session that
  * was signed in when the block landed is told why it stopped working.
  */
-authRouter.get("/auth/me", async (req, res) => {
-  const user = req.user;
-  if (!user) return fail(res, 401, "unauthorized", "로그인이 필요합니다.");
-  if (user.status === "blocked") return fail(res, 403, "blocked", "차단된 계정입니다. 관리자에게 문의해 주세요.");
-  if (user.status !== "active") return fail(res, 403, "pending_approval", "관리자 승인 대기 중인 계정입니다.");
-  // privileged: may use shared keys and every model (auth/privilege.ts).
-  res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
+authRouter.get("/auth/me", async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) return fail(res, 401, "unauthorized", "로그인이 필요합니다.");
+    if (user.status === "blocked") return fail(res, 403, "blocked", "차단된 계정입니다. 관리자에게 문의해 주세요.");
+    if (user.status !== "active") return fail(res, 403, "pending_approval", "관리자 승인 대기 중인 계정입니다.");
+    // privileged: may use shared keys and every model (auth/privilege.ts).
+    res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
+  } catch (err) {
+    next(err);
+  }
 });

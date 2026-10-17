@@ -4,6 +4,7 @@
 // account typing the correct password must be told it is waiting for approval,
 // not that its password is wrong.
 
+import { AuthError } from "../api/client";
 import type { AuthErrorCode } from "../api/types";
 
 export const PENDING_APPROVAL_NOTICE =
@@ -41,4 +42,11 @@ export function authErrorMessage(code: AuthErrorCode | null, fallback?: string):
         ? fallback
         : "요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.";
   }
+}
+
+/** A caught auth/admin failure as copy: the server's `code` if it sent one, else its message. */
+export function authFailureMessage(error: unknown): string {
+  const code = error instanceof AuthError ? error.code : null;
+  const fallback = error instanceof Error ? error.message : undefined;
+  return authErrorMessage(code, fallback);
 }

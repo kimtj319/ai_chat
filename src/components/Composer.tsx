@@ -12,6 +12,7 @@ import { AttachmentPreview, type PreviewTarget } from "./AttachmentPreview";
 import { McpPicker } from "./McpPicker";
 import { ReasoningControl } from "./ReasoningControl";
 import { BrowserControlToggle, useBrowserControlActive } from "./BrowserControlToggle";
+import { PaperclipIcon } from "./icons";
 import "./Composer.css";
 
 /** Match .composer-textarea's min/max-height in Composer.css. */
@@ -63,14 +64,6 @@ function StopIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="6" y="6" width="12" height="12" rx="2" />
-    </svg>
-  );
-}
-
-function PaperclipIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21.4 11.1 12.3 20.2a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.7 3.7 0 0 1 5.2 5.2l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.5-8.5" />
     </svg>
   );
 }

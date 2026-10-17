@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "./types.js";
 import { config } from "../config.js";
+import { fetchJsonOrThrow } from "./net/fetchJson.js";
 
 const ENDPOINT = "https://api.frankfurter.dev/v1/latest";
 
@@ -32,21 +33,17 @@ export const currencyConvertTool: ToolDefinition = {
     url.searchParams.set("from", from);
     url.searchParams.set("to", to);
 
-    let res: Response;
-    try {
-      res = await fetch(url, { signal: AbortSignal.timeout(config.toolHttpTimeoutMs) });
-    } catch (err) {
-      if (err instanceof Error && err.name === "TimeoutError") {
-        throw new Error(`Currency conversion timed out after ${config.toolHttpTimeoutMs / 1000}s`);
-      }
-      throw new Error(`Currency conversion request failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    if (res.status === 404) {
-      throw new Error(`Unknown currency code: "${from}" or "${to}" is not a supported ISO 4217 code.`);
-    }
-    if (!res.ok) throw new Error(`Currency conversion service responded ${res.status}`);
-
-    const data = (await res.json()) as { amount: number; base: string; date: string; rates: Record<string, number> };
+    const data = await fetchJsonOrThrow<{ amount: number; base: string; date: string; rates: Record<string, number> }>(url, {
+      timeoutMs: config.toolHttpTimeoutMs,
+      failed: (detail, err) =>
+        err instanceof Error && err.name === "TimeoutError"
+          ? `Currency conversion timed out after ${config.toolHttpTimeoutMs / 1000}s`
+          : `Currency conversion request failed: ${detail}`,
+      status: (status) =>
+        status === 404
+          ? `Unknown currency code: "${from}" or "${to}" is not a supported ISO 4217 code.`
+          : `Currency conversion service responded ${status}`,
+    });
     const result = data.rates[to];
     if (result === undefined) throw new Error(`No rate available for "${to}"`);
 

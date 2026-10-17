@@ -2,20 +2,13 @@ import { useState } from "react";
 import type { ClientChatMessage } from "../state/types";
 import { toolUsageSummary, type ToolCallStatus } from "../state/toolCopy";
 import { ToolCallBlock } from "./ToolCallBlock";
+import { ChevronRightIcon } from "./icons";
 import "./ToolUsagePanel.css";
 
 interface ToolUsagePanelProps {
   message: ClientChatMessage;
   /** MCP 서버 slug → 표시 이름. 있으면 "<이름> 사용", 없으면 '도구 사용'. */
   mcpServerNames?: Record<string, string>;
-}
-
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  );
 }
 
 /**
@@ -54,7 +47,7 @@ export function ToolUsagePanel({ message, mcpServerNames }: ToolUsagePanelProps)
         aria-expanded={expanded}
       >
         <span className={`tool-usage-caret${expanded ? " open" : ""}`}>
-          <ChevronIcon />
+          <ChevronRightIcon />
         </span>
         <span className="tool-usage-label">
           {summary.running ? <span className="thinking-shimmer">{summary.text}</span> : summary.text}

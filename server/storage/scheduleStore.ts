@@ -38,8 +38,14 @@ const KEEP_FINISHED = 50;
 
 const lockFor = (ownerId: string) => `schedules:${ownerId}`;
 
+/** 목록용. 못 읽으면 "예약 없음" 으로 넘어간다 — 요청을 실패시키지 않는다. */
 async function read(ownerId: string): Promise<ScheduledTask[]> {
-  const data = await readJsonFile<{ tasks?: ScheduledTask[] }>(ownerSchedulesFile(ownerId)).catch(() => null);
+  return readForUpdate(ownerId).catch(() => []);
+}
+
+/** 고쳐 쓸 때. 파일을 통째로 다시 쓰므로 읽기 실패는 쓰기 실패여야 한다 — 아니면 다른 예약이 모두 사라진다. */
+async function readForUpdate(ownerId: string): Promise<ScheduledTask[]> {
+  const data = await readJsonFile<{ tasks?: ScheduledTask[] }>(ownerSchedulesFile(ownerId));
   return Array.isArray(data?.tasks) ? data.tasks : [];
 }
 
@@ -65,7 +71,7 @@ export async function createSchedule(
   input: { conversationId: string; instruction: string; runAt: Date; useBrowser: boolean },
 ): Promise<ScheduledTask> {
   return withLock(lockFor(ownerId), async () => {
-    const tasks = await read(ownerId);
+    const tasks = await readForUpdate(ownerId);
     if (tasks.filter((t) => t.status === "pending").length >= MAX_PENDING_PER_OWNER) {
       throw new ScheduleLimitError(`예약은 한 번에 ${MAX_PENDING_PER_OWNER}개까지 걸어 둘 수 있습니다.`);
     }
@@ -94,7 +100,7 @@ export async function updateSchedule(
 ): Promise<ScheduledTask | null> {
   if (!isValidId(id)) return null;
   return withLock(lockFor(ownerId), async () => {
-    const tasks = await read(ownerId);
+    const tasks = await readForUpdate(ownerId);
     const index = tasks.findIndex((t) => t.id === id);
     if (index < 0) return null;
     const next = mutate({ ...tasks[index]! });

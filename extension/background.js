@@ -47,6 +47,17 @@ function matchPatternFor(origin) {
   return `${u.protocol}//${u.hostname}/*`;
 }
 
+/** 열려 있는 AI Console 탭. 매치 패턴은 포트를 가리지 못하므로 origin 으로 한 번 더 거른다. */
+async function appTabs(appOrigin) {
+  return (await chrome.tabs.query({ url: matchPatternFor(appOrigin) })).filter((t) => {
+    try {
+      return new URL(t.url ?? "").origin === appOrigin;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** 중계(bridge.js)를 사용자가 정한 AI Console 주소에만 붙인다. */
 async function syncBridgeRegistration() {
   const { appOrigin } = await getSettings();
@@ -58,11 +69,9 @@ async function syncBridgeRegistration() {
     { id: "aic-bridge", matches: [pattern], js: ["bridge.js"], runAt: "document_start", persistAcrossSessions: true },
   ]);
   // 이미 열려 있는 AI Console 탭에도 바로 붙인다 — 새로고침하지 않아도 연결되게.
-  for (const tab of await chrome.tabs.query({ url: pattern })) {
+  for (const tab of await appTabs(appOrigin)) {
     try {
-      if (tab.id !== undefined && tab.url && new URL(tab.url).origin === appOrigin) {
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["bridge.js"] });
-      }
+      if (tab.id !== undefined) await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["bridge.js"] });
     } catch {
       // 막 닫히는 탭 등 — 다음 새로고침에서 붙는다.
     }
@@ -197,6 +206,15 @@ async function resolveTab(args) {
   } catch {
     return { error: `탭 ${id} 을(를) 찾을 수 없습니다. browser_tabs 로 다시 확인하세요.` };
   }
+}
+
+/** 명령이 다룰 탭과 그 사이트의 허용 여부. 다뤄도 되면 {tab}, 아니면 {response}: 모델에게 그대로 돌려줄 응답. */
+async function gatedTab(args, ctx) {
+  const { tab, error } = await resolveTab(args);
+  if (error) return { response: { ok: false, error } };
+  const gate = await siteGate(tab.url ?? "", ctx);
+  if (gate) return { response: gate };
+  return { tab };
 }
 
 async function waitForLoad(tabId) {
@@ -379,10 +397,8 @@ async function openUrl(args, ctx) {
 }
 
 async function readCommand(args, ctx) {
-  const { tab, error } = await resolveTab(args);
-  if (error) return { ok: false, error };
-  const gate = await siteGate(tab.url ?? "", ctx);
-  if (gate) return gate;
+  const { tab, response } = await gatedTab(args, ctx);
+  if (response) return response;
   const offset = Number.isInteger(args.text_offset) && args.text_offset > 0 ? args.text_offset : 0;
   return readTab(tab.id, ctx, offset, "", "페이지 읽는 중");
 }
@@ -411,10 +427,8 @@ async function afterAction(tabId, ctx, message, label = "결과 읽는 중") {
 }
 
 async function elementAction(args, ctx, kind) {
-  const { tab, error } = await resolveTab(args);
-  if (error) return { ok: false, error };
-  const gate = await siteGate(tab.url ?? "", ctx);
-  if (gate) return gate;
+  const { tab, response } = await gatedTab(args, ctx);
+  if (response) return response;
   const ref = String(args.ref ?? "").replace(/^\[|\]$/g, "");
   if (!/^e\d+$/.test(ref)) return { ok: false, error: "ref 는 browser_read 결과의 e12 같은 번호여야 합니다." };
 
@@ -453,13 +467,18 @@ async function elementAction(args, ctx, kind) {
   const created = [];
   const onCreated = (t) => created.push(t);
   chrome.tabs.onCreated.addListener(onCreated);
-  const done =
-    kind === "click"
-      ? await run(tab.id, clickElement, [ref])
-      : await run(tab.id, typeIntoElement, [ref, text, Boolean(args.submit)]);
-  await sleep(600);
-  if (kind === "click" && created.length === 0) await sleep(900);
-  chrome.tabs.onCreated.removeListener(onCreated);
+  let done;
+  try {
+    done =
+      kind === "click"
+        ? await run(tab.id, clickElement, [ref])
+        : await run(tab.id, typeIntoElement, [ref, text, Boolean(args.submit)]);
+    await sleep(600);
+    if (kind === "click" && created.length === 0) await sleep(900);
+  } finally {
+    // 실패해도 뗀다. 남으면 서비스 워커가 사는 내내 모든 새 탭이 버려진 배열에 쌓인다.
+    chrome.tabs.onCreated.removeListener(onCreated);
+  }
   if (!done?.ok) return withShots(done ?? { ok: false, error: "동작을 실행하지 못했습니다." }, [target]);
 
   // 새 탭으로 열리는 링크면 그 탭으로 옮겨 간다. openerTabId 는 믿을 수 없다 — 누른 탭이
@@ -477,10 +496,8 @@ async function elementAction(args, ctx, kind) {
 }
 
 async function scrollCommand(args, ctx) {
-  const { tab, error } = await resolveTab(args);
-  if (error) return { ok: false, error };
-  const gate = await siteGate(tab.url ?? "", ctx);
-  if (gate) return gate;
+  const { tab, response } = await gatedTab(args, ctx);
+  if (response) return response;
   const direction = ["up", "down", "top", "bottom"].includes(args.direction) ? args.direction : "down";
   await run(tab.id, scrollPage, [direction]);
   await sleep(400);
@@ -488,10 +505,8 @@ async function scrollCommand(args, ctx) {
 }
 
 async function backCommand(args, ctx) {
-  const { tab, error } = await resolveTab(args);
-  if (error) return { ok: false, error };
-  const gate = await siteGate(tab.url ?? "", ctx);
-  if (gate) return gate;
+  const { tab, response } = await gatedTab(args, ctx);
+  if (response) return response;
   // chrome.tabs.goBack 은 브라우저의 뒤로 단추와 같아서, 사용자의 클릭 없이 스크립트로
   // 넘어간 기록을 건너뛴다(크롬의 기록 조작 방지). 모델의 클릭·제출은 모두 스크립트라
   // 그 기록이 통째로 건너뛰어졌다. 페이지 안의 history.back() 은 그 규칙을 받지 않는다.
@@ -803,17 +818,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function wakeAppTabs() {
   const { appOrigin, enabled } = await getSettings();
   if (!appOrigin || !enabled) return;
-  let tabs = (await chrome.tabs.query({ url: matchPatternFor(appOrigin) })).filter((t) => {
-    try {
-      return new URL(t.url ?? "").origin === appOrigin;
-    } catch {
-      return false;
-    }
-  });
+  const tabs = await appTabs(appOrigin);
   if (tabs.length === 0) {
     // AI Console 이 닫혀 있다 — 뒤에서 하나 연다. 열리면 스스로 예약을 집는다.
-    const tab = await chrome.tabs.create({ url: `${appOrigin}/`, active: false }).catch(() => null);
-    if (tab) tabs = [tab];
+    await chrome.tabs.create({ url: `${appOrigin}/`, active: false }).catch(() => null);
     return;
   }
   for (const tab of tabs) {

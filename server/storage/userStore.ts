@@ -1,5 +1,4 @@
-import fs from "node:fs/promises";
-import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, unlinkIfPresent, writeJsonFileAtomic } from "./atomic.js";
 import { userFile, usersDir } from "./paths.js";
 import { withLock } from "./mutex.js";
 import { hashPassword } from "../auth/password.js";
@@ -66,17 +65,25 @@ export async function getUser(id: string): Promise<UserRecord | null> {
   }
 }
 
-export async function listUsers(): Promise<UserRecord[]> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(usersDir());
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
+/**
+ * Account id -> display name, for lists that show who wrote or owns something.
+ * Each id is read once however often it appears. An account that no longer
+ * exists (or cannot be read) is simply absent, so the caller shows the id
+ * rather than a name invented for it.
+ */
+export async function userNamesById(ids: Iterable<string>): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  for (const id of new Set(ids)) {
+    const user = await getUser(id).catch(() => null);
+    if (user) names.set(id, user.name);
   }
+  return names;
+}
+
+export async function listUsers(): Promise<UserRecord[]> {
   const users: UserRecord[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
+  for (const entry of await readdirOrEmpty(usersDir())) {
+    if (!entry.endsWith(".json")) continue;
     const id = normalizeUserId(entry.slice(0, -".json".length));
     if (!id) continue;
     const user = await getUser(id);
@@ -191,15 +198,7 @@ export async function clearGroupFromUsers(groupId: string): Promise<number> {
 export async function deleteUser(id: string): Promise<boolean> {
   const normalized = normalizeUserId(id);
   if (!normalized) return false;
-  return withLock(`user:${normalized}`, async () => {
-    try {
-      await fs.unlink(userFile(normalized));
-      return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
-  });
+  return withLock(`user:${normalized}`, async () => unlinkIfPresent(userFile(normalized)));
 }
 
 /**

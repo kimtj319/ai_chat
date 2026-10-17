@@ -111,6 +111,19 @@ await saveDocumentMeta("carol", doc("c_priv", "private"));
   const shared = await listSharedDocuments();
   check("계정 id 모양이 아닌 디렉터리는 건너뛴다", shared.length === 2, String(shared.length));
 }
+{
+  // 한 계정의 깨진 파일 하나가 모두의 공개 목록을 500 으로 만들면 안 된다.
+  await fs.writeFile(path.join(root, "owners", "carol", "documents", "c_broken.json"), "{ not json");
+  let shared: Awaited<ReturnType<typeof listSharedDocuments>> = [];
+  let threw = false;
+  try {
+    shared = await listSharedDocuments();
+  } catch {
+    threw = true;
+  }
+  check("깨진 문서 파일 하나는 건너뛰고 목록을 낸다", !threw && shared.length === 2, threw ? "threw" : String(shared.length));
+  check("  └ 그 계정의 나머지 문서도 그대로 나온다", (await listDocuments("carol")).map((d) => d.id).join() === "c_priv");
+}
 
 await fs.rm(root, { recursive: true, force: true });
 

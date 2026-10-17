@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listTools } from "../api/client";
 import type { ToolDefinition } from "../api/types";
+import { errorMessage } from "../state/friendlyError";
 
 export function useTools() {
   const [tools, setTools] = useState<ToolDefinition[]>([]);
@@ -17,7 +18,7 @@ export function useTools() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errorMessage(err));
         setLoading(false);
       });
     return () => {

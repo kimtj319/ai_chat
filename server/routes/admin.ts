@@ -1,4 +1,4 @@
-import { Router, type Response } from "express";
+import { Router } from "express";
 import { requireAdmin } from "../middleware/auth.js";
 import {
   clearGroupFromUsers,
@@ -20,12 +20,11 @@ import { deleteOwnerData } from "../storage/ownerData.js";
 import { signOutAllSessions } from "../storage/sessionStore.js";
 import { toPublicUser } from "../types.js";
 import type { AuthErrorCode, UserStatus } from "../types.js";
+import { sendError } from "./respond.js";
 
 export const adminRouter = Router();
 
-function fail(res: Response, status: number, code: AuthErrorCode, error: string): void {
-  res.status(status).json({ error, code });
-}
+const fail = sendError<AuthErrorCode>;
 
 // Every /api/admin route is admin-only; requireActiveUser (app.ts) has already
 // established that there is an active account behind the request.

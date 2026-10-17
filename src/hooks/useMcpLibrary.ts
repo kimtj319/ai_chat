@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listMcpServers, McpError } from "../api/client";
 import type { McpServerSummary } from "../api/types";
+import { errorMessage } from "../state/friendlyError";
 
 export interface McpLibrary {
   servers: McpServerSummary[];
@@ -42,7 +43,7 @@ export function useMcpLibrary(): McpLibrary {
       setAdopted([]);
       setHidden([]);
       setUnavailable(notDeployed);
-      setError(notDeployed ? null : err instanceof Error ? err.message : String(err));
+      setError(notDeployed ? null : errorMessage(err));
     } finally {
       setLoading(false);
     }

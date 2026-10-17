@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { ToolDefinition } from "./types.js";
+import { requireBoundedText } from "./args.js";
 
 const MAX_INPUT_CHARS = 200_000;
 const ALGORITHMS = ["md5", "sha1", "sha256", "sha512"] as const;
@@ -26,12 +27,7 @@ export const hashTextTool: ToolDefinition = {
     additionalProperties: false,
   },
   async execute(args: { text: string; algorithm?: Algorithm }) {
-    if (typeof args?.text !== "string" || args.text.length === 0) {
-      throw new Error("text must be a non-empty string");
-    }
-    if (args.text.length > MAX_INPUT_CHARS) {
-      throw new Error(`text too large (${args.text.length} chars, limit ${MAX_INPUT_CHARS})`);
-    }
+    requireBoundedText(args?.text, "text", MAX_INPUT_CHARS);
     const algorithm: Algorithm =
       args.algorithm && (ALGORITHMS as readonly string[]).includes(args.algorithm) ? args.algorithm : "sha256";
     const hex = crypto.createHash(algorithm).update(args.text, "utf8").digest("hex");

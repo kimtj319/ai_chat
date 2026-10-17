@@ -1,21 +1,24 @@
 import { modelAccessForOwner } from "../vllm/access.js";
-import { annotateForModel, citationSources } from "./citations.js";
+import { citationSources } from "./citations.js";
 import {
   resolveModel,
   streamChatCompletion,
   countPromptTokens,
   type ChatCompletionRequestBody,
   type PromptTokenCount,
+  type VllmStreamChunk,
 } from "../vllm/client.js";
-import type { VllmMessage } from "./historyBuilder.js";
+import { toolResultMessage, type VllmMessage } from "./historyBuilder.js";
 import { buildTurnHistory } from "./historySummary.js";
 import { appendNoToolsOverride } from "./systemPrompt.js";
 import { fitToContextBudget, contextOverflowReserve, type BudgetFitResult } from "./contextBudget.js";
 import {
   describeDeadline,
+  isAbortError,
+  messagesForWrapUp,
   NORMAL_MODE_SAFETY_TIMEOUT_MS,
   startTurnDeadline,
-  streamWrapUpAnswer,
+  wrapUpWithFallback,
   type WrapUpReason,
 } from "./reasoningDeadline.js";
 import { reasoningParamsFor } from "./reasoningProfiles.js";
@@ -24,13 +27,11 @@ import { withCompactionEvents, type CompactionEvent } from "./compactionProgress
 import { BudgetLeakGate } from "./budgetLeak.js";
 import { isMissingKeyError } from "../tools/missingKey.js";
 import crypto from "node:crypto";
-import { getTool, readAttachmentTool } from "../tools/index.js";
 import { runTool, truncateToolResult } from "../tools/runner.js";
-import { BROWSER_TOOLS, isBrowserTool } from "../tools/browser.js";
-import { SCHEDULE_TOOLS } from "../tools/schedule.js";
+import { isBrowserTool } from "../tools/browser.js";
 import { startBrowserAction } from "./browserBridge.js";
+import { buildTurnTools, displayToolName } from "./turnTools.js";
 import { mcpToolsForOwner } from "../mcp/toolAdapter.js";
-import type { ToolDefinition } from "../tools/types.js";
 import { config } from "../config.js";
 import { normalizeReasoningMode } from "../types.js";
 import type { Conversation, ToolCallRecord, ToolResultRecord, MessageUsage } from "../types.js";
@@ -76,34 +77,11 @@ interface PendingToolCall {
 }
 
 /**
- * How many times one turn may ask for the same tool with the same arguments
- * before the loop stops running it.
- *
- * Measured, not guessed: a 27B model asked a four-part question called
- * regex_test 267 times with the same input and produced no answer at all in
- * twenty minutes. TOOL_MAX_ROUNDS defaults to 0, which means "unlimited"
- * because the context budget is supposed to end the loop instead — and it
- * would have, eventually, except that a repeated call with a tiny result grows
- * the prompt so slowly that a 262k window swallows hundreds of them.
- *
- * A repeat is not work. Three is enough to allow a genuine retry after a
- * transient failure and short enough that nobody waits through a loop.
+ * The error a turn ends with when the person stopped it (or the connection
+ * closed). routes/conversations.ts compares against it to tell a Stop apart
+ * from a real failure.
  */
-const MAX_IDENTICAL_TOOL_CALLS = 3;
-
-/**
- * Backstop for a loop that varies its arguments just enough to slip past the
- * check above. Well clear of any real turn seen here: the same question that
- * span 267 times was answered by three other models in 5 to 8 calls.
- */
-const MAX_TOOL_CALLS_PER_TURN = 40;
-
-/**
- * 크롬을 다루는 턴의 한도. 페이지 하나를 다루는 데 읽기·스크롤·클릭이 여러 번 들고,
- * 같은 "아래로 스크롤" 을 연달아 부르는 것도 정상이다. 그래도 끝없이 돌지는 않게 묶는다.
- */
-const MAX_IDENTICAL_BROWSER_CALLS = 8;
-const MAX_TOOL_CALLS_PER_BROWSER_TURN = 80;
+export const CANCELLED_BY_CLIENT = "Cancelled by client.";
 
 export interface TurnOptions {
   /** 이 턴을 보낸 브라우저에 크롬 확장이 연결돼 있고 사용자가 "크롬 제어" 를 켰다. */
@@ -126,10 +104,6 @@ const FINAL_ANSWER_INSTRUCTION =
   "도구를 더 이상 사용할 수 없습니다. 도구를 호출하지 말고, 지금까지 확보한 정보만으로 사용자의 질문에 대한 최종 답변을 지금 작성하세요. " +
   "확보한 정보가 부족하면 확인하지 못한 부분을 밝힌 뒤, 아는 범위에서 답하세요. 무엇을 하겠다는 예고가 아니라 답변 자체를 작성하세요. " +
   "도구 호출이 반복되었다거나 도구 사용이 중단되었다는 사정은 답변에 쓰지 말고, 질문에 대한 내용만 쓰세요.";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof Error && (err.name === "AbortError" || err.message === "aborted-by-user");
-}
 
 /**
  * Runs one full assistant turn against vLLM, including the tool-calling loop.
@@ -173,8 +147,8 @@ export async function* runConversationTurn(
   // "answer-now" is the person's own click. Neither is "Cancelled by client." —
   // both still want an answer, just from what the turn already has.
   let stopKind: "deadline" | "answer-now" | null = null;
-  // Kicked off now rather than where it is actually used (further down, once
-  // snapshotTools is built): it depends on nothing computed in this function —
+  // Kicked off now rather than where it is actually used (further down, where
+  // the turn's tools are built): it depends on nothing computed in this function —
   // not the model, not the history, not the conversation's own tool list — and
   // it never touches the network itself (mcp/discovery.ts's own cache; see the
   // comment where this is awaited). Awaiting it only where it is used meant a
@@ -243,42 +217,6 @@ export async function* runConversationTurn(
   // whole early conversation in one step.
   if (history.summaryMessage) protectedMessages.add(history.summaryMessage);
 
-  /**
-   * THE TURN'S TOOLS, TAKEN ONCE.
-   *
-   * One snapshot — builtins plus whatever MCP servers this owner has switched
-   * on — serves both the `tools` array on the wire and the per-call lookup
-   * below. It is built here, before the loop, and never rebuilt: see the
-   * comment on `body.tools` about the 33s-versus-2.3s prefill recompute when
-   * the array changed mid-turn. Two lists that could drift apart would be the
-   * same bug with extra steps, so the map below IS the array.
-   *
-   * The MCP half comes from the discovery cache only (mcp/discovery.ts) and
-   * never from the network: a turn must not wait on someone else's server, and
-   * a tool list that arrived mid-turn would change the array.
-   */
-  const snapshotTools: ToolDefinition[] = (conversation.enabledTools ?? [])
-    // read_attachment is not a tool the user toggles: it is added below, and
-    // only when there is an attachment it could read.
-    .filter((name) => name !== readAttachmentTool.name)
-    .map((name) => getTool(name))
-    .filter((t): t is ToolDefinition => Boolean(t));
-  // Offered only when this conversation actually holds a text attachment whose
-  // body was left out of the prompt. Otherwise it is a schema with nothing to
-  // read, which the model calls anyway when a question mentions a file.
-  if (conversation.messages.some((m) => m.attachments?.some((a) => a.kind === "text" && !a.inlined))) {
-    snapshotTools.push(readAttachmentTool);
-  }
-  // Already sorted by (slug, toolName) by the adapter, so the array's bytes are
-  // the same for the same set of servers. Never throws: an unreachable server
-  // contributes no tools and a notice instead.
-  //
-  // Filtered by the same enabledTools list as every builtin, because adopting a
-  // server in the library is not the same as wanting its tools in THIS
-  // conversation: the composer's picker writes these names into that list, and
-  // without this filter its toggles would do nothing and every adopted tool's
-  // schema would ride in every prompt whether or not anyone wanted it.
-  //
   // Awaited here rather than fetched here — it was already kicked off above,
   // before resolveModel and buildTurnHistory, and has been running alongside
   // them since. On an ordinary turn this await resolves immediately because
@@ -286,34 +224,21 @@ export async function* runConversationTurn(
   // that ever actually waits here is the very first one after a server was
   // just added, which used to wait behind resolveModel and buildTurnHistory
   // too and now waits behind whichever of the three is actually slowest.
-  const enabledNames = new Set(conversation.enabledTools ?? []);
   const mcpTools = await mcpToolsPromise;
-  snapshotTools.push(...mcpTools.tools.filter((t) => enabledNames.has(t.name)));
-  // 크롬 도구는 대화 설정이 아니라 이 턴을 보낸 브라우저가 정한다(tools/browser.ts).
-  if (options.browserControl) {
-    snapshotTools.push(...BROWSER_TOOLS);
-    // "11시에 …해 줘" 는 크롬을 켠 사람이 가장 흔히 하는 말이다. 도구 설정에서 예약 도구를
-    // 켜 두지 않은 대화(이 기능 이전에 만든 대화 등)에서도 크롬 제어와 함께 쓸 수 있게 싣는다.
-    for (const tool of SCHEDULE_TOOLS) if (!snapshotTools.some((t) => t.name === tool.name)) snapshotTools.push(tool);
-  }
-  const maxToolCallsThisTurn = options.browserControl ? MAX_TOOL_CALLS_PER_BROWSER_TURN : MAX_TOOL_CALLS_PER_TURN;
-  /**
-   * The same objects the array was built from. Resolving a call through this
-   * rather than through getTool() is what stops the model reaching a tool this
-   * turn was never offered — including an MCP tool from a server that has since
-   * been disabled, whose name a transcript still contains.
-   */
-  const turnTools = new Map(snapshotTools.map((t) => [t.name, t]));
-
-  const tools =
-    snapshotTools.length > 0
-      ? snapshotTools.map((t) => ({
-          type: "function" as const,
-          function: { name: t.name, description: t.description, parameters: t.parameters },
-        }))
-      : undefined;
+  // The turn's tool snapshot, taken once (chat/turnTools.ts).
+  const { turnTools, tools, maxToolCalls: maxToolCallsThisTurn, identicalLimit } = buildTurnTools(
+    conversation,
+    mcpTools.tools,
+    options.browserControl === true,
+  );
 
   const totalUsage: MessageUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  // Every model call of the turn that reports usage: the rounds and the wrap-up.
+  const addUsage = (usage: NonNullable<VllmStreamChunk["usage"]>): void => {
+    totalUsage.promptTokens += usage.prompt_tokens ?? 0;
+    totalUsage.completionTokens += usage.completion_tokens ?? 0;
+    totalUsage.totalTokens += usage.total_tokens ?? 0;
+  };
   let content = "";
   let reasoning = "";
   const allToolCalls: ToolCallRecord[] = [];
@@ -356,6 +281,20 @@ export async function* runConversationTurn(
   // TOOL_MAX_ROUNDS is an escape hatch only; 0 (the default) means unlimited.
   const maxRounds = config.toolMaxRounds > 0 ? config.toolMaxRounds : Number.POSITIVE_INFINITY;
 
+  // How a round ends when the turn's signal fired. The safety net or an
+  // "answer now" click stopping the model is not the user stopping it: the turn
+  // carries on after the loop and writes an answer from what it has. The caller
+  // still `break`s, so the loop's exits stay visible where they happen.
+  const endRoundOnAbort = (): void => {
+    const reason = deadline.stopReason();
+    if (reason) {
+      stopKind = reason;
+      return;
+    }
+    aborted = true;
+    errorNote = CANCELLED_BY_CLIENT;
+  };
+
   // The same notice can be produced every round (the ladder re-runs each time);
   // the user only needs to be told once.
   function* noticeEvent(message: string): Generator<ChatEvent, void, void> {
@@ -386,13 +325,7 @@ export async function* runConversationTurn(
     // previous round's tools were running. Check before the budget step, which
     // costs a /tokenize round-trip of its own.
     if (signal.aborted) {
-      const reason = deadline.stopReason();
-      if (reason) {
-        stopKind = reason;
-        break;
-      }
-      aborted = true;
-      errorNote = "Cancelled by client.";
+      endRoundOnAbort();
       break;
     }
     if (round > maxRounds && !toolsStopped) {
@@ -471,13 +404,7 @@ export async function* runConversationTurn(
         }
       } catch (err) {
         if (isAbortError(err)) {
-          const reason = deadline.stopReason();
-          if (reason) {
-            stopKind = reason;
-            break;
-          }
-          aborted = true;
-          errorNote = "Cancelled by client.";
+          endRoundOnAbort();
           break;
         }
         // Never worse than before compaction existed: leave the messages alone
@@ -514,13 +441,7 @@ export async function* runConversationTurn(
       });
     } catch (err) {
       if (isAbortError(err)) {
-        const reason = deadline.stopReason();
-        if (reason) {
-          stopKind = reason;
-          break;
-        }
-        aborted = true;
-        errorNote = "Cancelled by client.";
+        endRoundOnAbort();
         break;
       }
       throw err;
@@ -593,11 +514,7 @@ export async function* runConversationTurn(
       for await (const chunk of stream) {
         if (signal.aborted) throw new Error("aborted-by-user");
         const choice = chunk.choices?.[0];
-        if (chunk.usage) {
-          totalUsage.promptTokens += chunk.usage.prompt_tokens ?? 0;
-          totalUsage.completionTokens += chunk.usage.completion_tokens ?? 0;
-          totalUsage.totalTokens += chunk.usage.total_tokens ?? 0;
-        }
+        if (chunk.usage) addUsage(chunk.usage);
         if (!choice) continue;
         const delta = choice.delta ?? {};
         const reasoningDelta = delta.reasoning ?? delta.reasoning_content;
@@ -647,16 +564,7 @@ export async function* runConversationTurn(
       }
     } catch (err) {
       if (isAbortError(err)) {
-        // The safety net or an "answer now" click stopping the model is not the
-        // user stopping it: the turn carries on below and writes an answer from
-        // what it has.
-        const reason = deadline.stopReason();
-        if (reason) {
-          stopKind = reason;
-          break;
-        }
-        aborted = true;
-        errorNote = "Cancelled by client.";
+        endRoundOnAbort();
         break;
       }
       // The budget above should prevent this, but any drift between /tokenize
@@ -716,11 +624,17 @@ export async function* runConversationTurn(
       const signature = `${name}:${parseError ? pending.argsText : JSON.stringify(parsedArgs)}`;
       const seen = (toolCallSignatures.get(signature) ?? 0) + 1;
       toolCallSignatures.set(signature, seen);
-      const repeating = seen > (isBrowserTool(name) ? MAX_IDENTICAL_BROWSER_CALLS : MAX_IDENTICAL_TOOL_CALLS);
+      const repeating = seen > identicalLimit(name);
       const tooManyCalls = allToolCalls.length > maxToolCallsThisTurn;
 
       let resultRecord: ToolResultRecord;
-      if (repeating || tooManyCalls) {
+      if (signal.aborted) {
+        // Stop, the safety net or "지금 답변하기" arrived during an earlier call
+        // of this round. The rest are not run: each could take up to
+        // TOOL_TIMEOUT_MS, and the wrap-up answer (or the Stop) waits behind
+        // them. Still recorded, so every tool_call keeps its tool result.
+        resultRecord = { id, name, ok: false, error: "턴이 중지되어 이 호출은 실행하지 않았습니다.", durationMs: 0 };
+      } else if (repeating || tooManyCalls) {
         // Nothing about this reaches the user any more, so this line is the only
         // trace of why a turn stopped researching. Once per turn: by the second
         // trip the flag is already set.
@@ -738,7 +652,7 @@ export async function* runConversationTurn(
           // A statement, not an instruction. What to do instead arrives below as
           // a user message, which is where the model actually acts on it.
           error: repeating
-            ? `같은 도구를 같은 인자로 ${MAX_IDENTICAL_TOOL_CALLS}번 넘게 호출하여 이 호출은 실행하지 않았습니다.`
+            ? `같은 도구를 같은 인자로 ${identicalLimit(name)}번 넘게 호출하여 이 호출은 실행하지 않았습니다.`
             : `이번 턴의 도구 호출이 ${maxToolCallsThisTurn}회를 넘어 이 호출은 실행하지 않았습니다.`,
           durationMs: 0,
         };
@@ -767,8 +681,9 @@ export async function* runConversationTurn(
             durationMs: Date.now() - startedAt,
           };
         } else {
-          // The context is what scopes read_attachment to this conversation's
-          // own files; every other tool ignores it.
+          // The context scopes a call to its account and conversation: read_attachment
+          // reads this conversation's files, web_search picks the owner's key, the
+          // schedule tools file under this conversation, and MCP tools carry the owner.
           const run = await runTool(tool, parsedArgs, {
             ownerId,
             conversationId: conversation.id,
@@ -803,14 +718,7 @@ export async function* runConversationTurn(
     // 것이라, 앞 라운드에서 나온 단락은 그때 번호를 그대로 받는다 — 화면은 저장된
     // 도구 결과로 같은 번호를 다시 세어 "[n]" 을 링크로 만든다(chat/citations.ts).
     const sources = citationSources(allToolResults);
-    for (const tr of roundToolResults) {
-      workingMessages.push({
-        role: "tool",
-        tool_call_id: tr.id,
-        name: tr.name,
-        content: JSON.stringify(tr.ok ? annotateForModel(tr, sources) : { error: tr.error ?? "tool execution failed" }),
-      });
-    }
+    for (const tr of roundToolResults) workingMessages.push(toolResultMessage(tr, sources));
 
     // A repeat (or the per-turn ceiling) ends the research here, and the user is
     // told nothing about it: the answer itself is the whole output. This sits
@@ -827,6 +735,24 @@ export async function* runConversationTurn(
 
   deadline.dispose();
 
+  // The two wrap-up calls below differ only in their reason; what each does when
+  // the call fails is deliberately different and stays at the call site.
+  const wrapUp = (reason: WrapUpReason) =>
+    wrapUpWithFallback(
+      {
+        model,
+        endpoint,
+        reasoning,
+        temperature: conversation.settings.temperature,
+        topP: conversation.settings.topP,
+        reason,
+        clientSignal,
+        onUsage: addUsage,
+      },
+      messagesForWrapUp(workingMessages),
+      baseMessages,
+    );
+
   if (stopKind) {
     const wrapUpReason: WrapUpReason =
       stopKind === "deadline" ? { kind: "deadline", deadlineMs: NORMAL_MODE_SAFETY_TIMEOUT_MS } : { kind: "answer-now" };
@@ -836,26 +762,21 @@ export async function* runConversationTurn(
         : "'지금 답변하기' 요청에 따라, 그때까지 모은 정보로 답변을 정리했습니다.",
     );
     try {
-      for await (const delta of wrapUpWithFallback(
-        {
-          model,
-          endpoint,
-          reasoning,
-          temperature: conversation.settings.temperature,
-          topP: conversation.settings.topP,
-          reason: wrapUpReason,
-          clientSignal,
-        },
-        messagesForWrapUp(workingMessages),
-        baseMessages,
-      )) {
+      for await (const delta of wrapUp(wrapUpReason)) {
         content += delta;
         yield { type: "content", delta };
+      }
+      // The stream ends quietly, not with an AbortError, when Stop lands between
+      // two chunks. Without this the half-written wrap-up was stored as a
+      // finished answer with no error.
+      if (clientSignal.aborted) {
+        aborted = true;
+        errorNote = CANCELLED_BY_CLIENT;
       }
     } catch (err) {
       if (isAbortError(err)) {
         aborted = true;
-        errorNote = "Cancelled by client.";
+        errorNote = CANCELLED_BY_CLIENT;
       } else {
         throw err;
       }
@@ -872,26 +793,19 @@ export async function* runConversationTurn(
   // to. The promotion below stays as the last resort if this produces nothing.
   if (!stopKind && !aborted && content.trim().length === 0 && reasoning.trim().length > 0) {
     try {
-      for await (const delta of wrapUpWithFallback(
-        {
-          model,
-          endpoint,
-          reasoning,
-          temperature: conversation.settings.temperature,
-          topP: conversation.settings.topP,
-          reason: { kind: "empty-answer" },
-          clientSignal,
-        },
-        messagesForWrapUp(workingMessages),
-        baseMessages,
-      )) {
+      for await (const delta of wrapUp({ kind: "empty-answer" })) {
         content += delta;
         yield { type: "content", delta };
+      }
+      // Same as above: a Stop between chunks ends the stream without an error.
+      if (clientSignal.aborted) {
+        aborted = true;
+        errorNote = CANCELLED_BY_CLIENT;
       }
     } catch (err) {
       if (isAbortError(err)) {
         aborted = true;
-        errorNote = "Cancelled by client.";
+        errorNote = CANCELLED_BY_CLIENT;
       } else {
         // Never rethrow: the turn still has its reasoning, and publishing that
         // is worse than this call but far better than losing the turn.
@@ -930,56 +844,6 @@ export async function* runConversationTurn(
   };
 }
 
-/**
- * 마무리 답변(지금 답변하기·안전 상한·빈 답변 복구)에 넘길 이력.
- *
- * 예전에는 도구 루프가 시작되기 **전**의 이력(baseMessages)을 넘겼다. 그래서
- * 마무리 답변은 이번 턴의 도구 결과를 한 번도 보지 못했고, 도구를 다섯 번 부른
- * 뒤에 "지금 답변하기" 를 누르면 "요청하신 도구 호출을 아직 수행하지 않았습니다"
- * 라고 답했다(2026-09-23 운영 서버 실측). 사용자가 원한 것은 "그 시점까지 모은 정보로
- * 답하라" 이고, 모은 정보의 대부분이 바로 그 도구 결과다.
- *
- * 끝에 결과가 붙지 않은 tool_calls 가 남아 있으면 뗀다. 도구 호출과 결과는 실행이
- * 끝난 뒤 한꺼번에 쌓이므로 보통은 짝이 맞지만, 짝 없는 tool_calls 는 서버가 400 으로
- * 거절하므로 한 줄로 막아 둔다.
- */
-function messagesForWrapUp(messages: VllmMessage[]): VllmMessage[] {
-  const out = messages.slice();
-  for (let i = out.length - 1; i >= 0; i--) {
-    const m = out[i]!;
-    if (m.role !== "assistant" || !m.tool_calls || m.tool_calls.length === 0) continue;
-    const answered = new Set(out.slice(i + 1).filter((x) => x.role === "tool").map((x) => x.tool_call_id));
-    if (m.tool_calls.every((tc) => answered.has(tc.id))) break;
-    out.splice(i); // 짝 없는 호출부터 끝까지 버린다
-    break;
-  }
-  return out;
-}
-
-/**
- * 모은 결과까지 넣어 마무리 답변을 시도하고, **첫 글자가 나오기 전에** 실패하면
- * 도구 결과 없이 한 번 더 시도한다. 결과를 넣으면 컨텍스트가 넘칠 수 있는데, 그때
- * 아무 답도 없는 것보다 추론만으로라도 답하는 편이 낫다. 이미 글자가 나간 뒤의
- * 실패는 되돌릴 수 없으므로 그대로 던진다. 사용자가 끊은 것도 그대로 던진다.
- */
-async function* wrapUpWithFallback(
-  args: Omit<Parameters<typeof streamWrapUpAnswer>[0], "baseMessages">,
-  withResults: VllmMessage[],
-  withoutResults: VllmMessage[],
-): AsyncGenerator<string, void, void> {
-  let yielded = false;
-  try {
-    for await (const delta of streamWrapUpAnswer({ ...args, baseMessages: withResults })) {
-      yielded = true;
-      yield delta;
-    }
-  } catch (err) {
-    if (yielded || isAbortError(err)) throw err;
-    console.warn("[chat] 도구 결과를 넣은 마무리 답변이 실패해, 결과 없이 다시 시도합니다:", err);
-    yield* streamWrapUpAnswer({ ...args, baseMessages: withoutResults });
-  }
-}
-
 /** The question this turn answers — the gate compares its script with the reasoning's. */
 function lastUserText(conversation: Conversation): string {
   for (let i = conversation.messages.length - 1; i >= 0; i--) {
@@ -987,10 +851,4 @@ function lastUserText(conversation: Conversation): string {
     if (message.role === "user") return message.content;
   }
   return "";
-}
-
-/** "mcp__alphavantage__GLOBAL_QUOTE" → "alphavantage(GLOBAL_QUOTE)", builtins as they are. */
-function displayToolName(name: string): string {
-  const match = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name);
-  return match ? `${match[1]}(${match[2]})` : name;
 }

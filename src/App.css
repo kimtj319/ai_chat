@@ -48,7 +48,7 @@
   transform: none;
 }
 
-/* 폰의 바텀시트 뒤. 누르면 닫힌다(McpPicker 의 inSheet). 시트(61) 바로 아래. */
+/* 폰의 바텀시트 뒤. 누르면 닫힌다(popoverSheet 의 inSheet). 시트(61) 바로 아래. */
 .popover-sheet-scrim {
   position: fixed;
   inset: 0;

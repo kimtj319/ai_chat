@@ -13,9 +13,7 @@
   position: relative;
   width: 100%;
   max-width: 400px;
-  background: var(--surface-container-high);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
   padding: var(--space-11) var(--space-10) var(--space-10);
 }
 

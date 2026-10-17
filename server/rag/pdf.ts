@@ -81,6 +81,14 @@ function scanObjects(buf: Buffer): Map<string, PdfObject> {
   return objects;
 }
 
+/**
+ * 스트림 하나를 풀어 얻을 수 있는 최대 바이트. deflate 는 1000:1 넘게
+ * 줄어드므로, 상한이 없으면 20MB 업로드 하나가 메인 스레드에서 수 GB 를
+ * 동기로 잡는다. 넘으면 zlib 이 ERR_BUFFER_TOO_LARGE 로 던지고 아래 catch 가
+ * 못 푼 스트림(null)으로 처리한다.
+ */
+const MAX_INFLATED_BYTES = 32 * 1024 * 1024;
+
 /** 스트림의 필터를 푼다. 못 푸는 필터(이미지 등)는 null. */
 function decode(dict: string, stream: Buffer | null): Buffer | null {
   if (!stream) return null;
@@ -89,14 +97,17 @@ function decode(dict: string, stream: Buffer | null): Buffer | null {
   if (!name) return stream;
   if (!name.includes("FlateDecode")) return null;
   try {
-    return zlib.inflateSync(stream);
+    return zlib.inflateSync(stream, { maxOutputLength: MAX_INFLATED_BYTES });
   } catch {
     try {
       // 끝이 잘린 스트림이 흔하다. 거기까지라도 쓴다.
-      return zlib.inflateSync(stream, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+      return zlib.inflateSync(stream, { finishFlush: zlib.constants.Z_SYNC_FLUSH, maxOutputLength: MAX_INFLATED_BYTES });
     } catch {
       try {
-        return zlib.inflateRawSync(stream.subarray(1), { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+        return zlib.inflateRawSync(stream.subarray(1), {
+          finishFlush: zlib.constants.Z_SYNC_FLUSH,
+          maxOutputLength: MAX_INFLATED_BYTES,
+        });
       } catch {
         return null;
       }
@@ -203,7 +214,6 @@ function parseToUnicode(text: string): Map<number, string> {
   return map;
 }
 
-/** 폰트 하나를 읽는다. 코드 폭은 CMap 이 아니라 폰트 종류가 정한다. */
 /**
  * CID 글꼴의 `/W` 배열. 두 가지 모양이 섞여 있다.
  *
@@ -242,6 +252,7 @@ function parseW(raw: string): Map<number, number> {
   return widths;
 }
 
+/** 폰트 하나를 읽는다. 코드 폭은 CMap 이 아니라 폰트 종류가 정한다. */
 function readFont(objects: Map<string, PdfObject>, fontDict: string): PdfFont {
   const subtype = dictValue(fontDict, "Subtype") ?? "";
   const isCID = subtype.includes("Type0");
@@ -583,8 +594,18 @@ function contentsOf(objects: Map<string, PdfObject>, pageDict: string): Buffer[]
   return out;
 }
 
-/** 페이지의 `/Resources /Font` 에서 이름→폰트 표를 만든다. 상속된 자원도 따라간다. */
-function fontsOf(objects: Map<string, PdfObject>, pageDict: string, inherited: string | null): Map<string, PdfFont> {
+/**
+ * 페이지의 `/Resources /Font` 에서 이름→폰트 표를 만든다. 상속된 자원도 따라간다.
+ *
+ * `read` 는 객체 번호로 이미 읽은 폰트를 돌려준다. 페이지마다 같은 폰트 객체를
+ * 가리키므로, 없으면 300쪽 문서가 같은 ToUnicode 를 300번 풀고 해석한다.
+ */
+function fontsOf(
+  objects: Map<string, PdfObject>,
+  pageDict: string,
+  inherited: string | null,
+  read: Map<string, PdfFont>,
+): Map<string, PdfFont> {
   const resRaw = dictValue(pageDict, "Resources");
   const res = resRaw ? (/^\s*\d+\s+\d+\s*R/.test(resRaw) ? resolve(objects, resRaw) : resRaw) : inherited;
   if (!res) return new Map<string, PdfFont>();
@@ -593,8 +614,15 @@ function fontsOf(objects: Map<string, PdfObject>, pageDict: string, inherited: s
   const fontDict = /^\s*\d+\s+\d+\s*R/.test(fontRaw) ? resolve(objects, fontRaw) : fontRaw;
   const fonts = new Map<string, PdfFont>();
   for (const m of fontDict.matchAll(/\/([^\s/<>[\]()]+)\s+(\d+)\s+(\d+)\s*R/g)) {
-    const obj = objects.get(`${m[2]} ${m[3]}`);
-    if (obj) fonts.set(m[1], readFont(objects, obj.dict));
+    const key = `${m[2]} ${m[3]}`;
+    const obj = objects.get(key);
+    if (!obj) continue;
+    let font = read.get(key);
+    if (!font) {
+      font = readFont(objects, obj.dict);
+      read.set(key, font);
+    }
+    fonts.set(m[1], font);
   }
   return fonts;
 }
@@ -610,8 +638,9 @@ export function pdfToText(buf: Buffer): string {
   if (pages.length > 0) {
     const rootRes = [...objects.values()].find((o) => /\/Type\s*\/Pages\b/.test(o.dict));
     const inherited = rootRes ? dictValue(rootRes.dict, "Resources") : null;
+    const read = new Map<string, PdfFont>();
     for (const [, page] of pages) {
-      const fonts = fontsOf(objects, page.dict, inherited);
+      const fonts = fontsOf(objects, page.dict, inherited, read);
       for (const content of contentsOf(objects, page.dict)) {
         const t = extractText(content, fonts);
         if (t.trim()) chunks.push(t);

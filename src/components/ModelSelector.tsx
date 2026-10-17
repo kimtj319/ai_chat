@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { showToast } from "./Toast";
-import { pushOverlay } from "../ui/overlayStack";
+import { useDismiss } from "../hooks/useDismiss";
 import { useModels } from "../hooks/useModels";
-import { resolveSelectedModelId } from "../state/modelCatalog";
+import { resolveSelectedModelId, shortModelName } from "../state/modelCatalog";
 import {
   capabilityOf,
   kindMismatchReason,
@@ -11,15 +11,8 @@ import {
   modelAvailability,
 } from "../state/modelCapability";
 import { useStore, useActiveConversation } from "../state/StoreContext";
+import { ChevronDownIcon } from "./icons";
 import "./ModelSelector.css";
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
 
 function CheckIcon() {
   return (
@@ -27,33 +20,6 @@ function CheckIcon() {
       <path d="M5 13l4 4L19 7" />
     </svg>
   );
-}
-
-/** True for an all-caps alphanumeric quantization/format tag such as "FP8" or "INT4". */
-function isFormatTag(token: string): boolean {
-  return /^[A-Z0-9]{2,8}$/.test(token) && /\d/.test(token);
-}
-
-/**
- * Derive a short, readable label from a raw HF model id — e.g.
- * "huihui-ai/Huihui-Qwen3.8-27B-abliterated" -> "Qwen3.8-27B (abliterated)"
- * "Qwen/Qwen3.8-Flash-Next-FP8" -> "Qwen3.8-Flash-Next FP8"
- * Strips the HF org, drops a leading vendor tag ahead of the "Qwen..." name,
- * then folds a trailing lowercase qualifier into parens or a trailing
- * all-caps format tag into a plain suffix.
- */
-export function shortModelName(id: string): string {
-  const base = id.split("/").pop() ?? id;
-  const parts = base.split("-").filter(Boolean);
-  const qwenIndex = parts.findIndex((part) => /^qwen/i.test(part));
-  const trimmed = qwenIndex > 0 ? parts.slice(qwenIndex) : parts;
-  if (trimmed.length <= 1) return trimmed.join("-") || base;
-
-  const last = trimmed[trimmed.length - 1] ?? "";
-  const head = trimmed.slice(0, -1).join("-");
-  if (isFormatTag(last)) return `${head} ${last}`;
-  if (/^[a-z]+$/.test(last)) return `${head} (${last})`;
-  return trimmed.join("-");
 }
 
 /**
@@ -75,27 +41,8 @@ export function ModelSelector() {
   const { activeConversation } = useActiveConversation();
   const [open, setOpen] = useState(false);
 
-  // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
-  useEffect(() => (open ? pushOverlay() : undefined), [open]);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
+  useDismiss(open, containerRef, () => setOpen(false), { escape: true });
 
   if (loading) {
     return (

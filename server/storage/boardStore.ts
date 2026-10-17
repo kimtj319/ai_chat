@@ -10,8 +10,7 @@
  * 읽히고 함께 지워진다. 나누면 둘을 맞춰 두는 일만 늘어난다.
  */
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, unlinkIfPresent, writeJsonFileAtomic } from "./atomic.js";
 import { boardCounterFile, boardPostFile, boardPostsDir, isValidId } from "./paths.js";
 import { withLock } from "./mutex.js";
 import type { BoardPost, BoardPostStatus, BoardReply } from "../types.js";
@@ -142,16 +141,9 @@ export async function listPosts(): Promise<BoardPost[]> {
 
 /** 게시판 규모에서는 한 번에 읽어도 된다. */
 async function readAllPosts(): Promise<BoardPost[]> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(boardPostsDir());
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
   const posts: BoardPost[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
+  for (const entry of await readdirOrEmpty(boardPostsDir())) {
+    if (!entry.endsWith(".json")) continue;
     const post = await getPost(entry.slice(0, -".json".length));
     if (post) posts.push(post);
   }
@@ -205,13 +197,5 @@ export async function setStatus(postId: string, status: BoardPostStatus, by: str
 
 export async function deletePost(postId: string): Promise<boolean> {
   if (!isValidId(postId)) return false;
-  return withLock(lockFor(postId), async () => {
-    try {
-      await fs.unlink(boardPostFile(postId));
-      return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
-  });
+  return withLock(lockFor(postId), async () => unlinkIfPresent(boardPostFile(postId)));
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorMessage } from "../state/friendlyError";
 import "./Toast.css";
 
 /**
@@ -40,7 +41,7 @@ export function showToast(message: string, tone: Tone = "info"): void {
 
 /** 실패를 말한다. 무엇이 실패했는지는 부르는 쪽이 문장으로 준다. */
 export function showErrorToast(error: unknown): void {
-  showToast(error instanceof Error ? error.message : String(error), "error");
+  showToast(errorMessage(error), "error");
 }
 
 export function ToastHost() {

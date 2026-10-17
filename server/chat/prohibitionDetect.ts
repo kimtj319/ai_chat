@@ -1,4 +1,5 @@
-import { resolveModel, streamChatCompletion, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
+import type { ModelAccess } from "../vllm/access.js";
 import { RULE_MAX_CHARS, RULE_MIN_CHARS } from "../storage/prohibitionsStore.js";
 
 /**
@@ -48,7 +49,7 @@ export interface DetectInput {
  * 규칙이 없거나 길이가 벗어나면 null.
  */
 export function parseDetection(raw: string): string | null {
-  const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  const text = stripThinkBlocks(raw);
   const match = /\{[\s\S]*\}/.exec(text);
   if (!match) return null;
   let parsed: unknown;
@@ -69,32 +70,16 @@ export function parseDetection(raw: string): string | null {
  * enable_thinking:false 를 무시하는 모델을 위해 한 번 더 부른다(titleSummary.ts 와
  * 같은 이유). 두 호출 모두 같은 요청 모양이다.
  */
-async function complete(prompt: string, requestedModel: string, maxTokens: number, signal: AbortSignal): Promise<string | null> {
-  const { model, endpoint } = await resolveModel(requestedModel);
-  async function attempt(budget: number): Promise<{ text: string; thought: boolean }> {
-    const body: ChatCompletionRequestBody = {
-      model,
-      messages: [{ role: "user", content: prompt }],
-      stream: true,
-      stream_options: { include_usage: true },
-      temperature: 0.1,
-      top_p: 0.9,
-      max_tokens: budget,
-      presence_penalty: 0,
-      frequency_penalty: 0,
-      chat_template_kwargs: { enable_thinking: false },
-    };
-    let text = "";
-    let thought = false;
-    const stream = await streamChatCompletion(body, signal, endpoint);
-    for await (const chunk of stream) {
-      if (signal.aborted) break;
-      const delta = chunk.choices?.[0]?.delta;
-      if (delta?.reasoning ?? delta?.reasoning_content) thought = true;
-      if (delta?.content) text += delta.content;
-    }
-    return { text, thought };
-  }
+async function complete(
+  prompt: string,
+  requestedModel: string,
+  maxTokens: number,
+  signal: AbortSignal,
+  allows?: ModelAccess["allows"],
+): Promise<string | null> {
+  const { model, endpoint } = await resolveModel(requestedModel, allows);
+  const attempt = (budget: number) =>
+    completeWithoutThinking({ model, endpoint, prompt, maxTokens: budget, temperature: 0.1, signal });
   const first = await attempt(maxTokens);
   if (signal.aborted) return null;
   if (first.text.trim() || !first.thought) return first.text;
@@ -143,8 +128,7 @@ const CONSOLIDATE_INSTRUCTION = [
  * "정리" 가 목록을 늘린다면 그것은 정리가 아니다.
  */
 export function parseConsolidation(raw: string, originalChars: number): string | null {
-  const lines = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+  const lines = stripThinkBlocks(raw)
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => /^([-*]|\d+\.)\s+\S/.test(line))
@@ -155,10 +139,20 @@ export function parseConsolidation(raw: string, originalChars: number): string |
   return text;
 }
 
-/** 반영 목록(active)을 묶어 줄인 안. 저장하지 않는다 — 사용자가 보고 고른다. */
-export async function consolidateProhibitions(items: string[], signal: AbortSignal): Promise<string | null> {
+/**
+ * 반영 목록(active)을 묶어 줄인 안. 저장하지 않는다 — 사용자가 보고 고른다.
+ *
+ * 모델을 고르지 않고 카탈로그의 기본 모델을 쓰므로, `allows` 로 그 계정이 쓸 수 있는
+ * 모델로 좁힌다(vllm/access.ts). 없으면 카탈로그 전체에서 고른다 — 기본 엔드포인트가
+ * 내려가 있으면 다른 사람이 등록한 엔드포인트의 모델이 될 수 있다.
+ */
+export async function consolidateProhibitions(
+  items: string[],
+  signal: AbortSignal,
+  allows?: ModelAccess["allows"],
+): Promise<string | null> {
   if (items.length < 2) return null;
   const original = items.map((item) => `- ${item}`).join("\n");
-  const raw = await complete(`${CONSOLIDATE_INSTRUCTION}\n${original}`, "", 2_000, signal);
+  const raw = await complete(`${CONSOLIDATE_INSTRUCTION}\n${original}`, "", 2_000, signal, allows);
   return raw ? parseConsolidation(raw, original.length) : null;
 }

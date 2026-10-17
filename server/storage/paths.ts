@@ -130,14 +130,6 @@ export function documentSourceFile(ownerId: string, documentId: string): string 
 }
 
 /**
- * Every owner directory. Only enumerated to answer "how many people adopted
- * this MCP server?" — the count that decides whether a server can be deleted.
- */
-export function ownersDir(): string {
-  return path.join(config.dataDir, "owners");
-}
-
-/**
  * The GLOBAL MCP registry: one JSON file per server,
  * {DATA_DIR}/mcp/servers/{id}.json, in the same one-file-per-record shape as
  * accounts and groups. Under DATA_DIR rather than in the image because that is

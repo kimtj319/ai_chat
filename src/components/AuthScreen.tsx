@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { AuthError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-import { authErrorMessage, PENDING_APPROVAL_NOTICE } from "../auth/messages";
+import { authFailureMessage, PENDING_APPROVAL_NOTICE } from "../auth/messages";
 import {
   hasErrors,
   PASSWORD_MIN_LENGTH,
@@ -62,9 +61,7 @@ export function AuthScreen() {
       // pending_approval vs invalid_credentials is the whole point: a user
       // whose password is right but whose account is not approved yet must be
       // told that, not that their password is wrong.
-      const code = error instanceof AuthError ? error.code : null;
-      const fallback = error instanceof Error ? error.message : undefined;
-      setFormError(authErrorMessage(code, fallback));
+      setFormError(authFailureMessage(error));
       setPassword("");
     } finally {
       setBusy(false);
@@ -87,9 +84,7 @@ export function AuthScreen() {
       setPassword("");
       setConfirm("");
     } catch (error) {
-      const code = error instanceof AuthError ? error.code : null;
-      const fallback = error instanceof Error ? error.message : undefined;
-      setFormError(authErrorMessage(code, fallback));
+      setFormError(authFailureMessage(error));
     } finally {
       setBusy(false);
     }

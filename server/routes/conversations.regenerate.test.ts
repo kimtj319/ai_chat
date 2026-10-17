@@ -10,6 +10,7 @@
 //   5. 이전 대화 요약: 이 질문 앞까지만 덮는 요약은 남고, 이 질문 이후까지
 //      덮거나 끊는 지점이 사라진 요약은 버린다.
 //   6. 새 대화의 기본 제목은 '새 대화' 이고, 첫 메시지가 오면 이름이 붙는다.
+//   7. 첫 답이 오는 사이 사용자가 바꾼 제목은, 늦게 도착한 요약 제목이 덮지 않는다.
 //
 // conversations.answerNow.test.ts 와 같은 방식이다: 라우트를 실제로 띄우고
 // vLLM 만 가짜로 바꾼다.
@@ -48,6 +49,8 @@ let answerCount = 0;
 const mainRoundPrompts: Array<Array<{ role?: string; content?: unknown }>> = [];
 /** 설정되면 다음 메인 라운드는 이 약속이 풀릴 때까지 답하지 않는다. */
 let holdNextMainRound: { started: () => void; release: Promise<void> } | null = null;
+/** 설정되면 다음 제목 요약 호출은 이 약속이 풀릴 때까지 답하지 않는다. */
+let holdNextTitle: { asked: () => void; release: Promise<void> } | null = null;
 
 function sseResponse(chunks: unknown[]): Response {
   const text = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n";
@@ -92,6 +95,12 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
 
   if (method === "POST" && url.endsWith("/chat/completions")) {
+    if ((body.stream === false || body.tools === undefined) && holdNextTitle) {
+      const hold = holdNextTitle;
+      holdNextTitle = null;
+      hold.asked();
+      await hold.release;
+    }
     // 제목 요약 같은 곁가지 호출.
     if (body.stream === false) {
       return new Response(JSON.stringify({ choices: [{ message: { content: "요약 제목" } }] }), {
@@ -274,6 +283,33 @@ check("첫 답이 저장된다", doneOf(first)?.content === "답변 1: 첫 질�
   stored = await getConversation("alice", conv.id);
   check("끊는 지점이 없는 요약은 버린다", stored?.historySummary === undefined, JSON.stringify(stored?.historySummary));
   check("  └ 기록 앞부분은 그대로다", stored?.messages[0]?.id === m0!.id && stored?.messages.length === 4, String(stored?.messages.length));
+}
+
+/* ------------------------------- 7) 첫 답 도중에 바꾼 제목은 요약 제목이 덮지 않는다 */
+{
+  let asked!: () => void;
+  const titleAsked = new Promise<void>((r) => (asked = r));
+  let release!: () => void;
+  holdNextTitle = { asked, release: new Promise<void>((r) => (release = r)) };
+
+  const fresh = await createConversation("alice", { model: MODEL });
+  await post(fresh.id, { content: "제목을 지을 질문" });
+  await titleAsked;
+  const renamed = await fetch(`${base}/conversations/${fresh.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "내가 지은 제목" }),
+  });
+  check("제목 바꾸기는 200", renamed.status === 200, String(renamed.status));
+  const before = (await getConversation("alice", fresh.id))!.updatedAt;
+  release();
+  // 요약 제목을 반영하려는 쓰기가 끝나면 updatedAt 이 바뀐다 — 그때까지 기다린다.
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    if ((await getConversation("alice", fresh.id))?.updatedAt !== before) break;
+  }
+  const stored = await getConversation("alice", fresh.id);
+  check("사용자가 바꾼 제목이 남는다", stored?.title === "내가 지은 제목", stored?.title);
 }
 
 server.close();

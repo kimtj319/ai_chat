@@ -1,7 +1,6 @@
 .thinking-panel {
   margin-bottom: var(--space-5);
   border-radius: var(--radius-md);
-  background: var(--surface-container-high);
   overflow: hidden;
 }
 

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readJsonFile, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, unlinkIfPresent, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
 import {
   attachmentBinFile,
   attachmentMetaFile,
@@ -9,8 +9,8 @@ import {
   isValidId,
   ownerAttachmentsDir,
   ownerDir,
+  ownersRoot,
 } from "./paths.js";
-import { config } from "../config.js";
 import type { Conversation, MessageAttachment } from "../types.js";
 
 /**
@@ -87,22 +87,6 @@ export async function deleteAttachment(
   return removed;
 }
 
-/** Every attachment currently stored for one conversation, oldest first. */
-export async function listAttachments(ownerId: string, conversationId: string): Promise<MessageAttachment[]> {
-  const dir = attachmentsDir(ownerId, conversationId);
-  const entries = await readdirOrEmpty(dir);
-  const metas: MessageAttachment[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
-    const id = entry.slice(0, -".json".length);
-    if (!isValidId(id)) continue;
-    const meta = await getAttachmentMeta(ownerId, conversationId, id);
-    if (meta) metas.push(meta);
-  }
-  metas.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
-  return metas;
-}
-
 /** Bytes stored for one conversation, and for a whole account. Used for the quotas. */
 export async function conversationAttachmentUsage(
   ownerId: string,
@@ -174,10 +158,9 @@ export async function sweepConversationAttachments(
  * other way too would make the two a cycle for one readJsonFile call.
  */
 export async function sweepAllAttachments(): Promise<{ removed: number; conversations: number }> {
-  const ownersRoot = path.join(config.dataDir, "owners");
   let removed = 0;
   let conversations = 0;
-  for (const ownerId of await readdirOrEmpty(ownersRoot)) {
+  for (const ownerId of await readdirOrEmpty(ownersRoot())) {
     if (!isValidId(ownerId)) continue;
     // Defensive: only walk what is really a directory of ours.
     if (!(await exists(ownerDir(ownerId)))) continue;
@@ -217,25 +200,6 @@ async function usageOf(dir: string): Promise<{ count: number; bytes: number }> {
     bytes += stat.size;
   }
   return { count, bytes };
-}
-
-async function readdirOrEmpty(dir: string): Promise<string[]> {
-  try {
-    return await fs.readdir(dir);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-}
-
-async function unlinkIfPresent(filePath: string): Promise<boolean> {
-  try {
-    await fs.unlink(filePath);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
-  }
 }
 
 async function mtimeOf(filePath: string): Promise<number> {

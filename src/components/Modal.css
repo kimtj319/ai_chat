@@ -10,9 +10,7 @@
 }
 
 .modal {
-  background: var(--surface-container-high);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 480px;
   max-height: min(860px, 92vh);

@@ -1,5 +1,7 @@
 import { config } from "../config.js";
-import { assertPublicHostname } from "../tools/net/ssrf.js";
+import net from "node:net";
+import { followGuarded, readBodyCapped, stripBrackets } from "../tools/net/guardedFetch.js";
+import { assertPublicAddresses, resolveAllAddresses } from "../tools/net/ssrf.js";
 import { listEndpoints } from "../vllm/endpoints.js";
 
 /**
@@ -89,8 +91,29 @@ interface JsonRpcMessage {
 
 let nextRequestId = 1;
 
-function stripBrackets(hostname: string): string {
-  return hostname.replace(/^\[/, "").replace(/\]$/, "");
+/**
+ * The server answered our request with a JSON-RPC error: it is up and refused
+ * THIS request — usually the model's arguments (-32602).
+ */
+export class McpRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | undefined,
+  ) {
+    super(message);
+    this.name = "McpRpcError";
+  }
+}
+
+/** A non-2xx HTTP answer, with the status kept so a caller can tell an auth refusal from an outage. */
+export class McpHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "McpHttpError";
+  }
 }
 
 /**
@@ -109,6 +132,24 @@ function modelServerHosts(): Set<string> {
     }
   }
   return hosts;
+}
+
+/**
+ * The same rule by ADDRESS. Comparing names alone lets a different name for
+ * the same machine through — a wildcard DNS name such as *.nip.io resolves to
+ * whatever IP is spelled in it. A BlockList so that an IPv4-mapped IPv6
+ * spelling of the address matches too.
+ */
+async function modelServerAddresses(): Promise<net.BlockList> {
+  const blocked = new net.BlockList();
+  for (const host of modelServerHosts()) {
+    const addresses = await resolveAllAddresses(host).catch(() => [] as string[]);
+    for (const address of addresses) {
+      const version = net.isIP(address);
+      if (version) blocked.addAddress(address, version === 4 ? "ipv4" : "ipv6");
+    }
+  }
+  return blocked;
 }
 
 /**
@@ -137,7 +178,15 @@ async function assertAllowedUrl(url: URL): Promise<void> {
   if (modelServerHosts().has(hostname)) {
     throw new Error(`모델 서버와 같은 호스트는 MCP 서버로 등록할 수 없습니다: ${hostname}`);
   }
-  await assertPublicHostname(hostname);
+  const addresses = await resolveAllAddresses(hostname);
+  const modelAddresses = await modelServerAddresses();
+  for (const address of addresses) {
+    const version = net.isIP(address);
+    if (version && modelAddresses.check(address, version === 4 ? "ipv4" : "ipv6")) {
+      throw new Error(`모델 서버와 같은 호스트는 MCP 서버로 등록할 수 없습니다: ${hostname}`);
+    }
+  }
+  assertPublicAddresses(hostname, addresses);
 }
 
 /** Public so the routes can refuse a bad URL before anything is written to disk. */
@@ -155,46 +204,27 @@ export async function assertRegisterableUrl(rawUrl: string): Promise<URL> {
 /**
  * POST with redirects followed by hand, re-validating every hop. `fetch`'s own
  * redirect handling would follow a Location we never got to look at.
+ *
+ * Same origin only: every hop re-sends the same headers, which carry the
+ * owner's credential and, for an opted-in server, the identity token. An MCP
+ * server has no reason to send us to another origin, and following it there
+ * would hand that origin the credential.
  */
-async function postGuarded(startUrl: string, headers: Record<string, string>, body: string, signal: AbortSignal): Promise<Response> {
-  let current = new URL(startUrl);
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertAllowedUrl(current);
-    const res = await fetch(current, { method: "POST", headers, body, redirect: "manual", signal });
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (!location) throw new Error(`Location 없는 리다이렉트 응답입니다 (HTTP ${res.status}).`);
-      await res.body?.cancel().catch(() => {});
-      current = new URL(location, current);
-      continue;
-    }
-    return res;
-  }
-  throw new Error(`리다이렉트가 ${MAX_REDIRECTS}회를 넘었습니다.`);
-}
-
-/** Read a response body with a hard byte cap, cancelling the stream past it. */
-async function readCapped(res: Response): Promise<string> {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let text = "";
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      text += decoder.decode(value, { stream: true });
-      if (received > MAX_BODY_BYTES) {
-        await reader.cancel().catch(() => {});
-        break;
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return text;
+function postGuarded(startUrl: string, headers: Record<string, string>, body: string, signal: AbortSignal): Promise<Response> {
+  return followGuarded(
+    startUrl,
+    { method: "POST", headers, body, signal },
+    {
+      maxRedirects: MAX_REDIRECTS,
+      assertHop: assertAllowedUrl,
+      sameOrigin: true,
+      messages: {
+        noLocation: (status) => `Location 없는 리다이렉트 응답입니다 (HTTP ${status}).`,
+        tooMany: `리다이렉트가 ${MAX_REDIRECTS}회를 넘었습니다.`,
+        crossOrigin: (from, to) => `다른 출처로의 리다이렉트는 따르지 않습니다: ${from.origin} → ${to.origin}`,
+      },
+    },
+  );
 }
 
 /**
@@ -264,9 +294,9 @@ async function request(
   const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
   const res = await postGuarded(target.url, baseHeaders(target, session), body, signal);
   const contentType = res.headers.get("content-type") || "";
-  const text = await readCapped(res);
+  const text = await readBodyCapped(res, MAX_BODY_BYTES);
   if (!res.ok) {
-    throw new Error(`${method} 요청이 HTTP ${res.status}로 실패했습니다: ${text.slice(0, 300)}`);
+    throw new McpHttpError(`${method} 요청이 HTTP ${res.status}로 실패했습니다: ${text.slice(0, 300)}`, res.status);
   }
   const messages = parseMessages(contentType, text);
   // Anything without our id is a server-initiated notification or request
@@ -276,7 +306,7 @@ async function request(
     throw new Error(`${method} 응답에 요청 id가 없습니다 (메시지 ${messages.length}개).`);
   }
   if (answer.error) {
-    throw new Error(`${method} 오류 ${answer.error.code ?? "?"}: ${answer.error.message ?? "알 수 없는 오류"}`);
+    throw new McpRpcError(`${method} 오류 ${answer.error.code ?? "?"}: ${answer.error.message ?? "알 수 없는 오류"}`, answer.error.code);
   }
   return { result: answer.result, sessionId: res.headers.get("mcp-session-id") };
 }
@@ -286,7 +316,7 @@ async function notify(target: McpTarget, session: McpSession, method: string, si
   const body = JSON.stringify({ jsonrpc: "2.0", method, params: {} });
   const res = await postGuarded(target.url, baseHeaders(target, session), body, signal);
   await res.body?.cancel().catch(() => {});
-  if (!res.ok) throw new Error(`${method} 알림이 HTTP ${res.status}로 거부되었습니다.`);
+  if (!res.ok) throw new McpHttpError(`${method} 알림이 HTTP ${res.status}로 거부되었습니다.`, res.status);
 }
 
 /**

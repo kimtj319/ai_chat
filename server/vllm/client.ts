@@ -1,15 +1,8 @@
 import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
-import { endpointsRevision, listEndpoints } from "./endpoints.js";
+import { endpointsRevision, listEndpoints, reportedWindow, requestHeaders } from "./endpoints.js";
 import { probeModels, type ModelCapability } from "./capability.js";
-
-function requestHeaders(endpoint: VllmEndpoint, json: boolean): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (json) headers["Content-Type"] = "application/json";
-  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
-  return headers;
-}
 
 interface ModelsListResponse {
   /** context_length is OpenRouter's name for the same number. */
@@ -22,7 +15,7 @@ export interface CatalogEntry {
   baseUrl: string;
   /**
    * null when the server reports no max_model_len — which the LiteLLM gateway
-   * at the LiteLLM gateway does for every one of its models (measured
+   * does for every one of its models (measured
    * 2026-09-12). Everything downstream must therefore have a real fallback;
    * see attachments/budget.ts, whose numbers are what /api/models publishes.
    */
@@ -48,12 +41,8 @@ function warnOnce(key: string, message: string): void {
   console.warn(message);
 }
 
-/**
- * List one endpoint's models and classify each one. Models that nothing can
- * use are dropped here rather than in the route, so `resolveModel` can never
- * fall back onto one either.
- */
-async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal): Promise<CatalogEntry[]> {
+/** What one endpoint's /models lists, narrowed to its allow list. No probing. */
+async function listEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal): Promise<NonNullable<ModelsListResponse["data"]>> {
   const res = await fetch(`${endpoint.baseUrl}/models`, {
     headers: requestHeaders(endpoint, false),
     signal,
@@ -65,7 +54,16 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
   // The endpoint's allow list, applied before probing: a model left out is
   // never asked anything and never listed (see VllmEndpoint.models).
   const allowed = endpoint.models && endpoint.models.length > 0 ? new Set(endpoint.models) : null;
-  const listed = (body.data ?? []).filter((m) => !allowed || allowed.has(m.id));
+  return (body.data ?? []).filter((m) => !allowed || allowed.has(m.id));
+}
+
+/**
+ * List one endpoint's models and classify each one. Models that nothing can
+ * use are dropped here rather than in the route, so `resolveModel` can never
+ * fall back onto one either.
+ */
+async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal): Promise<CatalogEntry[]> {
+  const listed = await listEndpointModels(endpoint, signal);
   const verdicts = await probeModels(endpoint, listed.map((m) => m.id));
   const entries: CatalogEntry[] = [];
   for (const m of listed) {
@@ -87,7 +85,7 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
       id: m.id,
       label: endpoint.label,
       baseUrl: endpoint.baseUrl,
-      maxModelLen: typeof m.max_model_len === "number" ? m.max_model_len : typeof m.context_length === "number" ? m.context_length : null,
+      maxModelLen: reportedWindow(m),
       reachable: true,
       capability: verdict?.capability ?? "chat",
     });
@@ -154,11 +152,6 @@ export function invalidateCatalog(): void {
   cachedCatalog = null;
 }
 
-/** Backward-compatible flat list of model ids across all endpoints. */
-export async function fetchModels(signal?: AbortSignal): Promise<string[]> {
-  return (await fetchCatalog(signal)).map((e) => e.id);
-}
-
 /**
  * Resolve a requested model id to the endpoint that serves it. An unknown or
  * empty id falls back to the first available model so a stale selection (or a
@@ -194,11 +187,6 @@ export async function resolveModel(
   return { model: chosen.id, endpoint, maxModelLen: chosen.maxModelLen, capability: chosen.capability };
 }
 
-/** The default model id (first model of the first reachable endpoint). */
-export async function getCurrentModel(): Promise<string> {
-  return (await resolveModel()).model;
-}
-
 export interface EndpointHealth {
   label: string;
   baseUrl: string;
@@ -218,7 +206,11 @@ export async function checkHealth(): Promise<{
     listEndpoints().map(async (ep): Promise<EndpointHealth> => {
       const t0 = Date.now();
       try {
-        const models = await fetchEndpointModels(ep, AbortSignal.timeout(5000));
+        // Listing only, never probing: the timeout bounds the /models fetch, but
+        // a probe carries its own 20s timeout per request (capability.ts) and an
+        // undecided verdict is never cached, so a host answering 5xx made every
+        // health call wait on the probes again.
+        const models = await listEndpointModels(ep, AbortSignal.timeout(5000));
         return { label: ep.label, baseUrl: ep.baseUrl, ok: true, models: models.map((m) => m.id), latencyMs: Date.now() - t0 };
       } catch {
         return { label: ep.label, baseUrl: ep.baseUrl, ok: false, models: [], latencyMs: Date.now() - t0 };
@@ -339,14 +331,6 @@ export function toWire(messages: readonly unknown[]): unknown[] {
 }
 
 /**
- * Exact prompt token count from vLLM's own tokenizer. It is served at the
- * server root — {baseUrl} minus the trailing /v1, since /v1/tokenize is a 404 —
- * and takes the same payload shape as /chat/completions. `tools` must be passed
- * when tools are offered: the schemas are real prompt tokens (measured
- * 2026-09-11 on the 27B endpoint: 55 tokens for one short message, 304 for the
- * same message plus one tool schema).
- */
-/**
  * Endpoints that answered /tokenize with 404, remembered for the life of the
  * process. Not every OpenAI-compatible server has vLLM's tokenizer route: the
  * LiteLLM gateway does not (measured 2026-09-12). Left
@@ -357,6 +341,14 @@ export function toWire(messages: readonly unknown[]): unknown[] {
  */
 const endpointsWithoutTokenizer = new Set<string>();
 
+/**
+ * Exact prompt token count from vLLM's own tokenizer. It is served at the
+ * server root — {baseUrl} minus the trailing /v1, since /v1/tokenize is a 404 —
+ * and takes the same payload shape as /chat/completions. `tools` must be passed
+ * when tools are offered: the schemas are real prompt tokens (measured
+ * 2026-09-11 on the 27B endpoint: 55 tokens for one short message, 304 for the
+ * same message plus one tool schema).
+ */
 export async function countPromptTokens(
   endpoint: VllmEndpoint,
   model: string,
@@ -517,6 +509,59 @@ export async function streamChatCompletion(
     throw new Error(`vLLM /chat/completions responded ${res.status}: ${text.slice(0, 500)}`);
   }
   return parseSseStream(res.body, signal);
+}
+
+/**
+ * One short completion with thinking switched off, read to the end. For the
+ * side calls that run beside a turn (chat/titleSummary.ts,
+ * chat/prohibitionDetect.ts), each of which keeps its own retry rule.
+ *
+ * `thought` reports whether the model reasoned anyway: `enable_thinking: false`
+ * is a request, not a guarantee (wise-lloa-max answered with reasoning_content
+ * and no content at all), and that is what those retry rules key on.
+ */
+export async function completeWithoutThinking(input: {
+  model: string;
+  endpoint: VllmEndpoint;
+  prompt: string;
+  maxTokens: number;
+  temperature: number;
+  signal: AbortSignal;
+}): Promise<{ text: string; thought: boolean }> {
+  const body: ChatCompletionRequestBody = {
+    model: input.model,
+    messages: [{ role: "user", content: input.prompt }],
+    stream: true,
+    // Required by the request type. Nothing here reads the usage back — the
+    // turn beside this one is what reports tokens — but the field is part of
+    // the shape every call to this endpoint sends.
+    stream_options: { include_usage: true },
+    temperature: input.temperature,
+    top_p: 0.9,
+    max_tokens: input.maxTokens,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    // These are not reasoning tasks, and thinking tokens here are latency and
+    // load spent beside a turn the user is actually waiting for. Not every
+    // model obeys it; see `thought` above.
+    chat_template_kwargs: { enable_thinking: false },
+  };
+
+  let text = "";
+  let thought = false;
+  const stream = await streamChatCompletion(body, input.signal, input.endpoint);
+  for await (const chunk of stream) {
+    if (input.signal.aborted) break;
+    const delta = chunk.choices?.[0]?.delta;
+    if (delta?.reasoning ?? delta?.reasoning_content) thought = true;
+    if (delta?.content) text += delta.content;
+  }
+  return { text, thought };
+}
+
+/** Drops the think blocks a model that ignored enable_thinking:false leaves in its content. */
+export function stripThinkBlocks(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "");
 }
 
 export interface EmbeddingResult {

@@ -58,6 +58,8 @@ export function endpointErrorMessage(code: ModelEndpointErrorCode | null, host: 
       return "이 서버는 모델이 많아 사용할 모델을 골라야 추가할 수 있습니다.";
     case "unknown_models":
       return "고른 모델 중 이 서버에 없는 것이 있습니다. 목록을 다시 불러와 주세요.";
+    case "invalid_models":
+      return "사용할 모델 목록이 올바르지 않습니다.";
     case "unreachable":
     default:
       // An unmapped failure is almost always the endpoint not answering.

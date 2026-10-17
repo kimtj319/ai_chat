@@ -9,7 +9,6 @@
   padding-right: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--surface-container);
-  border: 1px solid transparent;
 }
 
 .attachment-chip-body {

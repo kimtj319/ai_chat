@@ -2,22 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/client";
 import { AttachmentError } from "../api/client";
 import type { AttachmentLimits } from "../api/types";
-import { classifyFile, HEAD_BYTES, type AttachmentKind } from "../attachments/classify";
-import {
-  estimateImageTokens,
-  estimateTextTokens,
-  fitWithin,
-  formatBytes,
-  isGenericPastedName,
-  MAX_ATTACHMENTS,
-  MAX_SOURCE_IMAGE_BYTES,
-  pastedImageName,
-} from "../attachments/format";
-import { decodeImage, prepareImage, type SourceImage } from "../attachments/imagePrepare";
+import { admit } from "../attachments/admit";
+import type { AttachmentKind } from "../attachments/classify";
+import { estimateImageTokens, formatBytes, MAX_ATTACHMENTS } from "../attachments/format";
+import { prepareImage, type SourceImage } from "../attachments/imagePrepare";
 import { downscaleEdge, overBudgetIds } from "../attachments/limits";
 import * as copy from "../attachments/messages";
 import type { NoticeSpec } from "../attachments/messages";
-import { decodeText, TEXT_UPLOAD_MIME, utf8ByteLength } from "../attachments/textDecode";
 import { createId } from "../state/defaults";
 
 export type DraftStatus = "preparing" | "uploading" | "ready" | "failed";
@@ -245,111 +236,37 @@ export function useAttachmentDraft(conversationId: string, limits: AttachmentLim
 
         for (const file of Array.from(files)) {
           if (conversationRef.current !== conversation) return;
-          const active = limitsRef.current;
 
           if (itemsRef.current.length >= MAX_ATTACHMENTS) {
             raise(copy.tooMany(MAX_ATTACHMENTS));
             return;
           }
 
-          const head = new Uint8Array(await file.slice(0, HEAD_BYTES).arrayBuffer());
-          const verdict = classifyFile(file.name, file.type, head);
-
-          // A pasted screenshot always arrives as "image.png"; name it before
-          // anything reports on it, collisions included.
-          const name =
-            source === "paste" && verdict.ok && verdict.kind === "image" && isGenericPastedName(file.name)
-              ? pastedImageName(
-                  itemsRef.current.map((item) => item.name),
-                  file.type,
-                )
-              : file.name;
-
-          if (!verdict.ok) {
-            raise(copy.refusalNotice(verdict, name));
+          const admission = await admit(
+            file,
+            source,
+            () => itemsRef.current.map((item) => item.name),
+            limitsRef.current,
+          );
+          // The conversation may have changed while the file was being read or
+          // decoded. A chip added now would land in the other conversation's
+          // draft, where nothing uploads it: it would spin forever and block send.
+          if (conversationRef.current !== conversation) {
+            if ("seed" in admission) admission.probe?.bitmap.close();
+            return;
+          }
+          if ("refusal" in admission) {
+            raise(admission.refusal);
             continue;
           }
-
-          // Everything below runs before a chip exists: a file that cannot be
-          // sent never gets a progress bar.
-          if (verdict.kind === "image") {
-            if (file.size > MAX_SOURCE_IMAGE_BYTES) {
-              raise(copy.tooLarge(name, formatBytes(MAX_SOURCE_IMAGE_BYTES), "image"));
-              continue;
-            }
-            // Decoded once, here: the dimensions are what the token gate needs
-            // and the bitmap is handed straight to the downscale below.
-            let probe: SourceImage;
-            try {
-              probe = await decodeImage(file);
-            } catch {
-              raise(copy.undecodableImage(name));
-              continue;
-            }
-            // The cost that matters is the one after the downscale, so a 24MP
-            // photo is judged on the 2048px image the model will really see.
-            const target = fitWithin(probe.width, probe.height, downscaleEdge(active));
-            const tokens = estimateImageTokens(target.width, target.height);
-            if (tokens > active.maxFileTokens) {
-              probe.bitmap.close();
-              raise(copy.fileOverBudget(name, tokens, active.maxFileTokens));
-              continue;
-            }
-            const localId = createId();
-            update((previous) => [
-              ...previous,
-              {
-                localId,
-                name,
-                kind: "image",
-                status: "preparing",
-                bytes: file.size,
-                estimatedTokens: tokens,
-                mime: file.type,
-                width: target.width,
-                height: target.height,
-                blob: file,
-              },
-            ]);
-            void prepareAndUpload(localId, file, name, probe, conversation);
-            continue;
-          }
-
-          const decoded = decodeText(new Uint8Array(await file.arrayBuffer()));
-          if (!decoded) {
-            raise(copy.undecodableText(name));
-            continue;
-          }
-          const tokens = estimateTextTokens(decoded.text);
-          if (tokens > active.maxFileTokens) {
-            raise(copy.fileOverBudget(name, tokens, active.maxFileTokens));
-            continue;
-          }
-          const bytes = utf8ByteLength(decoded.text);
-          if (bytes > active.maxFileBytes) {
-            raise(copy.tooLarge(name, formatBytes(active.maxFileBytes), "text"));
-            continue;
-          }
-          if (conversationRef.current !== conversation) return;
 
           const localId = createId();
-          update((previous) => [
-            ...previous,
-            {
-              localId,
-              name,
-              kind: "text",
-              status: "preparing",
-              bytes,
-              estimatedTokens: tokens,
-              mime: TEXT_UPLOAD_MIME,
-              text: decoded.text,
-              // Uploaded as UTF-8 whatever the file's own encoding was, so the
-              // server never has to know about CP949.
-              blob: new Blob([decoded.text], { type: TEXT_UPLOAD_MIME }),
-            },
-          ]);
-          void upload(localId, conversation);
+          update((previous) => [...previous, { localId, ...admission.seed }]);
+          if (admission.probe) {
+            void prepareAndUpload(localId, file, admission.seed.name, admission.probe, conversation);
+          } else {
+            void upload(localId, conversation);
+          }
         }
       })();
     },

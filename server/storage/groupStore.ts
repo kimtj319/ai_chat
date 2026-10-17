@@ -1,6 +1,5 @@
-import fs from "node:fs/promises";
 import crypto from "node:crypto";
-import { readJsonFile, writeJsonFileAtomic } from "./atomic.js";
+import { readJsonFile, readdirOrEmpty, unlinkIfPresent, writeJsonFileAtomic } from "./atomic.js";
 import { groupFile, groupsDir } from "./paths.js";
 import { withLock } from "./mutex.js";
 import type { GroupRecord } from "../types.js";
@@ -9,11 +8,11 @@ import type { GroupRecord } from "../types.js";
  * Groups on disk: ONE JSON FILE PER GROUP at {DATA_DIR}/auth/groups/{id}.json,
  * written with the same atomic temp-file+rename discipline as accounts.
  *
- * A group is a folder an admin sorts accounts into. It grants nothing and
- * refuses nothing — membership is recorded on the account (UserRecord.groupId)
- * and read by the admin list, and by nothing else in the request path. Keeping
- * it that way is deliberate: the moment a group decides what someone may do,
- * every route has to consult it, and this one does not.
+ * A group is a folder an admin sorts accounts into. Membership is recorded on
+ * the account (UserRecord.groupId) and read by the admin list — and by ONE
+ * rule in the request path: auth/privilege.ts gives members of a group named in
+ * PRIVILEGED_GROUPS the shared keys and every model. That rule goes by the
+ * group's NAME, so renaming a group can grant or take away those privileges.
  *
  * The id is generated rather than derived from the name, so renaming a group is
  * a one-field write and never has to move members between files.
@@ -50,17 +49,9 @@ export async function getGroup(id: string): Promise<GroupRecord | null> {
 }
 
 export async function listGroups(): Promise<GroupRecord[]> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(groupsDir());
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-
   const groups: GroupRecord[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
+  for (const entry of await readdirOrEmpty(groupsDir())) {
+    if (!entry.endsWith(".json")) continue;
     const group = await getGroup(entry.slice(0, -".json".length));
     if (group) groups.push(group);
   }
@@ -123,13 +114,5 @@ export async function renameGroup(id: string, name: string): Promise<RenameGroup
 export async function deleteGroup(id: string): Promise<boolean> {
   const normalized = normalizeGroupId(id);
   if (!normalized) return false;
-  return withLock("groups", async () => {
-    try {
-      await fs.unlink(groupFile(normalized));
-      return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
-  });
+  return withLock("groups", async () => unlinkIfPresent(groupFile(normalized)));
 }

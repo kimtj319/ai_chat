@@ -4,6 +4,7 @@ import type { CitationSource } from "../state/citations";
 import { findPassage } from "../state/highlightMatch";
 import { closeSource, useOpenSource } from "../state/sourcePanel";
 import { pushOverlay } from "../ui/overlayStack";
+import { CloseIcon } from "./icons";
 import "./SourcePanel.css";
 
 /**
@@ -56,9 +57,7 @@ export function SourcePanel() {
                 tabIndex={open ? 0 : -1}
                 onClick={closeSource}
               >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <CloseIcon />
               </button>
             </header>
             <SourceBody key={`${shown.documentId}:${shown.chunkId}`} source={shown} />

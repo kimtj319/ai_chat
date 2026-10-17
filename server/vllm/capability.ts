@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
+import { requestHeaders } from "./endpoints.js";
 
 /**
  * What a served model can actually do, measured instead of assumed.
@@ -55,15 +56,6 @@ const verdicts = new Map<string, CapabilityVerdict>();
 
 const cacheKey = (baseUrl: string, model: string): string => `${baseUrl}\u0000${model}`;
 
-/** Test only: forget every verdict so the next catalog build re-probes. */
-export function clearCapabilityCache(): void {
-  verdicts.clear();
-}
-
-export function cachedCapability(baseUrl: string, model: string): CapabilityVerdict | undefined {
-  return verdicts.get(cacheKey(baseUrl, model));
-}
-
 /**
  * 20 seconds. A chat probe is one token, but these are shared GPU hosts and a
  * queued request waits; the alternative to waiting is declaring a live model
@@ -80,13 +72,11 @@ interface Attempt {
 }
 
 async function post(endpoint: VllmEndpoint, path: string, body: unknown, shape: (json: unknown) => boolean): Promise<Attempt> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
   let res: Response;
   try {
     res = await fetch(`${endpoint.baseUrl}${path}`, {
       method: "POST",
-      headers,
+      headers: requestHeaders(endpoint, true),
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });

@@ -1,110 +1,30 @@
-import crypto from "node:crypto";
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import {
   listConversations,
   getConversation,
   createConversation,
   updateConversation,
   deleteConversation,
-  mutateConversation,
-  DEFAULT_CONVERSATION_TITLE,
-  isDefaultConversationTitle,
 } from "../storage/conversationStore.js";
 import { isValidId } from "../storage/paths.js";
-import {
-  getAttachmentMeta,
-  referencedAttachmentIds,
-  sweepConversationAttachments,
-} from "../storage/attachmentStore.js";
-import { attachmentBudget, describeCost } from "../attachments/budget.js";
-import { resolveModel } from "../vllm/client.js";
 import { modelAccessFor, modelIsForbidden } from "../vllm/access.js";
-import { runConversationTurn } from "../chat/toolLoop.js";
-import { compactionSettled, compactionStatus } from "../chat/compactionProgress.js";
-import { summariseConversationTitle } from "../chat/titleSummary.js";
-import { detectProhibition } from "../chat/prohibitionDetect.js";
-import { appendPending } from "../storage/prohibitionsStore.js";
-import { runEmbeddingTurn } from "../chat/embeddingTurn.js";
-import { config } from "../config.js";
-import { validateSettingsPatch } from "../types.js";
-import type {
-  StoredMessage,
-  ConversationSettings,
-  ConversationKind,
-  MessageAttachment,
-  MessageEmbedding,
-} from "../types.js";
-
-/** A sidebar row, not a document. */
-const MAX_TITLE_CHARS = 200;
-/** Rides in every prompt of every later turn, so it is charged for forever. */
-const MAX_SYSTEM_PROMPT_CHARS = 20_000;
-/** The registry holds a few dozen; this is room for MCP servers on top. */
-const MAX_ENABLED_TOOLS = 500;
+import { compactionStatus } from "../chat/compactionProgress.js";
+import type { Conversation, ConversationSettings, ConversationKind } from "../types.js";
+import { checkEnabledTools, checkSettings, checkTextField } from "./conversationFields.js";
+import { postMessage } from "./conversationTurn.js";
+import { activeAnswerNowSignals, activeStreams } from "./turnSignals.js";
 
 export const conversationsRouter = Router();
 
-/** A refusal the caller can act on: which field was wrong, and why. */
-interface FieldProblem {
-  error: string;
-  field: string;
-}
-
 /**
- * The rules for the four stored fields, in ONE place, because PATCH is not the
- * only route that writes them: POST /conversations writes a title and a system
- * prompt, and POST /conversations/:id/messages carries a `settings` and an
- * `enabledTools` patch of its own. Both of those wrote straight through, so
- * every limit below could be walked around by sending the same value to a
- * different route — measured on the deployment:
- *
- *   POST /conversations/:id/messages {"content":"hi","settings":{"topP":99,"seed":"abc"}}
- *
- * stored topP 99 and seed "abc", and the conversation then answered
- * 400 "Input should be a valid integer, unable to parse string as an integer"
- * on EVERY later turn — the exact breakage validateSettingsPatch exists to
- * prevent, reachable through the route next to the one that was fixed.
+ * The caller's own conversation named in the path, or null once a 404 has been
+ * sent. A stranger's id gets the same 404 as a missing one, so it does not
+ * confirm that the id exists.
  */
-function checkTextField(field: "title" | "systemPrompt", value: string): FieldProblem | null {
-  // Bounded because both are stored and replayed: a title rides in the sidebar,
-  // a system prompt rides in EVERY prompt of every later turn. 100,000-character
-  // titles and 500,000-character system prompts were accepted before this.
-  if (field === "title") {
-    return value.length > MAX_TITLE_CHARS
-      ? { error: `제목은 ${MAX_TITLE_CHARS}자를 넘을 수 없습니다.`, field }
-      : null;
-  }
-  return value.length > MAX_SYSTEM_PROMPT_CHARS
-    ? { error: `시스템 프롬프트는 ${MAX_SYSTEM_PROMPT_CHARS}자를 넘을 수 없습니다.`, field }
-    : null;
-}
-
-function checkSettings(
-  raw: unknown,
-): { ok: true; value?: Partial<ConversationSettings> } | { ok: false; problem: FieldProblem } {
-  if (!raw || typeof raw !== "object") return { ok: true };
-  // Checked, not spread: whatever is stored here is what goes to vLLM on every
-  // later turn. The legacy "high" level still normalises to what the servers
-  // take, and an unknown key is dropped rather than stored.
-  const checked = validateSettingsPatch(raw as Record<string, unknown>);
-  if (checked.ok) return { ok: true, value: checked.value };
-  return { ok: false, problem: { error: checked.problem.message, field: checked.problem.field } };
-}
-
-function checkEnabledTools(raw: unknown): { ok: true; value?: string[] } | { ok: false; problem: FieldProblem } {
-  if (!Array.isArray(raw)) return { ok: true };
-  // A tool list is walked once per turn, so it is bounded too.
-  if (raw.length > MAX_ENABLED_TOOLS) {
-    return { ok: false, problem: { error: `도구는 ${MAX_ENABLED_TOOLS}개를 넘을 수 없습니다.`, field: "enabledTools" } };
-  }
-  // Names only, and no longer than a tool name can be: anything else could
-  // never resolve to a tool anyway.
-  return {
-    ok: true,
-    value: (raw as unknown[]).filter(
-      (name): name is string => typeof name === "string" && name.length > 0 && name.length <= 64,
-    ),
-  };
+export async function ownConversationOr404(req: Request<{ id: string }>, res: Response): Promise<Conversation | null> {
+  const conversation = isValidId(req.params.id) ? await getConversation(req.ownerId, req.params.id) : null;
+  if (!conversation) res.status(404).json({ error: "Not found" });
+  return conversation;
 }
 
 /**
@@ -152,9 +72,8 @@ conversationsRouter.post("/conversations", async (req, res, next) => {
 
 conversationsRouter.get("/conversations/:id", async (req, res, next) => {
   try {
-    if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
-    const conv = await getConversation(req.ownerId, req.params.id);
-    if (!conv) return res.status(404).json({ error: "Not found" });
+    const conv = await ownConversationOr404(req, res);
+    if (!conv) return;
     res.json(withKind(conv));
   } catch (err) {
     next(err);
@@ -234,54 +153,6 @@ conversationsRouter.delete("/conversations/:id", async (req, res, next) => {
   }
 });
 
-// Active SSE streams keyed by conversation id, so DELETE .../stream can abort the in-flight vLLM call.
-/**
- * Every turn currently streaming, grouped by conversation.
- *
- * A set, not one controller: two turns can be live on one conversation (two tabs
- * on the same chat), and with a single slot the second overwrote the first —
- * measured, Stop reached only the newer one while the older ran to 6,325
- * characters, and a second Stop answered "no active stream" while it was still
- * going. Stop now abandons every turn on the conversation, which is what the
- * button says it does.
- */
-/**
- * Turn a vLLM failure into something the person reading it can act on.
- *
- * A message longer than the window comes back as the server's own English
- * sentence — "This model's maximum context length is 262144 tokens..." — which
- * is both untranslated and about a number the reader never chose. An attachment
- * in the same situation is refused up front with a Korean reason, so this is the
- * one path where the same mistake reads like a crash. The length is not checked
- * before sending because only the tokenizer knows it; the error it produces is
- * where the truth arrives, so that is where it is explained.
- *
- * Anything unrecognised is passed through untouched: an invented Korean message
- * for an error nobody has seen would be worse than the original.
- */
-function readableTurnError(message: string): string {
-  if (/maximum context length|context length is|reduce the length of the messages/i.test(message)) {
-    return "메시지가 모델의 컨텍스트 한도를 넘습니다. 내용을 나눠서 보내거나 첨부로 올린 뒤 다시 시도해 주세요.";
-  }
-  return message;
-}
-
-const activeStreams = new Map<string, Set<AbortController>>();
-
-function trackStream(conversationId: string, controller: AbortController): void {
-  const live = activeStreams.get(conversationId) ?? new Set<AbortController>();
-  live.add(controller);
-  activeStreams.set(conversationId, live);
-}
-
-/** Removes only this turn's controller, so a finished turn never frees another's slot. */
-function untrackStream(conversationId: string, controller: AbortController): void {
-  const live = activeStreams.get(conversationId);
-  if (!live) return;
-  live.delete(controller);
-  if (live.size === 0) activeStreams.delete(conversationId);
-}
-
 conversationsRouter.delete("/conversations/:id/stream", async (req, res, next) => {
   try {
     // Keyed by conversation id alone, so without this check any signed-in
@@ -290,522 +161,33 @@ conversationsRouter.delete("/conversations/:id/stream", async (req, res, next) =
     // Every other route on this conversation already 404s for a stranger; this
     // one was the exception. 404 rather than 403, so it does not confirm that
     // the id exists either.
-    if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
-    if (!(await getConversation(req.ownerId, req.params.id))) {
-      return res.status(404).json({ error: "Not found" });
-    }
-    const live = activeStreams.get(req.params.id);
-    if (!live || live.size === 0) {
+    if (!(await ownConversationOr404(req, res))) return;
+    if (!activeStreams.abortAll(req.params.id)) {
       return res.status(404).json({ error: "No active stream for this conversation" });
     }
-    for (const controller of live) controller.abort();
     res.status(204).end();
   } catch (err) {
     next(err);
   }
 });
-
-/**
- * Every turn's "지금 답변하기" (answer now) signal, tracked separately from
- * `activeStreams` above: aborting one of those tears the whole SSE response
- * down (Stop), which is not what this button does. This map holds a SEPARATE
- * AbortController per turn — passed into runConversationTurn as
- * `answerNowSignal` — so triggering it only cuts the current model call short
- * and moves the turn to a wrap-up answer; the response keeps streaming.
- *
- * A set, not one controller, for the same reason activeStreams is: two tabs
- * can have a turn running on the same conversation.
- */
-const activeAnswerNowSignals = new Map<string, Set<AbortController>>();
-
-function trackAnswerNow(conversationId: string, controller: AbortController): void {
-  const live = activeAnswerNowSignals.get(conversationId) ?? new Set<AbortController>();
-  live.add(controller);
-  activeAnswerNowSignals.set(conversationId, live);
-}
-
-function untrackAnswerNow(conversationId: string, controller: AbortController): void {
-  const live = activeAnswerNowSignals.get(conversationId);
-  if (!live) return;
-  live.delete(controller);
-  if (live.size === 0) activeAnswerNowSignals.delete(conversationId);
-}
 
 conversationsRouter.post("/conversations/:id/answer-now", async (req, res, next) => {
   try {
     // Same ownership rule as Stop above, for the same reason: an id is not a
     // secret, and being signed in must not be enough to reach into someone
     // else's turn.
-    if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
-    if (!(await getConversation(req.ownerId, req.params.id))) {
-      return res.status(404).json({ error: "Not found" });
-    }
-    const live = activeAnswerNowSignals.get(req.params.id);
-    if (!live || live.size === 0) {
+    if (!(await ownConversationOr404(req, res))) return;
+    if (!activeAnswerNowSignals.abortAll(req.params.id)) {
       // No turn running (already finished, or never started) — the same shape
       // as Stop's 404 above, and just as harmless: the client fires this and
       // ignores the response either way (useChatStream.ts).
       return res.status(404).json({ error: "No active turn for this conversation" });
     }
-    for (const controller of live) controller.abort();
     res.status(204).end();
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * What the assistant message says in a transcript that only renders `content`.
- * The vector itself is on `message.embedding` for a client that can draw it;
- * this is the one line that makes the conversation readable without one.
- */
-function describeEmbedding(embedding: MessageEmbedding): string {
-  const head = `${embedding.dimensions}차원 임베딩을 생성했습니다.`;
-  if (embedding.cosineToPrevious === null) return head;
-  return `${head} 직전 임베딩과의 코사인 유사도: ${embedding.cosineToPrevious.toFixed(4)}`;
-}
-
-function titleFromContent(content: string): string {
-  const collapsed = content.trim().replace(/\s+/g, " ");
-  if (collapsed.length <= 40) return collapsed || DEFAULT_CONVERSATION_TITLE;
-  return `${collapsed.slice(0, 40)}…`;
-}
-
-/** Index of the last user message, or -1. */
-function lastUserIndex(messages: StoredMessage[]): number {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i]?.role === "user") return i;
-  }
-  return -1;
-}
-
-function hasLiveTurn(conversationId: string): boolean {
-  return (activeStreams.get(conversationId)?.size ?? 0) > 0;
-}
-
-/**
- * POST /conversations/:id/messages — one turn.
- *
- * `{"regenerate": true}` 은 새 사용자 메시지를 덧붙이는 대신 마지막 사용자 메시지
- * 뒤(그 질문의 답·도구 메시지)를 잘라 내고 같은 질문으로 턴을 다시 돌린다. 첨부는
- * 그 메시지에 붙은 것을 그대로 쓴다. `content` 가 비어 있지 않으면 그 메시지의
- * 내용을 바꿔서 다시 돌린다(편집 후 재전송). 나머지 — 모델·종류·설정·도구 검사,
- * 스트림 모양(user_message → … → done) — 는 보통 전송과 같다.
- */
-conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
-  const { id } = req.params;
-  if (!isValidId(id)) return res.status(404).json({ error: "Not found" });
-
-  const body = req.body ?? {};
-  const regenerate = body.regenerate === true;
-  const rawContent = typeof body.content === "string" ? body.content : "";
-  // Deduplicated: the same file attached twice would be sent to the model twice.
-  // A regenerate keeps the stored message's attachments, so none are read from the body.
-  const attachmentIds =
-    !regenerate && Array.isArray(body.attachmentIds)
-      ? [...new Set((body.attachmentIds as unknown[]).filter((value): value is string => typeof value === "string"))]
-      : [];
-  // An attachment-only message is a real message ("what is in this picture?"
-  // needs no words), so the emptiness check now covers both.
-  if (!regenerate && rawContent.trim().length === 0 && attachmentIds.length === 0) {
-    return res.status(400).json({ error: "content must be a non-empty string" });
-  }
-  if (attachmentIds.length > config.attachmentMaxPerMessage) {
-    return res.status(400).json({
-      error: `한 메시지에는 첨부를 ${config.attachmentMaxPerMessage}개까지 넣을 수 있습니다.`,
-      code: "too_many",
-    });
-  }
-
-  // Loaded up front, always: which model this conversation uses decides what
-  // kind of turn this is (chat or embedding) before anything is written.
-  const existing = await getConversation(req.ownerId, id);
-  if (!existing) return res.status(404).json({ error: "Not found" });
-
-  // The message a regenerate re-runs. Refused while another turn is streaming:
-  // that turn appends its answer (and possibly a history summary) to the
-  // transcript this one is about to cut, so the two would interleave.
-  let regenerateTarget: StoredMessage | null = null;
-  if (regenerate) {
-    if (hasLiveTurn(id)) {
-      return res.status(409).json({ error: "이 대화에서 답변이 진행 중입니다. 끝난 뒤 다시 시도해 주세요.", code: "turn_in_progress" });
-    }
-    regenerateTarget = existing.messages[lastUserIndex(existing.messages)] ?? null;
-    if (!regenerateTarget) {
-      return res.status(400).json({ error: "다시 생성할 사용자 메시지가 없습니다.", code: "no_user_message" });
-    }
-  }
-  // What this turn asks: the body's text, or — for a plain regenerate — the
-  // stored question unchanged.
-  const content = regenerateTarget && rawContent.trim().length === 0 ? regenerateTarget.content : rawContent;
-  const attachmentCount = regenerateTarget ? (regenerateTarget.attachments?.length ?? 0) : attachmentIds.length;
-
-  let resolved;
-  try {
-    resolved = await resolveModel(existing.model, (await modelAccessFor(req.user)).allows);
-  } catch (err) {
-    return res.status(502).json({ error: err instanceof Error ? err.message : "모델 서버에 연결하지 못했습니다." });
-  }
-
-  // The model's capability is measured, not declared (vllm/capability.ts).
-  if (resolved.capability === "rerank") {
-    // A reranker takes a query plus a list of documents and scores them; there
-    // is nothing in a chat composer that expresses that. Refused here with a
-    // sentence the user can act on, instead of forwarding the gateway's raw
-    // 400 "does not support Chat Completions".
-    return res.status(400).json({
-      error: `${resolved.model} 은(는) 재순위(rerank) 전용 모델이라 대화에 사용할 수 없습니다. 질의와 문서 목록이 함께 필요합니다. 다른 모델을 선택해 주세요.`,
-      code: "rerank_unsupported",
-    });
-  }
-  const turnKind: ConversationKind = resolved.capability === "embedding" ? "embedding" : "chat";
-  // A conversation takes its kind from its first message and keeps it: an
-  // embedding turn and a chat turn store completely different messages, and
-  // interleaving them makes a transcript nobody can read.
-  if (existing.kind && existing.kind !== turnKind) {
-    return res.status(409).json({
-      error:
-        existing.kind === "chat"
-          ? "이 대화는 채팅 대화입니다. 임베딩 모델을 쓰려면 새 대화를 시작해 주세요."
-          : "이 대화는 임베딩 대화입니다. 채팅 모델을 쓰려면 새 대화를 시작해 주세요.",
-      code: "capability_mismatch",
-    });
-  }
-  if (turnKind === "embedding" && attachmentCount > 0) {
-    return res.status(400).json({
-      error: "임베딩 모델은 첨부 파일을 처리하지 않습니다. 텍스트만 입력해 주세요.",
-      code: "embedding_no_attachments",
-    });
-  }
-  if (turnKind === "embedding" && content.trim().length === 0) {
-    return res.status(400).json({ error: "임베딩할 텍스트를 입력해 주세요.", code: "invalid_input" });
-  }
-
-  const attachments: MessageAttachment[] = regenerateTarget?.attachments ? [...regenerateTarget.attachments] : [];
-  for (const attachmentId of attachmentIds) {
-    const meta = isValidId(attachmentId) ? await getAttachmentMeta(req.ownerId, id, attachmentId) : null;
-    if (!meta) {
-      return res.status(404).json({ error: `첨부를 찾을 수 없습니다 (${attachmentId}). 다시 올려 주세요.` });
-    }
-    attachments.push(meta);
-  }
-  if (attachments.length > 0) {
-    const attachmentBytes = attachments.reduce((sum, a) => sum + a.bytes, 0);
-    if (attachmentBytes > config.attachmentMaxMessageBytes) {
-      return res.status(413).json({
-        error: `한 메시지의 첨부 용량 한도(${(config.attachmentMaxMessageBytes / (1024 * 1024)).toFixed(0)}MB)를 넘습니다.`,
-        code: "too_large",
-      });
-    }
-    // The token ceiling is derived from the window this conversation's own model
-    // reports, not from a constant: the same six files may fit one model and not
-    // another. Refused here, before the turn starts, so nothing is spent on a
-    // prompt that cannot be answered.
-    const budget = attachmentBudget(resolved.maxModelLen);
-    const attachmentTokens = attachments.reduce((sum, a) => sum + (a.estimatedTokens ?? 0), 0);
-    if (attachmentTokens > budget.messageTokens) {
-      return res.status(413).json({
-        // Every file with its own cost: with six attached, "too large" alone
-        // does not tell the user which one to drop.
-        error:
-          `첨부가 모델 컨텍스트 한도를 넘습니다: ${attachments.map((a) => describeCost(a.name, a.estimatedTokens ?? 0)).join(", ")} ` +
-          `(합계 ${attachmentTokens.toLocaleString("en-US")}토큰, 한 메시지 허용 ${budget.messageTokens.toLocaleString("en-US")}토큰` +
-          `${budget.fallback ? ", 모델이 컨텍스트 길이를 알려주지 않아 기본값 적용" : ` = 컨텍스트 ${budget.contextWindow?.toLocaleString("en-US")}의 ${Math.round(config.attachmentMessageTokenRatio * 100)}%`}). ` +
-          "일부 파일을 빼고 다시 보내 주세요.",
-        code: "too_large",
-      });
-    }
-  }
-
-  // The composer sends the model controls along with the message, and what is
-  // stored here is what goes to vLLM on this turn AND on every later one — so
-  // it goes through the same check PATCH uses, and is refused before anything
-  // is written or streamed rather than after the conversation is already broken.
-  const checkedSettings = checkSettings(body.settings);
-  if (!checkedSettings.ok) return res.status(400).json(checkedSettings.problem);
-  const settingsPatch = checkedSettings.value;
-  const checkedTools = checkEnabledTools(body.enabledTools);
-  if (!checkedTools.ok) return res.status(400).json(checkedTools.problem);
-  const enabledToolsPatch = checkedTools.value;
-
-  // A regenerate keeps the stored message's id, attachments and createdAt; only
-  // an edit changes its content.
-  const userMessage: StoredMessage = regenerateTarget
-    ? { ...regenerateTarget, content }
-    : {
-        id: crypto.randomUUID(),
-        role: "user",
-        content,
-        ...(attachments.length > 0 ? { attachments } : {}),
-        createdAt: new Date().toISOString(),
-      };
-
-  let openedConversation = false;
-  // Set when the transcript changed between the read above and the lock below.
-  let regenerateConflict = false;
-  const afterUser = await mutateConversation(req.ownerId, id, (conv) => {
-    if (regenerateTarget) {
-      const index = lastUserIndex(conv.messages);
-      // Checked again under the lock: another tab may have started a turn or
-      // sent a newer message since the conversation was read.
-      if (hasLiveTurn(id) || conv.messages[index]?.id !== regenerateTarget.id) {
-        regenerateConflict = true;
-        return conv;
-      }
-      // 요약(chat/historySummary.ts)은 늘 사용자 메시지 바로 앞에서 끊긴다
-      // (planCoverage) — 이 질문에 답하던 턴이 만든 요약도 이 질문 "앞" 까지만
-      // 덮는다. 그래서 그런 요약은 그대로 둔다: 지우면 다시 돌리는 바로 이 턴이
-      // 같은 요약을 또 만드느라 기다린다. 덮는 범위가 이 질문 이후까지 닿거나
-      // (편집한 글이 요약 속 옛 글에 가려진다) 끊는 지점이 더는 없는 요약만 버린다.
-      const summary = conv.historySummary;
-      if (summary) {
-        const through = conv.messages.findIndex((m) => m.id === summary.throughMessageId);
-        if (through < 0 || through >= index) delete conv.historySummary;
-      }
-      conv.messages = conv.messages.slice(0, index);
-    }
-    // Locked in on the first message, then never changed (the mismatch check
-    // above refuses anything else).
-    if (!conv.kind) conv.kind = turnKind;
-    if (settingsPatch) conv.settings = { ...conv.settings, ...settingsPatch };
-    if (enabledToolsPatch) conv.enabledTools = enabledToolsPatch;
-    if (conv.messages.length === 0 && isDefaultConversationTitle(conv.title)) {
-      // An attachment-only message has no words to title the conversation with,
-      // so the first attachment's name is the next best handle.
-      //
-      // Clipped, and written NOW: the sidebar lists a conversation as soon as
-      // it has a title, and the point is that the row appears when the request
-      // starts rather than when the answer lands. A summarised name replaces
-      // this one below, once the model has produced it.
-      conv.title = titleFromContent(content.trim() || attachments[0]?.name || "");
-      openedConversation = true;
-    }
-    conv.messages.push(userMessage);
-    return conv;
-  });
-
-  if (!afterUser) return res.status(404).json({ error: "Not found" });
-  if (regenerateConflict) {
-    return res.status(409).json({ error: "대화가 그사이 바뀌었습니다. 새로 고친 뒤 다시 시도해 주세요.", code: "conversation_changed" });
-  }
-
-  // Uploads that were never sent (a composer the user abandoned) are only
-  // collected here and at startup, so an account that keeps chatting cleans up
-  // after itself.
-  sweepConversationAttachments(req.ownerId, id, referencedAttachmentIds(afterUser)).catch((err) => {
-    console.warn(`[attachments] sweep failed for ${id}:`, err);
-  });
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    // nginx and friends: do not buffer this response.
-    "X-Accel-Buffering": "no",
-    // Chrome holds the first ~1KB of a response while it MIME-sniffs, which
-    // makes a stream look like it arrives all at once. nosniff disables that.
-    "X-Content-Type-Options": "nosniff",
-  });
-  // Get the headers onto the wire before the first event, so the client can
-  // open the stream immediately instead of waiting on the response body.
-  res.flushHeaders?.();
-  // Comment padding (ignored by SSE parsers). Some proxies and browsers only
-  // release a response once a few KB have accumulated; this fills that buffer
-  // up front so the first real event is delivered as soon as it is written.
-  res.write(`:${" ".repeat(2048)}\n\n`);
-
-  // Keep the stream from going silent. A context compaction summarises the whole
-  // prompt in one call, which measured 48s at 189k tokens and up to ~200s on a
-  // fact-dense context; nothing is written to the client for that whole time.
-  // nginx's default proxy_read_timeout is 60s, so without this the proxy would
-  // drop the connection mid-turn. A comment line is ignored by every SSE parser.
-  const heartbeat = setInterval(() => {
-    if (res.writableEnded) return;
-    try {
-      res.write(": keep-alive\n\n");
-    } catch {
-      // client is gone — the close handler below tears the turn down
-    }
-  }, 15_000);
-  heartbeat.unref?.();
-
-  const send = (payload: unknown) => {
-    if (res.writableEnded) return;
-    try {
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    } catch {
-      // client is gone — nothing to do
-    }
-  };
-  send({ type: "user_message", message: userMessage });
-
-  // What the user waits through, measured where the server can see it: from
-  // the moment the request is ready to run to the moment the answer is whole.
-  // Sent to the client right away (not once the turn actually reaches vLLM) so
-  // a slow model resolution or attachment step is counted too — the person is
-  // waiting the whole time, not just once a token arrives. The client uses
-  // this as the clock for the "지금 답변하기" button instead of its own
-  // Date.now(), so the 3-minute mark does not drift with request latency or a
-  // client clock that disagrees with the server's.
-  const startedAt = Date.now();
-  if (turnKind === "chat") {
-    send({ type: "turn_started", startedAt, answerNowAfterMs: config.answerNowThresholdMs });
-  }
-
-  const controller = new AbortController();
-  trackStream(id, controller);
-  // "지금 답변하기": a SEPARATE controller from `controller` above, tracked in
-  // its own map (routes/conversations.ts's activeAnswerNowSignals). Aborting
-  // it cuts the current model call short without tearing the SSE response
-  // down the way Stop does — see runConversationTurn's answerNowSignal
-  // parameter. Embedding turns have no tool loop or reasoning to cut short, so
-  // this is only tracked (and only reachable) for a chat turn.
-  const answerNowController = new AbortController();
-  if (turnKind === "chat") trackAnswerNow(id, answerNowController);
-  // Cancel the vLLM call when the client goes away (Stop button, closed tab).
-  // This must listen on `res`, not `req`: an IncomingMessage emits "close" as
-  // soon as its body has been fully read — measured ~1ms into the handler,
-  // i.e. before this line even runs — so a req-based listener is registered
-  // after the event has already fired and never runs at all. `res` emits
-  // "close" when the connection actually goes away. It also emits it when we
-  // end the response ourselves, hence the guard: by then `finally` has already
-  // removed this controller from activeStreams, so a completed turn is a no-op.
-  let leftDuringCompaction = false;
-  res.on("close", () => {
-    if (!activeStreams.get(id)?.has(controller)) return;
-    // A compaction in progress is let finish, so the summary it is writing is
-    // saved and the page finds a smaller conversation when it comes back; the
-    // turn itself still ends once it does. Stop (POST …/stop) is unaffected.
-    const settled = compactionSettled(id);
-    if (settled) {
-      leftDuringCompaction = true;
-      console.log(`[conversations] client left ${id} during compaction; finishing the compaction first`);
-      void settled.then(() => controller.abort());
-      return;
-    }
-    controller.abort();
-  });
-
-  // Runs beside the answer, not before it: the row is already in the sidebar
-  // under its clipped title, and the summarised name replaces it whenever it
-  // arrives. Nothing awaits this, and a failure leaves the clipped title.
-  if (openedConversation && turnKind === "chat") {
-    void summariseConversationTitle(content, resolved.model, controller.signal).then(async (title) => {
-      if (!title) return;
-      const renamed = await mutateConversation(req.ownerId, id, (conv) => {
-        conv.title = title;
-        return conv;
-      });
-      if (renamed) send({ type: "title", title });
-    });
-  }
-
-  // "하지 말라" 는 뜻이 담긴 말이면 그 사용자의 금지 목록 검토 대기에 한 줄 보탠다.
-  // 판정 대상은 방금 보낸 말과 그 앞의 답변이다 — 불만은 늘 직전 답변을 향한다.
-  // 답변과 무관하게 돌도록 자체 시한을 쓴다: 사용자가 답변을 멈춰도 이미 한 말은
-  // 그대로다. 검토 대기에만 들어가므로 이번 답변에도, 다음 답변에도 아직 반영되지
-  // 않는다(storage/prohibitionsStore.ts).
-  // 그대로 다시 돌리는 것은 새로 한 말이 아니므로 또 판정하지 않는다(편집은 판정한다).
-  const saidSomethingNew = !regenerateTarget || content !== regenerateTarget.content;
-  if (turnKind === "chat" && config.feedbackDetect && content.trim() && saidSomethingNew) {
-    const previous = afterUser.messages
-      .slice(0, -1)
-      .reverse()
-      .find((m) => m.role === "assistant" && typeof m.content === "string" && m.content.trim());
-    if (previous) {
-      const ownerId = req.ownerId;
-      void detectProhibition({
-        assistant: previous.content,
-        user: content,
-        model: resolved.model,
-        signal: AbortSignal.timeout(120_000),
-      })
-        .then((rule) => (rule ? appendPending(ownerId, rule, content, new Date()) : false))
-        .then((added) => {
-          if (added) console.log(`[prohibitions] ${ownerId}: 검토 대기에 한 줄 보탬`);
-        })
-        .catch((err) => console.warn("[prohibitions] could not record:", err instanceof Error ? err.message : err));
-    }
-  }
-
-  try {
-    let assistantMessage: StoredMessage;
-    if (turnKind === "embedding") {
-      // Nothing from the chat path runs here: no system prompt, no tools, no
-      // tool loop, no /tokenize, no context budget, no compaction. One string
-      // in, one vector out.
-      const { embedding, usage } = await runEmbeddingTurn(afterUser, resolved.endpoint, resolved.model, content, controller.signal);
-      assistantMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: describeEmbedding(embedding),
-        embedding,
-        // Reported where every other turn reports it, so nothing has to read
-        // token usage from two places.
-        usage,
-        durationMs: Date.now() - startedAt,
-        createdAt: new Date().toISOString(),
-      };
-      // No extra SSE event type: an embedding is one response and it rides the
-      // `done` event below on the assistant message, exactly like a chat turn's
-      // final message. The stream shape the client already parses is unchanged
-      // (user_message -> done).
-    } else {
-      // 크롬 제어는 이 요청을 보낸 브라우저의 사정(확장 연결 + 사용자 선택)이라 대화가
-      // 아니라 요청에 실려 온다.
-      const generator = runConversationTurn(afterUser, req.ownerId, controller.signal, answerNowController.signal, {
-        browserControl: body.browserControl === true,
-      });
-      let result;
-      for (;;) {
-        const step = await generator.next();
-        if (step.done) {
-          result = step.value;
-          break;
-        }
-        send(step.value);
-      }
-
-      assistantMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: result.content,
-        ...(result.reasoning ? { reasoning: result.reasoning } : {}),
-        ...(result.toolCalls.length ? { toolCalls: result.toolCalls } : {}),
-        ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
-        usage: result.usage,
-        ...(result.error
-          ? {
-              error:
-                leftDuringCompaction && result.error === "Cancelled by client."
-                  ? "답변 도중 페이지를 떠나 이 답변은 중단되었습니다. 컨텍스트 압축은 끝까지 진행되어 저장되었으니 다시 질문해 주세요."
-                  : result.error,
-            }
-          : {}),
-        ...(result.notice ? { notice: result.notice } : {}),
-        ...(result.contentPromotedFromReasoning ? { contentPromotedFromReasoning: true } : {}),
-        durationMs: Date.now() - startedAt,
-        createdAt: new Date().toISOString(),
-      };
-    }
-
-    await mutateConversation(req.ownerId, id, (conv) => {
-      conv.messages.push(assistantMessage);
-      return conv;
-    });
-
-    send({ type: "done", message: assistantMessage });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[conversations] stream error for ${id}:`, err);
-    send({ type: "error", message: readableTurnError(message) });
-  } finally {
-    clearInterval(heartbeat);
-    untrackStream(id, controller);
-    if (turnKind === "chat") untrackAnswerNow(id, answerNowController);
-    if (!res.writableEnded) {
-      res.write("data: [DONE]\n\n");
-      res.end();
-    }
-  }
-});
+// POST /conversations/:id/messages — one turn (conversationTurn.ts).
+conversationsRouter.post("/conversations/:id/messages", postMessage);
