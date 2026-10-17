@@ -63,6 +63,8 @@ for (const must of [
   "page-header",
   "mcp-picker-popover",
   "reasoning-popover",
+  "chat-download-menu",
+  "notice-popover",
   "model-switcher-popover",
   "sidebar-settings-popover",
 ]) {

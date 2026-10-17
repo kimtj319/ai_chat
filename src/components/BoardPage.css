@@ -408,6 +408,18 @@
 }
 
 /* 닫힌 글은 목록에서 한 발 물러난다. 지워진 것은 아니므로 흐리게만 둔다. */
+/* 손가락: 제목 한 줄(23px)이던 누르는 자리를 위아래로 넓힌다. 자리는 그대로. */
+@media (pointer: coarse) {
+  .board-row-title {
+    padding-block: 6px;
+    margin-block: -6px;
+  }
+
+  .board-label-filter {
+    padding-block: 4px;
+  }
+}
+
 .board-row[data-status="closed"] .board-row-title {
   color: var(--on-surface-variant);
 }

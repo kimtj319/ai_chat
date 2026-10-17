@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { getShareToken, saveShare } from "../api/client";
 import type { ChatMessage } from "../api/types";
 import { useDismiss } from "../hooks/useDismiss";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { shareHash } from "../routes";
 import { copyText } from "../state/clipboard";
 import { conversationTokenTotals } from "../state/conversationOps";
@@ -10,6 +11,7 @@ import { exportConversationPdf } from "../state/pdfExport";
 import type { ActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
 import { DownloadIcon } from "./icons";
+import { inSheet } from "./popoverSheet";
 import { showErrorToast, showToast } from "./Toast";
 
 /* 공유: 위로 나가는 화살표가 달린 상자 — iOS·Gemini 의 공유 단추와 같은 실루엣이라
@@ -68,7 +70,14 @@ export function ConversationExportActions({
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const downloadRef = useRef<HTMLDivElement>(null);
-  useDismiss(downloadOpen, downloadRef, () => setDownloadOpen(false), { escape: true });
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+  // 폰에서는 바텀시트. 단추에 붙여 띄우면 화면 왼쪽 밖으로 잘리고, 머리의 유리 막 안이라
+  // 뒤의 본문도 비쳤다(390px 실측).
+  const sheet = useMediaQuery("(max-width: 640px)");
+  useDismiss(downloadOpen, downloadRef, () => setDownloadOpen(false), {
+    escape: true,
+    ignore: (target) => downloadMenuRef.current?.contains(target) === true || target.closest?.(".popover-sheet-scrim") != null,
+  });
 
   // 공유. 토큰은 미리 알아 둔다 — http 에서는 복사가 누른 그 순간에만 되므로(iOS Safari),
   // 누른 뒤에 서버에 물어 토큰을 받아서는 복사할 수 없다. 공유한 적이 없으면 누르는 순간
@@ -126,8 +135,10 @@ export function ConversationExportActions({
         >
           <DownloadIcon />
         </button>
-        {downloadOpen && (
-          <div className="chat-download-menu" role="menu" aria-label="저장 형식">
+        {downloadOpen && inSheet(
+          sheet,
+          () => setDownloadOpen(false),
+          <div ref={downloadMenuRef} className="chat-download-menu" role="menu" aria-label="저장 형식">
             <button
               type="button"
               role="menuitem"
@@ -173,7 +184,7 @@ export function ConversationExportActions({
                 {totals.completionTokens.toLocaleString()})
               </p>
             )}
-          </div>
+          </div>,
         )}
       </div>
       {/* 저장(다운로드) 바로 옆 — 둘 다 "이 대화를 밖으로 내보내는" 일이다. */}

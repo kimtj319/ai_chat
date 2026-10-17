@@ -326,6 +326,20 @@
   opacity: 0.75;
 }
 
+/* 손가락: 전역 .btn-icon 은 44px 이 되지만 위 규칙이 28px 로 되돌린다. 모양은 그대로
+   두고 누르는 자리만 위아래 44px — 좌우는 단추 사이 틈의 절반까지만 넓혀 이웃을 덮지 않는다. */
+@media (pointer: coarse) {
+  .message-actions .btn-icon {
+    position: relative;
+  }
+
+  .message-actions .btn-icon::after {
+    content: "";
+    position: absolute;
+    inset: -8px calc(var(--space-2) / -2);
+  }
+}
+
 .message-actions .btn-icon svg {
   width: 14px;
   height: 14px;

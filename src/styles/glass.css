@@ -82,6 +82,19 @@
     inset 0 1px 0 var(--glass-inner-highlight);
 }
 
+/* On a phone these two open as bottom sheets (App.css) and stop being glass:
+   an opaque sheet with only its top edge drawn, like the composer's sheets.
+   This file loads last, so the sheet rule alone would lose to the pop tier. */
+@media (max-width: 640px) {
+  :is(.chat-download-menu, .notice-popover) {
+    background: var(--surface);
+    backdrop-filter: none;
+    border: none;
+    border-top: 1px solid var(--outline-variant);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
 /* The page behind a dialog goes soft rather than dark. */
 .modal-overlay {
   backdrop-filter: blur(6px) saturate(120%);

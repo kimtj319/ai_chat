@@ -91,12 +91,6 @@
   mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 
-@media (max-width: 640px) {
-  .markdown-body td {
-    min-width: 7em;
-  }
-}
-
 /* 표·가로줄의 선은 outline-variant(흰 바탕 약 1.7:1)로는 행이 흐려 보였다. */
 .markdown-body th,
 .markdown-body td {
@@ -178,6 +172,19 @@
   justify-content: center;
   color: var(--on-surface-variant);
   transition: scale var(--press-out) var(--press-ease);
+}
+
+/* 손가락: 모양은 그대로, 누르는 자리만 44px. */
+@media (pointer: coarse) {
+  .code-block-copy {
+    position: relative;
+  }
+
+  .code-block-copy::after {
+    content: "";
+    position: absolute;
+    inset: -9px;
+  }
 }
 
 .code-block-copy svg {

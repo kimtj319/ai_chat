@@ -121,6 +121,12 @@
   transition: color 0.15s ease, scale var(--press-out) var(--press-ease);
 }
 
+@media (pointer: coarse) {
+  .empty-model-chip {
+    min-height: 36px;
+  }
+}
+
 .empty-model-chip:hover {
   color: var(--on-surface);
 }

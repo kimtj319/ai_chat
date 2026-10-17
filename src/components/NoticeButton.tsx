@@ -3,7 +3,9 @@ import * as api from "../api/client";
 import type { Notice } from "../api/types";
 import { usePopoverFocus } from "../hooks/usePopoverFocus";
 import { useDismiss } from "../hooks/useDismiss";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { formatDateTime } from "../state/dateTime";
+import { inSheet } from "./popoverSheet";
 import "./NoticeButton.css";
 
 function BellIcon() {
@@ -53,9 +55,14 @@ export function NoticeButton() {
     };
   }, [refresh]);
 
+  // 폰에서는 바텀시트. 종 단추에 붙여 띄우면 화면 왼쪽 밖으로 잘렸다(390px 실측).
+  const sheet = useMediaQuery("(max-width: 640px)");
   // 열면 포커스가 목록으로 들어가고, Esc 는 종 단추로 돌려준다.
   usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
-  useDismiss(open, containerRef, () => setOpen(false));
+  useDismiss(open, containerRef, () => setOpen(false), {
+    // 시트는 body 로 포털되어 containerRef 밖에 있다. 스크림은 제 click 으로 닫는다.
+    ignore: (target) => popoverRef.current?.contains(target) === true || target.closest?.(".popover-sheet-scrim") != null,
+  });
 
   async function toggle() {
     const next = !open;
@@ -86,7 +93,9 @@ export function NoticeButton() {
         <BellIcon />
         {unread > 0 && <span className="notice-dot" aria-hidden="true" />}
       </button>
-      {open && (
+      {open && inSheet(
+        sheet,
+        () => setOpen(false),
         <div ref={popoverRef} className="notice-popover" role="dialog" aria-label="공지사항" tabIndex={-1}>
           <p className="notice-popover-title">공지사항</p>
           {notices.length === 0 ? (
@@ -104,7 +113,7 @@ export function NoticeButton() {
               ))}
             </ul>
           )}
-        </div>
+        </div>,
       )}
     </div>
   );

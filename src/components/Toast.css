@@ -24,6 +24,15 @@
   animation: toast-in 0.14s ease-out;
 }
 
+/* 폰에서는 입력창이 두 줄(글칸 / 단추)에 안내문까지 서서 위 높이로는 입력창 위쪽을
+   덮었다(390px 실측). 대화 머리(위아래 16px + 단추 36px) 바로 아래로 옮긴다. */
+@media (max-width: 640px) {
+  .toast {
+    top: calc(var(--space-8) * 2 + 36px + env(safe-area-inset-top));
+    bottom: auto;
+  }
+}
+
 /* 실패는 확인과 다르게 보여야 한다. 문장이 길어질 수 있으므로 알약 모양을
    버리고, 화면 폭을 넘지 않게 가둔다. */
 .toast[data-tone="error"] {

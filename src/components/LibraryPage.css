@@ -220,6 +220,14 @@
   cursor: pointer;
 }
 
+/* 손가락: 글자 한 줄(20px)이던 누르는 자리를 위아래로 넓히고, 늘어난 만큼 바깥 여백을 되돌려 자리는 그대로. */
+@media (pointer: coarse) {
+  .library-tools-toggle {
+    padding: 6px 0;
+    margin: calc(var(--space-2) - 6px) 0 -6px;
+  }
+}
+
 .library-tools-toggle:hover,
 .library-tools-toggle:focus-visible {
   text-decoration: underline;
