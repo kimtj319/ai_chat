@@ -7,6 +7,8 @@ import {
   updateConversation,
   deleteConversation,
   mutateConversation,
+  DEFAULT_CONVERSATION_TITLE,
+  isDefaultConversationTitle,
 } from "../storage/conversationStore.js";
 import { isValidId } from "../storage/paths.js";
 import {
@@ -365,23 +367,47 @@ function describeEmbedding(embedding: MessageEmbedding): string {
 
 function titleFromContent(content: string): string {
   const collapsed = content.trim().replace(/\s+/g, " ");
-  if (collapsed.length <= 40) return collapsed || "New Chat";
+  if (collapsed.length <= 40) return collapsed || DEFAULT_CONVERSATION_TITLE;
   return `${collapsed.slice(0, 40)}…`;
 }
 
+/** Index of the last user message, or -1. */
+function lastUserIndex(messages: StoredMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") return i;
+  }
+  return -1;
+}
+
+function hasLiveTurn(conversationId: string): boolean {
+  return (activeStreams.get(conversationId)?.size ?? 0) > 0;
+}
+
+/**
+ * POST /conversations/:id/messages — one turn.
+ *
+ * `{"regenerate": true}` 은 새 사용자 메시지를 덧붙이는 대신 마지막 사용자 메시지
+ * 뒤(그 질문의 답·도구 메시지)를 잘라 내고 같은 질문으로 턴을 다시 돌린다. 첨부는
+ * 그 메시지에 붙은 것을 그대로 쓴다. `content` 가 비어 있지 않으면 그 메시지의
+ * 내용을 바꿔서 다시 돌린다(편집 후 재전송). 나머지 — 모델·종류·설정·도구 검사,
+ * 스트림 모양(user_message → … → done) — 는 보통 전송과 같다.
+ */
 conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) return res.status(404).json({ error: "Not found" });
 
   const body = req.body ?? {};
-  const content = typeof body.content === "string" ? body.content : "";
+  const regenerate = body.regenerate === true;
+  const rawContent = typeof body.content === "string" ? body.content : "";
   // Deduplicated: the same file attached twice would be sent to the model twice.
-  const attachmentIds = Array.isArray(body.attachmentIds)
-    ? [...new Set((body.attachmentIds as unknown[]).filter((value): value is string => typeof value === "string"))]
-    : [];
+  // A regenerate keeps the stored message's attachments, so none are read from the body.
+  const attachmentIds =
+    !regenerate && Array.isArray(body.attachmentIds)
+      ? [...new Set((body.attachmentIds as unknown[]).filter((value): value is string => typeof value === "string"))]
+      : [];
   // An attachment-only message is a real message ("what is in this picture?"
   // needs no words), so the emptiness check now covers both.
-  if (content.trim().length === 0 && attachmentIds.length === 0) {
+  if (!regenerate && rawContent.trim().length === 0 && attachmentIds.length === 0) {
     return res.status(400).json({ error: "content must be a non-empty string" });
   }
   if (attachmentIds.length > config.attachmentMaxPerMessage) {
@@ -395,6 +421,24 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   // kind of turn this is (chat or embedding) before anything is written.
   const existing = await getConversation(req.ownerId, id);
   if (!existing) return res.status(404).json({ error: "Not found" });
+
+  // The message a regenerate re-runs. Refused while another turn is streaming:
+  // that turn appends its answer (and possibly a history summary) to the
+  // transcript this one is about to cut, so the two would interleave.
+  let regenerateTarget: StoredMessage | null = null;
+  if (regenerate) {
+    if (hasLiveTurn(id)) {
+      return res.status(409).json({ error: "이 대화에서 답변이 진행 중입니다. 끝난 뒤 다시 시도해 주세요.", code: "turn_in_progress" });
+    }
+    regenerateTarget = existing.messages[lastUserIndex(existing.messages)] ?? null;
+    if (!regenerateTarget) {
+      return res.status(400).json({ error: "다시 생성할 사용자 메시지가 없습니다.", code: "no_user_message" });
+    }
+  }
+  // What this turn asks: the body's text, or — for a plain regenerate — the
+  // stored question unchanged.
+  const content = regenerateTarget && rawContent.trim().length === 0 ? regenerateTarget.content : rawContent;
+  const attachmentCount = regenerateTarget ? (regenerateTarget.attachments?.length ?? 0) : attachmentIds.length;
 
   let resolved;
   try {
@@ -427,7 +471,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
       code: "capability_mismatch",
     });
   }
-  if (turnKind === "embedding" && attachmentIds.length > 0) {
+  if (turnKind === "embedding" && attachmentCount > 0) {
     return res.status(400).json({
       error: "임베딩 모델은 첨부 파일을 처리하지 않습니다. 텍스트만 입력해 주세요.",
       code: "embedding_no_attachments",
@@ -437,7 +481,7 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
     return res.status(400).json({ error: "임베딩할 텍스트를 입력해 주세요.", code: "invalid_input" });
   }
 
-  const attachments: MessageAttachment[] = [];
+  const attachments: MessageAttachment[] = regenerateTarget?.attachments ? [...regenerateTarget.attachments] : [];
   for (const attachmentId of attachmentIds) {
     const meta = isValidId(attachmentId) ? await getAttachmentMeta(req.ownerId, id, attachmentId) : null;
     if (!meta) {
@@ -484,22 +528,48 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   if (!checkedTools.ok) return res.status(400).json(checkedTools.problem);
   const enabledToolsPatch = checkedTools.value;
 
-  const userMessage: StoredMessage = {
-    id: crypto.randomUUID(),
-    role: "user",
-    content,
-    ...(attachments.length > 0 ? { attachments } : {}),
-    createdAt: new Date().toISOString(),
-  };
+  // A regenerate keeps the stored message's id, attachments and createdAt; only
+  // an edit changes its content.
+  const userMessage: StoredMessage = regenerateTarget
+    ? { ...regenerateTarget, content }
+    : {
+        id: crypto.randomUUID(),
+        role: "user",
+        content,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        createdAt: new Date().toISOString(),
+      };
 
   let openedConversation = false;
+  // Set when the transcript changed between the read above and the lock below.
+  let regenerateConflict = false;
   const afterUser = await mutateConversation(req.ownerId, id, (conv) => {
+    if (regenerateTarget) {
+      const index = lastUserIndex(conv.messages);
+      // Checked again under the lock: another tab may have started a turn or
+      // sent a newer message since the conversation was read.
+      if (hasLiveTurn(id) || conv.messages[index]?.id !== regenerateTarget.id) {
+        regenerateConflict = true;
+        return conv;
+      }
+      // 요약(chat/historySummary.ts)은 늘 사용자 메시지 바로 앞에서 끊긴다
+      // (planCoverage) — 이 질문에 답하던 턴이 만든 요약도 이 질문 "앞" 까지만
+      // 덮는다. 그래서 그런 요약은 그대로 둔다: 지우면 다시 돌리는 바로 이 턴이
+      // 같은 요약을 또 만드느라 기다린다. 덮는 범위가 이 질문 이후까지 닿거나
+      // (편집한 글이 요약 속 옛 글에 가려진다) 끊는 지점이 더는 없는 요약만 버린다.
+      const summary = conv.historySummary;
+      if (summary) {
+        const through = conv.messages.findIndex((m) => m.id === summary.throughMessageId);
+        if (through < 0 || through >= index) delete conv.historySummary;
+      }
+      conv.messages = conv.messages.slice(0, index);
+    }
     // Locked in on the first message, then never changed (the mismatch check
     // above refuses anything else).
     if (!conv.kind) conv.kind = turnKind;
     if (settingsPatch) conv.settings = { ...conv.settings, ...settingsPatch };
     if (enabledToolsPatch) conv.enabledTools = enabledToolsPatch;
-    if (conv.messages.length === 0 && (conv.title === "New Chat" || conv.title.trim().length === 0)) {
+    if (conv.messages.length === 0 && isDefaultConversationTitle(conv.title)) {
       // An attachment-only message has no words to title the conversation with,
       // so the first attachment's name is the next best handle.
       //
@@ -515,6 +585,9 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   });
 
   if (!afterUser) return res.status(404).json({ error: "Not found" });
+  if (regenerateConflict) {
+    return res.status(409).json({ error: "대화가 그사이 바뀌었습니다. 새로 고친 뒤 다시 시도해 주세요.", code: "conversation_changed" });
+  }
 
   // Uploads that were never sent (a composer the user abandoned) are only
   // collected here and at startup, so an account that keeps chatting cleans up
@@ -632,7 +705,9 @@ conversationsRouter.post("/conversations/:id/messages", async (req, res) => {
   // 답변과 무관하게 돌도록 자체 시한을 쓴다: 사용자가 답변을 멈춰도 이미 한 말은
   // 그대로다. 검토 대기에만 들어가므로 이번 답변에도, 다음 답변에도 아직 반영되지
   // 않는다(storage/prohibitionsStore.ts).
-  if (turnKind === "chat" && config.feedbackDetect && content.trim()) {
+  // 그대로 다시 돌리는 것은 새로 한 말이 아니므로 또 판정하지 않는다(편집은 판정한다).
+  const saidSomethingNew = !regenerateTarget || content !== regenerateTarget.content;
+  if (turnKind === "chat" && config.feedbackDetect && content.trim() && saidSomethingNew) {
     const previous = afterUser.messages
       .slice(0, -1)
       .reverse()

@@ -69,7 +69,7 @@
   color: var(--danger);
 }
 
-/* 여러 개 둔 토큰(GitLab): 이름·끝 네 자리·삭제 한 줄씩. */
+/* 여러 개 둔 키(GitLab): 이름·끝 네 자리·삭제 한 줄씩. */
 .keys-row-list {
   list-style: none;
   margin: 0;
@@ -102,11 +102,6 @@
   font-size: var(--text-xs);
   color: var(--on-surface-variant);
   font-variant-numeric: tabular-nums;
-}
-
-.keys-row-item-remove {
-  padding: var(--space-2) var(--space-5);
-  font-size: var(--text-xs);
 }
 
 .keys-row-input .keys-row-label-input {

@@ -11,36 +11,8 @@
   overflow: hidden;
 }
 
-/* 머리와 본문은 같은 폭(1120px)으로 가운데에 선다. 넓은 화면에서 본문이 1400px 까지
+/* 본문은 머리(PageHeader)와 같은 폭(1120px)으로 가운데에 선다. 넓은 화면에서 1400px 까지
    퍼지면 목록과 설명이 창 양 끝에 붙어 꽉 차 보였다 — 남는 폭은 캔버스로 남긴다. */
-.library-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-10) var(--space-10) var(--space-8);
-}
-
-.library-header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.library-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-}
-
-.library-subtitle {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
 .library-body {
   flex: 1;
   min-height: 0;
@@ -52,8 +24,8 @@
   padding: 0 var(--space-10) var(--space-10);
 }
 
-/* 왼쪽은 내 라이브러리, 오른쪽은 공유 라이브러리. 칸마다 따로 스크롤된다.
-   손대는 쪽은 내 라이브러리라 그쪽이 더 넓다 — 열린 서버의 도구 칩이 덜 꺾인다. */
+/* 왼쪽은 내 커넥터, 오른쪽은 공유된 커넥터. 칸마다 따로 스크롤된다.
+   손대는 쪽은 내 커넥터라 그쪽이 더 넓다 — 열린 서버의 도구 칩이 덜 꺾인다. */
 .library-columns {
   flex: 1;
   min-height: 0;
@@ -135,13 +107,6 @@
 .library-error {
   background: var(--danger-bg);
   color: var(--danger);
-}
-
-.library-empty {
-  margin: var(--space-9) 0;
-  text-align: center;
-  color: var(--on-surface-variant);
-  font-size: var(--text-sm);
 }
 
 .library-empty-inline {
@@ -313,11 +278,6 @@
   align-items: center;
   gap: var(--space-4);
   margin-top: var(--space-7);
-}
-
-.library-action {
-  padding: var(--space-3) var(--space-7);
-  font-size: var(--text-xs);
 }
 
 .library-credential {

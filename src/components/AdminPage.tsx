@@ -20,16 +20,9 @@ import {
 import { AdminModelsTab } from "./AdminModelsTab";
 import { AdminNoticesTab } from "./AdminNoticesTab";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ListSkeleton, LoadFailed } from "./ListSkeleton";
+import { PageHeader } from "./PageHeader";
 import "./AdminPage.css";
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
-    </svg>
-  );
-}
 
 function RefreshIcon() {
   return (
@@ -128,30 +121,28 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
   return (
     <div className="admin-page">
-      <header className="admin-header">
-        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
-          <BackIcon />
-        </button>
-        <div className="admin-header-text">
-          <h1 className="admin-title">관리자 메뉴</h1>
-          <p className="admin-subtitle">
-            {tab === "models"
-              ? "연결된 서빙 서버와 모델"
-              : tab === "notices"
-                ? "모든 계정에 보이는 공지"
-                : users === null
-                  ? "계정 목록을 불러오는 중…"
-                  : pending > 0
-                    ? `전체 ${all.length}명 · 승인 대기 ${pending}명`
-                    : `전체 ${all.length}명 · 승인 대기 없음`}
-          </p>
-        </div>
-        {tab === "accounts" && (
-          <button type="button" className="btn-icon" onClick={() => void load()} data-tooltip="목록 새로고침" aria-label="목록 새로고침">
-            <RefreshIcon />
-          </button>
-        )}
-      </header>
+      <PageHeader
+        title="관리자 메뉴"
+        onBack={onBack}
+        subtitle={
+          tab === "models"
+            ? "연결된 모델 서버와 모델"
+            : tab === "notices"
+              ? "모든 계정에 보이는 공지"
+              : users === null
+                ? "계정 목록을 불러오는 중…"
+                : pending > 0
+                  ? `전체 ${all.length}명 · 승인 대기 ${pending}명`
+                  : `전체 ${all.length}명 · 승인 대기 없음`
+        }
+        actions={
+          tab === "accounts" && (
+            <button type="button" className="btn-icon" onClick={() => void load()} data-tooltip="목록 새로고침" aria-label="목록 새로고침">
+              <RefreshIcon />
+            </button>
+          )
+        }
+      />
 
       {/* 탭은 본문 밖에 선다 — 본문을 내려도 늘 보이고, 계정 탭 안의 상태 필터(알약 모양)와
           한 줄에 붙어 하나의 컨트롤처럼 보이지 않게 밑줄 탭으로 둔다. */}
@@ -215,14 +206,14 @@ export function AdminPage({ onBack }: AdminPageProps) {
                 aria-label="새 그룹 이름"
                 onChange={(event) => setNewGroupName(event.target.value)}
               />
-              <button type="submit" className="btn admin-action" disabled={busyId === "group:new" || !newGroupName.trim()}>
+              <button type="submit" className="btn btn-sm" disabled={busyId === "group:new" || !newGroupName.trim()}>
                 추가
               </button>
             </form>
           </div>
 
           {groups.length === 0 ? (
-            <p className="admin-groups-empty">아직 그룹이 없습니다. 계정을 묶어서 관리하려면 그룹을 먼저 만들어주세요.</p>
+            <p className="admin-groups-empty">아직 그룹이 없습니다. 계정을 묶어서 관리하려면 그룹을 먼저 만들어 주세요.</p>
           ) : (
             <ul className="admin-group-list">
               {groups.map((group) => (
@@ -248,10 +239,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
                         autoFocus
                         onChange={(event) => setRenameValue(event.target.value)}
                       />
-                      <button type="submit" className="btn admin-action" disabled={busyId === group.id}>
+                      <button type="submit" className="btn btn-sm" disabled={busyId === group.id || !renameValue.trim()}>
                         저장
                       </button>
-                      <button type="button" className="btn btn-secondary admin-action" onClick={() => setRenamingId(null)}>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => setRenamingId(null)}>
                         취소
                       </button>
                     </form>
@@ -322,14 +313,16 @@ export function AdminPage({ onBack }: AdminPageProps) {
             {actionError}
           </p>
         )}
-        {loadError && (
+        {loadError && users !== null && (
           <p className="admin-error" role="alert">
             {loadError}
           </p>
         )}
 
-        {users === null && !loadError ? (
-          <p className="admin-empty">불러오는 중…</p>
+        {users === null && loadError ? (
+          <LoadFailed message="계정 목록을 불러오지 못했습니다." detail={loadError} onRetry={() => void load()} />
+        ) : users === null ? (
+          <ListSkeleton rows={4} />
         ) : visible.length === 0 ? (
           <p className="admin-empty">{emptyListMessage(filter)}</p>
         ) : (
@@ -401,7 +394,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
                           {actions.approve && (
                             <button
                               type="button"
-                              className="btn btn-primary admin-action"
+                              className="btn btn-sm"
                               disabled={busy}
                               onClick={() => void runAction(user, "approve", `${user.id} 계정을 승인했습니다.`)}
                             >
@@ -411,7 +404,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
                           {actions.unblock && (
                             <button
                               type="button"
-                              className="btn admin-action"
+                              className="btn btn-sm"
                               disabled={busy}
                               onClick={() => void runAction(user, "unblock", `${user.id} 계정의 차단을 해제했습니다.`)}
                             >
@@ -421,7 +414,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
                           {actions.block && (
                             <button
                               type="button"
-                              className="btn btn-danger admin-action"
+                              className="btn btn-sm btn-danger-quiet"
                               disabled={busy}
                               onClick={() => setPendingBlock(user)}
                             >
@@ -431,7 +424,7 @@ export function AdminPage({ onBack }: AdminPageProps) {
                           {actions.remove && (
                             <button
                               type="button"
-                              className="btn btn-danger admin-action"
+                              className="btn btn-sm btn-danger-quiet"
                               disabled={busy}
                               onClick={() => setPendingDelete(user)}
                             >
@@ -459,8 +452,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
       {pendingBlock && (
         <ConfirmDialog
-          title="계정 차단"
-          message={`${pendingBlock.id} (${pendingBlock.name}) 계정을 차단하시겠습니까? 차단된 계정은 로그인할 수 없습니다.`}
+          title={`${pendingBlock.id} 계정을 차단할까요?`}
+          message={`${pendingBlock.name} 님은 차단된 동안 로그인할 수 없습니다. 차단 해제로 되돌릴 수 있습니다.`}
           confirmLabel="차단"
           danger
           onCancel={() => setPendingBlock(null)}
@@ -474,8 +467,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
       {pendingDelete && (
         <ConfirmDialog
-          title="계정 삭제"
-          message={`${pendingDelete.id} (${pendingDelete.name}) 계정을 삭제하시겠습니까? 이 계정의 대화와 첨부파일도 함께 지워지며 되돌릴 수 없습니다.`}
+          title={`${pendingDelete.id} 계정을 삭제할까요?`}
+          message={`${pendingDelete.name} 님의 대화와 첨부파일도 함께 삭제됩니다. 되돌릴 수 없습니다.`}
           confirmLabel="삭제"
           danger
           onCancel={() => setPendingDelete(null)}
@@ -489,8 +482,8 @@ export function AdminPage({ onBack }: AdminPageProps) {
 
       {pendingGroupDelete && (
         <ConfirmDialog
-          title="그룹 삭제"
-          message={`"${pendingGroupDelete.name}" 그룹을 삭제하시겠습니까? 소속된 계정은 삭제되지 않고 그룹에서만 빠집니다.`}
+          title={`${pendingGroupDelete.name} 그룹을 삭제할까요?`}
+          message="소속된 계정은 삭제되지 않고 그룹에서만 빠집니다. 되돌릴 수 없습니다."
           confirmLabel="삭제"
           danger
           onCancel={() => setPendingGroupDelete(null)}

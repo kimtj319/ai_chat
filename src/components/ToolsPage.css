@@ -21,36 +21,7 @@
   overflow: hidden;
 }
 
-/* 머리와 본문은 같은 폭(1120px)으로 가운데에 선다. 넓은 화면에서 본문이 1400px 까지
-   퍼지면 목록과 설명이 창 양 끝에 붙어 꽉 차 보였다 — 남는 폭은 캔버스로 남긴다. */
-.tools-page-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-10) var(--space-10) var(--space-8);
-}
-
-.tools-page-header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.tools-page-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-}
-
-.tools-page-subtitle {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
+/* 본문은 머리(PageHeader)와 같은 폭(1120px)으로 가운데에 선다. */
 .tools-page-body {
   flex: 1;
   min-height: 0;

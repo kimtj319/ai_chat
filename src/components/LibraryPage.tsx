@@ -17,18 +17,11 @@ import {
 import { MISSING_KEY_NOTICE, missingKey, useMyAccess } from "../hooks/useMyAccess";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Accordion } from "./Accordion";
+import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { McpServerForm } from "./McpServerForm";
+import { PageHeader } from "./PageHeader";
 import { ToggleSwitch } from "./ToggleSwitch";
 import "./LibraryPage.css";
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
-    </svg>
-  );
-}
 
 function RefreshIcon() {
   return (
@@ -53,7 +46,7 @@ function formatDateTime(value: string): string {
 
 function originLabel(server: McpServerSummary, owned: boolean): string {
   if (server.origin === "builtin") return "기본 제공";
-  return owned ? "내가 등록" : "채택함";
+  return owned ? "내가 등록" : "추가함";
 }
 
 function HealthLine({ health }: { health: McpHealth }) {
@@ -109,7 +102,7 @@ interface LibraryCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onProbe: () => void;
-  /** Takes it out of this user's library entirely (un-adopts it). Null for a
+  /** Takes it out of this user's connectors entirely (un-adopts it). Null for a
    *  builtin or a server this user registered — for those, the switch above
    *  is the only on/off there is; there is no "out of the library" for them. */
   onRemove: (() => void) | null;
@@ -147,7 +140,7 @@ function LibraryCard({
       <HealthLine health={server.health} />
 
       {needsCredential && (
-        <p className="library-warning">이 서버는 개인 자격 증명이 필요합니다. 입력하기 전에는 도구가 실행되지 않습니다.</p>
+        <p className="library-warning">이 서버는 개인 키가 필요합니다. 입력하기 전에는 도구가 실행되지 않습니다.</p>
       )}
 
       {/* 도구 이름 칩은 접어 둔다. 펼친 카드 한 장에 칩이 서너 줄 깔리면 설명·상태·버튼을
@@ -177,13 +170,13 @@ function LibraryCard({
           <input
             type="password"
             autoComplete="off"
-            aria-label={`${server.name} 자격 증명`}
+            aria-label={`${server.name} 개인 키`}
             value={credential}
             onChange={(event) => setCredential(event.target.value)}
           />
           <button
             type="button"
-            className="btn btn-primary library-action"
+            className="btn btn-sm"
             disabled={busy || credential.trim().length === 0}
             onClick={() => {
               onSaveCredential(credential.trim());
@@ -196,7 +189,7 @@ function LibraryCard({
           {server.hasCredential && (
             <button
               type="button"
-              className="btn btn-danger library-action"
+              className="btn btn-sm btn-danger-quiet"
               disabled={busy}
               onClick={() => {
                 onSaveCredential(null);
@@ -204,45 +197,45 @@ function LibraryCard({
                 setCredentialOpen(false);
               }}
             >
-              지우기
+              삭제
             </button>
           )}
         </div>
       )}
 
       <div className="library-actions">
-        <button type="button" className="btn library-action" disabled={busy} onClick={onProbe}>
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={onProbe}>
           연결 확인
         </button>
         {server.authMode === "header" && (
           <button
             type="button"
-            className="btn library-action"
+            className="btn btn-sm"
             disabled={busy}
             onClick={() => setCredentialOpen((open) => !open)}
           >
-            {server.hasCredential ? "자격 증명 변경" : "자격 증명 입력"}
+            {server.hasCredential ? "개인 키 변경" : "개인 키 입력"}
           </button>
         )}
         {owned && (
-          <button type="button" className="btn library-action" disabled={busy} onClick={onEdit}>
+          <button type="button" className="btn btn-sm" disabled={busy} onClick={onEdit}>
             수정
           </button>
         )}
         {onRemove && (
-          <button type="button" className="btn btn-secondary library-action" disabled={busy} onClick={onRemove}>
-            채택 해제
+          <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={onRemove}>
+            내 커넥터에서 빼기
           </button>
         )}
         {owned && (
-          <button type="button" className="btn btn-danger library-action" disabled={busy} onClick={onDelete}>
+          <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={onDelete}>
             삭제
           </button>
         )}
         {onAdminSetStatus && (
           <button
             type="button"
-            className="btn library-action"
+            className="btn btn-sm"
             disabled={busy}
             onClick={() => onAdminSetStatus(server.status !== "disabled")}
           >
@@ -265,14 +258,14 @@ function SharedCard({ server, busy, onAdminSetStatus }: SharedCardProps) {
     <div className="library-detail">
       <div className="library-shared-body">
         <p className="library-shared-by">
-          {server.createdBy} 님이 {formatDateTime(server.createdAt)}에 등록 · {server.adoptedCount}명이 채택
+          {server.createdBy} 님이 {formatDateTime(server.createdAt)}에 등록 · {server.adoptedCount}명이 추가
         </p>
 
         <ServerMeta server={server} />
         <HealthLine health={server.health} />
 
         {server.requiresCredential && (
-          <p className="library-warning">채택한 뒤 내 자격 증명을 따로 입력해야 실행됩니다.</p>
+          <p className="library-warning">추가한 뒤 내 개인 키를 따로 입력해야 실행됩니다.</p>
         )}
 
         {/* Full descriptions, unfolded. A tool's description sits in the prompt
@@ -298,7 +291,7 @@ function SharedCard({ server, busy, onAdminSetStatus }: SharedCardProps) {
           <div className="library-actions">
             <button
               type="button"
-              className="btn library-action"
+              className="btn btn-sm"
               disabled={busy}
               onClick={() => onAdminSetStatus(server.status !== "disabled")}
             >
@@ -323,8 +316,8 @@ interface LibraryPageProps {
 function failureMessage(error: unknown): string {
   if (error instanceof McpError && error.status === 409) {
     return error.adoptedCount === null
-      ? "다른 사용자가 채택 중이라 삭제할 수 없습니다."
-      : `다른 사용자 ${error.adoptedCount}명이 채택 중이라 삭제할 수 없습니다.`;
+      ? "다른 사용자가 추가해 쓰고 있어 삭제할 수 없습니다."
+      : `다른 사용자 ${error.adoptedCount}명이 추가해 쓰고 있어 삭제할 수 없습니다.`;
   }
   return error instanceof Error ? error.message : String(error);
 }
@@ -399,23 +392,25 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
 
   return (
     <div className="library-page">
-      <header className="library-header">
-        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
-          <BackIcon />
-        </button>
-        <div className="library-header-text">
-          <h1 className="library-title">라이브러리</h1>
-          <p className="library-subtitle">
-            {loading ? "불러오는 중…" : `내 라이브러리 ${mine.length}개 · 공유됨 ${shared.length}개`}
-          </p>
-        </div>
-        <button type="button" className="btn-icon" onClick={() => void reload()} data-tooltip="새로고침" aria-label="새로고침">
-          <RefreshIcon />
-        </button>
-        <button type="button" className="btn btn-primary" onClick={() => setFormFor("new")} disabled={unavailable}>
-          서버 등록
-        </button>
-      </header>
+      <PageHeader
+        title="커넥터"
+        onBack={onBack}
+        subtitle={
+          loading
+            ? "MCP 서버 연결 · 불러오는 중…"
+            : `MCP 서버 연결 · 내 커넥터 ${mine.length}개 · 공유된 커넥터 ${shared.length}개`
+        }
+        actions={
+          <>
+            <button type="button" className="btn-icon" onClick={() => void reload()} data-tooltip="새로고침" aria-label="새로고침">
+              <RefreshIcon />
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => setFormFor("new")} disabled={unavailable}>
+              서버 등록
+            </button>
+          </>
+        }
+      />
 
       <div className="library-body">
         {notice && (
@@ -423,9 +418,9 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
             {notice}
           </p>
         )}
-        {(actionError || error) && (
+        {actionError && (
           <p className="library-error" role="alert">
-            {actionError ?? error}
+            {actionError}
           </p>
         )}
         {unavailable && (
@@ -435,21 +430,29 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
         )}
 
         {loading ? (
-          <p className="library-empty">불러오는 중…</p>
+          <ListSkeleton rows={4} />
+        ) : error ? (
+          <LoadFailed message="커넥터 목록을 불러오지 못했습니다." onRetry={() => void reload()} />
         ) : (
-          // 가운데를 기준으로 왼쪽은 내 라이브러리, 오른쪽은 다른 사용자가 공유한 라이브러리.
+          // 가운데를 기준으로 왼쪽은 내 커넥터, 오른쪽은 다른 사용자가 공유한 커넥터.
           // 줄을 누르면 그 자리에서 아래로 열린다(칸마다 하나씩).
           <div className="library-columns">
-            <section className="library-column" aria-label="내 라이브러리">
-              <h2 className="library-column-title">
-                내 라이브러리 <span className="library-column-count">{mine.length}</span>
+            <section className="library-column" aria-labelledby="library-mine-title">
+              <h2 className="library-column-title" id="library-mine-title">
+                내 커넥터 <span className="library-column-count">{mine.length}</span>
               </h2>
               <p className="library-column-hint">
-                기본 제공 서버와 내가 등록하거나 채택한 서버입니다. 스위치를 켠 서버만 채팅 입력창의 MCP 도구 선택(+)에
+                기본 제공 서버와 내가 등록하거나 추가한 MCP 서버입니다. 스위치를 켠 서버만 대화 입력창의 MCP 도구 선택(+)에
                 나타나고, 모델에게도 그 서버의 도구가 전달됩니다.
               </p>
               {mine.length === 0 ? (
-                <p className="library-empty">라이브러리가 비어 있습니다. 서버를 등록하거나 오른쪽에서 공유된 서버를 채택해보세요.</p>
+                <EmptyState
+                  title="내 커넥터가 없습니다"
+                  reason="MCP 서버를 등록하거나 공유된 커넥터를 추가해 보세요."
+                  actionLabel="서버 등록"
+                  onAction={() => setFormFor("new")}
+                  actionDisabled={unavailable}
+                />
               ) : (
                 <Accordion
                   items={mine}
@@ -518,7 +521,7 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                         onRemove={
                           canUnadopt
                             ? () =>
-                                void run(server.id, `${server.name} 서버를 라이브러리에서 뺐습니다.`, () =>
+                                void run(server.id, `${server.name} 서버를 내 커넥터에서 뺐습니다.`, () =>
                                   api.setMcpAdoption(server.id, false),
                                 )
                             : null
@@ -526,7 +529,7 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                         onSaveCredential={(credential) =>
                           void run(
                             server.id,
-                            credential === null ? "자격 증명을 지웠습니다." : "자격 증명을 저장했습니다.",
+                            credential === null ? "개인 키를 삭제했습니다." : "개인 키를 저장했습니다.",
                             () => api.setMcpCredential(server.id, credential),
                           )
                         }
@@ -538,15 +541,22 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
               )}
             </section>
 
-            <section className="library-column" aria-label="다른 사용자가 공유하는 라이브러리">
-              <h2 className="library-column-title">
-                다른 사용자가 공유하는 라이브러리 <span className="library-column-count">{shared.length}</span>
+            <section className="library-column" aria-labelledby="library-shared-title">
+              <h2 className="library-column-title" id="library-shared-title">
+                공유된 커넥터 <span className="library-column-count">{shared.length}</span>
               </h2>
               <p className="library-column-hint">
-                스위치를 켜면 내 라이브러리에 추가됩니다. 켜기 전에는 내 대화에서 어떤 것도 실행되지 않습니다.
+                다른 사용자가 등록한 MCP 서버입니다. 스위치를 켜면 내 커넥터에 추가되고, 켜기 전에는 내 대화에서 어떤 것도
+                실행되지 않습니다.
               </p>
               {shared.length === 0 ? (
-                <p className="library-empty">다른 사용자가 공유한 서버가 없습니다.</p>
+                <EmptyState
+                  title="공유된 커넥터가 없습니다"
+                  reason="다른 사용자가 MCP 서버를 등록하면 여기에 나타나고, 내가 등록한 서버도 다른 사용자에게 이렇게 보입니다."
+                  actionLabel="서버 등록"
+                  onAction={() => setFormFor("new")}
+                  actionDisabled={unavailable}
+                />
               ) : (
                 <Accordion
                   items={shared}
@@ -558,7 +568,7 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                       <span className="md-row-name">
                         {server.name}
                         <span className="library-badge">{server.createdBy} 님</span>
-                        {adoptedIds.has(server.id) && <span className="library-badge">내 라이브러리에 있음</span>}
+                        {adoptedIds.has(server.id) && <span className="library-badge">내 커넥터에 있음</span>}
                         {server.status === "disabled" && (
                           <span className="library-badge" data-tone="danger">
                             관리자 비활성화
@@ -572,11 +582,11 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                     <ToggleSwitch
                       on={adoptedIds.has(server.id)}
                       disabled={busyId === server.id}
-                      label={`${server.name} 내 라이브러리에 추가`}
+                      label={`${server.name} 내 커넥터에 추가`}
                       onToggle={(next) =>
                         void run(
                           server.id,
-                          next ? `${server.name} 서버를 내 라이브러리에 추가했습니다.` : `${server.name} 서버를 뺐습니다.`,
+                          next ? `${server.name} 서버를 내 커넥터에 추가했습니다.` : `${server.name} 서버를 내 커넥터에서 뺐습니다.`,
                           () => api.setMcpAdoption(server.id, next),
                         )
                       }
@@ -606,8 +616,8 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
 
       {pendingDelete && (
         <ConfirmDialog
-          title="MCP 서버 삭제"
-          message={`"${pendingDelete.name}" 서버를 삭제하시겠습니까? 이 서버를 채택한 다른 사용자의 라이브러리에서도 사라집니다.`}
+          title={`${pendingDelete.name} 서버를 삭제할까요?`}
+          message="이 서버를 추가한 다른 사용자의 커넥터에서도 사라집니다. 되돌릴 수 없습니다."
           confirmLabel="삭제"
           danger
           onCancel={() => setPendingDelete(null)}

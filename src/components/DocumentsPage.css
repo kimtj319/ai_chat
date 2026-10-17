@@ -10,36 +10,7 @@
   overflow: hidden;
 }
 
-/* 머리와 본문은 같은 폭(1120px)으로 가운데에 선다. 넓은 화면에서 본문이 1400px 까지
-   퍼지면 목록과 설명이 창 양 끝에 붙어 꽉 차 보였다 — 남는 폭은 캔버스로 남긴다. */
-.documents-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-10) var(--space-10) var(--space-8);
-}
-
-.documents-header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.documents-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-}
-
-.documents-subtitle {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
+/* 본문은 머리(PageHeader)와 같은 폭(1120px)으로 가운데에 선다. */
 .documents-filter {
   width: 180px;
   padding: var(--space-3) var(--space-5);
@@ -201,12 +172,6 @@
   flex-wrap: wrap;
 }
 
-/* 라이브러리의 행 동작과 같은 크기 — 페이지 단위 버튼처럼 보이면 안 된다. */
-.documents-action {
-  padding: var(--space-3) var(--space-7);
-  font-size: var(--text-xs);
-}
-
 .documents-list {
   list-style: none;
   margin: var(--space-5) 0 0;
@@ -298,6 +263,39 @@
   color: var(--on-surface-variant);
 }
 
+.documents-row-empty .empty-state {
+  margin: 0 auto;
+}
+
+.documents-empty-action {
+  margin-top: var(--space-8);
+}
+
+/* 실패 까닭은 한 줄로 자른다(전문은 툴팁) — 긴 오류문이 행을 서너 줄로 늘리면
+   목록의 나머지가 밀려난다. */
+.documents-row-failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.documents-row-failure-reason {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+.documents-banner-retry {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .documents-badge {
   flex-shrink: 0;
   padding: 1px var(--space-4);
@@ -343,12 +341,6 @@
 }
 
 @media (max-width: 720px) {
-  .documents-header,
-  .documents-body {
-    padding-left: var(--space-6);
-    padding-right: var(--space-6);
-  }
-
   .documents-filter {
     display: none;
   }

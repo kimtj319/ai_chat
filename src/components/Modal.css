@@ -57,6 +57,19 @@
   transition: scale var(--press-out) var(--press-ease);
 }
 
+/* Fingers: the 32px circle stays, the target grows to 44px. */
+@media (pointer: coarse) {
+  .modal-close {
+    position: relative;
+  }
+
+  .modal-close::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+  }
+}
+
 .modal-close svg {
   width: 18px;
   height: 18px;

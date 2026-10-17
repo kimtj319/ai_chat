@@ -34,4 +34,8 @@ export interface ClientChatMessage extends ChatMessage {
   liveToolResults?: LiveToolResult[];
   /** 진행 중인 컨텍스트 압축(진행률 막대). 끝나면 지운다. */
   compaction?: { kind: import("../api/types").CompactionKind; progress: number };
+  /** 첫 reasoning delta 가 온 시각(epoch ms). 클라이언트에서만 쓴다 — 서버로 보내지 않는다. */
+  reasoningStartedAt?: number;
+  /** 생각이 끝난 시각(epoch ms): 생각 뒤 첫 content delta 나 도구 호출이 온 때. */
+  reasoningEndedAt?: number;
 }

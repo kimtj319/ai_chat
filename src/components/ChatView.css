@@ -105,21 +105,34 @@
   color: var(--on-surface);
 }
 
-.empty-subtitle {
-  margin: 0;
-  font-size: var(--text-md);
+/* 인사말 아래의 모델 칩. 누르면 사이드바의 모델 선택기를 연다 — 고르는 곳은 하나다. */
+.empty-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-2) var(--space-6);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-full);
+  background: var(--composer-surface);
   color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: color 0.15s ease, scale var(--press-out) var(--press-ease);
 }
 
-.empty-model-note {
-  margin-top: var(--space-6);
-  font-size: var(--text-sm);
-  color: var(--on-surface-variant);
-}
-
-.empty-model-note strong {
-  font-weight: var(--weight-semibold);
+.empty-model-chip:hover {
   color: var(--on-surface);
+}
+
+.empty-model-chip:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.empty-model-chip svg {
+  width: 14px;
+  height: 14px;
 }
 
 .chat-view-empty {
@@ -146,53 +159,38 @@
   padding-bottom: calc(var(--space-11) + var(--dock-h, 0px));
 }
 
-/* 입력창 뒤의 흐림: 두 겹을 겹쳐 아래 가장자리로 갈수록 세진다. 한 겹의 일정한 흐림은
-   경계선이 생겨 "판자" 로 보이지만, 가려 쓰는 마스크를 서로 어긋나게 두면 위쪽은
-   살짝, 맨 아래는 거의 읽히지 않을 만큼 흐려져 본문이 자연스럽게 사라진다.
-   dock 보다 조금 위(-28px)에서 시작해 입력창 윗단 너머로 스며들게 한다. */
-/* 첫 질문에 입력창이 가운데에서 바닥으로 내려가는 동안(.composer-spacer, 0.55s)에는
-   흐림을 켜지 않는다. 처음엔 has-messages 가 붙는 순간 바로 켜져, 내려가는 입력창
-   밑에 흐림이 끝나는 가로 경계선이 화면을 가로질러 함께 내려갔다. 바닥에 닿은 뒤
-   서서히 켠다(돌아갈 때는 곧바로 끈다). */
-.composer-dock::before,
-.composer-dock::after {
-  content: "";
-  position: absolute;
-  inset: -28px 0 0 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0;
+/* 입력창 뒤로 흐르는 본문은 흐림 대신 목록 자체를 가려 지운다: dock 윗단 40px 위에서
+   옅어지기 시작해 dock 윗단에서 사라진다. 예전에는 dock 뒤에 흐림 두 겹을 깔았는데,
+   반투명 입력창 너머로 번진 글자가 비쳐 보였고, 사이드바 칸 경계에서 흐림이 잘려
+   세로 이음매가 생겼다. 마스크는 아무것도 깔지 않으니 그 경계도 없다.
+   (스크롤 칸에 건 마스크는 내용이 아니라 칸에 붙어 있어 스크롤해도 제자리다.)
+   첫 질문에 입력창이 내려가는 동안에도 마스크는 늘 dock 윗단에 붙어 따라간다. */
+.chat-view.has-messages .chat-message-list {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--dock-h, 0px) - 40px),
+    transparent calc(100% - var(--dock-h, 0px))
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--dock-h, 0px) - 40px),
+    transparent calc(100% - var(--dock-h, 0px))
+  );
 }
 
-.chat-view.has-messages .composer-dock::before,
-.chat-view.has-messages .composer-dock::after {
-  opacity: 1;
-  transition: opacity 0.35s ease 0.5s;
+/* 대화 중 입력창 아래의 한 줄 안내. dock 안에 있어 --dock-h 에 저절로 들어간다. */
+.composer-disclaimer {
+  max-width: 830px;
+  margin: var(--space-4) auto 0;
+  text-align: center;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: var(--on-surface-variant);
 }
 
-.chat-view.has-messages .composer-dock::before {
-  backdrop-filter: blur(3px);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%);
-}
-
-.chat-view.has-messages .composer-dock::after {
-  backdrop-filter: blur(14px);
-  mask-image: linear-gradient(to bottom, transparent 35%, #000 90%);
-  /* 맨 아래는 바탕색을 조금 깔아 글자가 번져 보이지 않게 한다. */
-  background: linear-gradient(to bottom, transparent 55%, color-mix(in srgb, var(--app-canvas) 55%, transparent));
-}
-
-/* 사이드바가 칸으로 서 있으면 dock 의 왼쪽 끝이 곧 사이드바 칸의 경계다. 흐림과 바탕색이
-   그 선에서 딱 시작하면 사이드바 판의 그림자가 그 선에서 잘려, 판 아래쪽 뒤로 세로 경계가
-   보였다. 왼쪽 끝에서는 아무것도 깔지 않고 96px 에 걸쳐 들어오게 한다. */
-.app-shell:not([data-narrow]) .chat-view.has-messages .composer-dock::before {
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 45%), linear-gradient(to right, transparent, #000 96px);
-  mask-composite: intersect;
-}
-
-.app-shell:not([data-narrow]) .chat-view.has-messages .composer-dock::after {
-  mask-image: linear-gradient(to bottom, transparent 35%, #000 90%), linear-gradient(to right, transparent, #000 96px);
-  mask-composite: intersect;
+/* 안내 줄이 아래 여백 몫을 하므로 dock 바닥 여백을 줄인다. */
+.chat-view.has-messages .composer-dock {
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
 }
 
 /* Anchored to the dock's top edge rather than to the view's bottom, so a
@@ -234,6 +232,21 @@
   height: 18px;
 }
 
+/* 답이 흐르는데 따라가지 않을 때: 동그라미 대신 "↓ 새 내용" 알약. */
+.chat-jump-pill {
+  width: auto;
+  gap: var(--space-2);
+  padding: 0 var(--space-6) 0 var(--space-5);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+
+.chat-jump-pill svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* What puts the composer under the greeting on a blank conversation, and what
    lowers it to the floor on the first message.
    It is a spacer BELOW the dock rather than a moved dock: the composer keeps
@@ -252,9 +265,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-spacer,
-  .chat-view.has-messages .composer-dock::before,
-  .chat-view.has-messages .composer-dock::after {
+  .composer-spacer {
     transition: none;
   }
 }

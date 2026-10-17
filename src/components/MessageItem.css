@@ -180,6 +180,96 @@
   background: var(--danger-bg);
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-5);
+}
+
+/* The line says what to do next; the raw text stays one click away. */
+.message-error-text {
+  margin: 0;
+  flex: 1 1 240px;
+}
+
+.message-error-retry {
+  flex-shrink: 0;
+}
+
+.message-error-details {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+}
+
+.message-error-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.message-error-details pre {
+  margin: var(--space-3) 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  color: var(--on-surface-variant);
+}
+
+/* MCP 서버를 못 쓴 턴의 한 줄 표시. 접혀 있을 때는 작은 알약, 펼치면 원래의
+   안내 문단(.message-note 의 노란 바탕)이 그 아래에 그대로 나온다. */
+.message-tool-failure {
+  margin: var(--space-6) 0 0;
+  font-size: var(--text-xs);
+}
+
+.message-tool-failure summary {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  color: var(--warning);
+  background: var(--warning-bg);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-full);
+}
+
+.message-tool-failure summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-tool-failure .message-note {
+  margin-top: var(--space-3);
+}
+
+/* 마지막 사용자 메시지를 그 자리에서 고치는 칸. 내용 상자와 같은 거의 불투명한 바탕. */
+.message-edit {
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.message-edit-input {
+  width: 100%;
+  resize: vertical;
+  background: var(--glass-field);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5) var(--space-7);
+  color: var(--on-surface);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.message-edit-input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
 }
 
 .message-footer {
@@ -189,15 +279,37 @@
   gap: var(--space-5);
 }
 
+/* 가장 최근 답의 바닥줄만 늘 보인다. 나머지는 그 메시지에 올려 두거나 키보드
+   포커스가 들어오면 나타난다 — 숨겨도 opacity 라 탭 순서에는 그대로 있다.
+   손가락으로 쓰는 화면에는 올려 둘 수가 없으니 늘 보인다. */
+.message-footer:not(.pinned) {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.message-row:hover .message-footer,
+.message-row:focus-within .message-footer {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .message-footer:not(.pinned) {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-footer:not(.pinned) {
+    transition: none;
+  }
+}
+
 /* One line: tokens, then the time to their right, separated the way the token
    line separates its own two figures. Wraps rather than overflows on a narrow
    window. */
 .message-usage {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-3);
   font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
   color: var(--on-surface-variant);
 }
 
@@ -221,11 +333,4 @@
 
 .message-actions .btn-icon:hover {
   opacity: 1;
-}
-
-/* The separator belongs to the pairing, not to either figure, so it is drawn
-   only when a second figure is actually there. */
-.message-usage > span + span::before {
-  content: "·";
-  margin-right: var(--space-3);
 }

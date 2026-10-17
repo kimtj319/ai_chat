@@ -37,15 +37,10 @@
   color: var(--on-surface-variant);
 }
 
-.docview-loading,
-.docview-error {
+.docview-loading {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--on-surface-variant);
-}
-
-.docview-error {
-  color: var(--danger);
 }
 
 /* 원문은 손대지 않고 그대로 보여 준다 — 줄바꿈과 들여쓰기가 곧 그 문서다. */

@@ -4,6 +4,8 @@ import { ApiError } from "../api/client";
 import type { RagDocument, RagDocumentScope, SharedRagDocument } from "../api/types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DocumentViewer } from "./DocumentViewer";
+import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
+import { PageHeader } from "./PageHeader";
 import "./DocumentsPage.css";
 
 /**
@@ -18,15 +20,6 @@ import "./DocumentsPage.css";
  * 행마다 버튼을 늘어놓을 이유가 없어진다 — 늘어놓으면 아홉 줄에 같은 버튼이
  * 열여덟 개 보이고, 그 자체가 이 화면을 읽기 어렵게 만들던 것이다.
  */
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
-    </svg>
-  );
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
@@ -67,6 +60,8 @@ export function DocumentsPage({ onBack }: Props) {
   const [maxBytes, setMaxBytes] = useState(512 * 1024);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 목록 자체를 가져오지 못했다 — 동작 실패(error)와 달리 목록 자리에 그린다. */
+  const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   /** 올리는 중인 파일과 그 진행. null 이면 아무것도 올리고 있지 않다. */
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -87,12 +82,12 @@ export function DocumentsPage({ onBack }: Props) {
       setShared(body.shared ?? []);
       setEnabled(body.enabled);
       setMaxBytes(body.maxBytes);
-      setError(null);
+      setLoadFailed(false);
       // A document that has gone stops being selected — acting on it later
       // would be acting on nothing.
       setSelected((prev) => new Set(body.documents.filter((d) => prev.has(d.id)).map((d) => d.id)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch {
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -229,50 +224,51 @@ export function DocumentsPage({ onBack }: Props) {
   const retry = (docs: RagDocument[]) => runBulk(docs, "다시 색인했습니다", (d) => api.retryDocument(d.id));
 
   const remove = (docs: RagDocument[]) =>
-    runBulk(docs, "지웠습니다", async (d) => {
+    runBulk(docs, "삭제했습니다", async (d) => {
       await api.deleteDocument(d.id);
       return null;
     });
 
   const sharedCount = documents.filter((d) => d.scope === "shared").length;
   const working = busy.size > 0 || progress !== null;
+  const hasAny = documents.length + shared.length > 0;
+  const canUpload = enabled && !working;
+  const openPicker = () => fileInput.current?.click();
 
   return (
     <div className="documents-page">
-      <header className="documents-header">
-        <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
-          <BackIcon />
-        </button>
-        <div className="documents-header-text">
-          <h1 className="documents-title">문서</h1>
-          <p className="documents-subtitle">
-            {loading ? "불러오는 중…" : `내 문서 ${documents.length}개${sharedCount > 0 ? ` · 전체 공개 ${sharedCount}개` : ""}`}
-          </p>
-        </div>
-        {documents.length + shared.length > 3 && (
-          <input
-            type="search"
-            className="documents-filter"
-            placeholder="이름으로 거르기"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            aria-label="이름으로 거르기"
-          />
-        )}
-        <button type="button" className="btn" disabled={!enabled || working} onClick={() => fileInput.current?.click()}>
-          문서 올리기
-        </button>
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          className="documents-file-input"
-          onChange={(e) => {
-            pick(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </header>
+      <PageHeader
+        title="문서"
+        onBack={onBack}
+        subtitle={loading ? "불러오는 중…" : `내 문서 ${documents.length}개${sharedCount > 0 ? ` · 전체 공개 ${sharedCount}개` : ""}`}
+        actions={
+          <>
+            {documents.length + shared.length > 3 && (
+              <input
+                type="search"
+                className="documents-filter"
+                placeholder="이름으로 거르기"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                aria-label="이름으로 거르기"
+              />
+            )}
+            <button type="button" className="btn btn-primary" disabled={!canUpload} onClick={openPicker}>
+              문서 올리기
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="documents-file-input"
+              onChange={(e) => {
+                pick(e.target.files);
+                e.target.value = "";
+              }}
+            />
+          </>
+        }
+      />
 
       <div
         className="documents-body"
@@ -304,6 +300,14 @@ export function DocumentsPage({ onBack }: Props) {
                 ×
               </button>
             </p>
+          )}
+          {loadFailed && hasAny && (
+            <div className="documents-error" role="alert">
+              <span>문서 목록을 새로 불러오지 못했습니다.</span>
+              <button type="button" className="btn btn-sm documents-banner-retry" onClick={() => void reload()}>
+                다시 시도
+              </button>
+            </div>
           )}
           {notice && !error && (
             <p className="documents-notice" role="status">
@@ -340,7 +344,11 @@ export function DocumentsPage({ onBack }: Props) {
           )}
         </div>
 
-        {documents.length === 0 && shared.length === 0 && !loading ? (
+        {!hasAny && loading ? (
+          <ListSkeleton rows={3} />
+        ) : !hasAny && loadFailed ? (
+          <LoadFailed message="문서 목록을 불러오지 못했습니다." onRetry={() => void reload()} />
+        ) : !hasAny ? (
           <div className="documents-empty">
             <p className="documents-empty-title">아직 올린 문서가 없습니다.</p>
             <p>
@@ -352,6 +360,9 @@ export function DocumentsPage({ onBack }: Props) {
               글 파일은 한 개당 {formatBytes(maxBytes)}까지이고, PDF 는 20MB까지 받되 꺼낸 글자가 그 한도 안이어야
               합니다. 종이를 스캔해 넣은 PDF 는 글자가 아니라 사진이라 검색할 수 없습니다.
             </p>
+            <button type="button" className="btn documents-empty-action" disabled={!canUpload} onClick={openPicker}>
+              문서 올리기
+            </button>
           </div>
         ) : (
           <>
@@ -395,7 +406,24 @@ export function DocumentsPage({ onBack }: Props) {
                   ))}
                   {visibleShared.length === 0 && (
                     <li className="documents-row-empty">
-                      {filter.trim() ? "이름이 맞는 문서가 없습니다." : "전체 공개된 문서가 아직 없습니다."}
+                      {filter.trim() ? (
+                        "이름이 맞는 문서가 없습니다."
+                      ) : documents.length > 0 ? (
+                        <EmptyState
+                          title="전체 공개된 문서가 없습니다"
+                          reason="내 문서를 골라 '모두에게 공개' 하면 모든 사람의 대화에서 검색됩니다."
+                          actionLabel="내 문서 모두 고르기"
+                          onAction={() => setSelected(new Set(documents.map((d) => d.id)))}
+                        />
+                      ) : (
+                        <EmptyState
+                          title="전체 공개된 문서가 없습니다"
+                          reason="문서를 올린 뒤 '모두에게 공개' 하면 모든 사람의 대화에서 검색됩니다."
+                          actionLabel="문서 올리기"
+                          onAction={openPicker}
+                          actionDisabled={!canUpload}
+                        />
+                      )}
                     </li>
                   )}
                 </ul>
@@ -415,28 +443,25 @@ export function DocumentsPage({ onBack }: Props) {
                         if (el) el.indeterminate = !allVisibleChosen && visible.some((d) => selected.has(d.id));
                       }}
                       onChange={toggleAll}
-                      aria-label="보이는 문서 전체 선택"
                     />
-                    <span>
-                      {chosen.length > 0 ? `${chosen.length}개 선택됨` : `${visible.length}개${filter ? " (걸러짐)" : ""}`}
-                    </span>
+                    <span>{chosen.length > 0 ? `${chosen.length}개 선택됨` : `전체 선택 (${visible.length}개)`}</span>
                   </label>
                   {chosen.length > 0 && (
                     <div className="documents-toolbar-actions">
-                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "shared")}>
+                      <button type="button" className="btn btn-sm" disabled={working} onClick={() => void setScope(chosen, "shared")}>
                         모두에게 공개
                       </button>
-                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void setScope(chosen, "private")}>
+                      <button type="button" className="btn btn-sm" disabled={working} onClick={() => void setScope(chosen, "private")}>
                         나만 보기로
                       </button>
                       {/* 실패한 문서를 되살릴 때만 쓰는 버튼이 아니다. 청킹 방식이
                           바뀌면(예: 경계를 모델이 고르게 되면) 멀쩡한 문서도 다시
                           잘라야 하고, 그때 쓸 수단이 여기 말고는 없다. */}
-                      <button type="button" className="btn documents-action" disabled={working} onClick={() => void retry(chosen)}>
+                      <button type="button" className="btn btn-sm" disabled={working} onClick={() => void retry(chosen)}>
                         다시 색인
                       </button>
-                      <button type="button" className="btn btn-danger documents-action" disabled={working} onClick={() => setConfirming(chosen)}>
-                        지우기
+                      <button type="button" className="btn btn-sm btn-danger-quiet" disabled={working} onClick={() => setConfirming(chosen)}>
+                        삭제
                       </button>
                     </div>
                   )}
@@ -479,12 +504,34 @@ export function DocumentsPage({ onBack }: Props) {
                           {formatBytes(doc.bytes)} · {doc.chunks}단락 · {formatDate(doc.createdAt)}
                         </span>
                       </div>
+                      {/* 실패한 행은 까닭 한 줄과 그 자리의 다시 색인. 배지의 툴팁에만 두면
+                          왜 실패했는지 보려고 마우스를 올려야 했다. */}
+                      {doc.status === "failed" && (
+                        <div className="documents-row-failure">
+                          <span className="documents-row-failure-reason" title={doc.error ?? undefined}>
+                            {doc.error || "색인하지 못했습니다."}
+                          </span>
+                          <button type="button" className="btn btn-sm" disabled={working} onClick={() => void retry([doc])}>
+                            다시 색인
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </li>
                 ))}
                 {visible.length === 0 && (
                   <li className="documents-row-empty">
-                    {filter.trim() ? "이름이 맞는 문서가 없습니다." : "아직 올린 문서가 없습니다."}
+                    {filter.trim() ? (
+                      "이름이 맞는 문서가 없습니다."
+                    ) : (
+                      <EmptyState
+                        title="올린 문서가 없습니다"
+                        reason="올린 문서는 대화 중에 모델이 사내 문서 검색으로 찾아 근거로 씁니다."
+                        actionLabel="문서 올리기"
+                        onAction={openPicker}
+                        actionDisabled={!canUpload}
+                      />
+                    )}
                   </li>
                 )}
                 </ul>
@@ -498,9 +545,9 @@ export function DocumentsPage({ onBack }: Props) {
 
       {confirming && (
         <ConfirmDialog
-          title={confirming.length === 1 ? "문서를 지울까요?" : `문서 ${confirming.length}개를 지울까요?`}
-          message={`${namesOf(confirming)} 문서와 그 검색 색인을 지웁니다. 되돌릴 수 없습니다.`}
-          confirmLabel="지우기"
+          title={confirming.length === 1 ? "문서를 삭제할까요?" : `문서 ${confirming.length}개를 삭제할까요?`}
+          message={`${namesOf(confirming)} 문서와 그 검색 색인을 삭제합니다. 되돌릴 수 없습니다.`}
+          confirmLabel="삭제"
           danger
           onConfirm={() => {
             const docs = confirming;

@@ -215,8 +215,18 @@ export interface PatchConversationRequest {
 }
 
 export interface SendMessageRequest {
-  /** May be "" when `attachmentIds` is present. */
+  /**
+   * May be "" when `attachmentIds` is present. With `regenerate`, a non-empty
+   * value replaces the last user message's text (edit and resend); "" keeps it.
+   */
   content: string;
+  /**
+   * Re-run the last user message instead of appending a new one: the server
+   * drops everything after it and answers it again, attachments included.
+   * `attachmentIds` is ignored. 409 while another turn is streaming, 400 when
+   * the conversation has no user message.
+   */
+  regenerate?: boolean;
   attachmentIds?: string[];
   settings?: ConversationSettings;
   enabledTools?: string[];

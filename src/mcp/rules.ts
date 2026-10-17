@@ -41,12 +41,12 @@ export function validateDraft(draft: McpServerDraft, hasStoredCredential = false
   const errors: McpDraftErrors = {};
 
   const name = draft.name.trim();
-  if (name.length === 0) errors.name = "이름을 입력해주세요.";
+  if (name.length === 0) errors.name = "이름을 입력해 주세요.";
   else if (name.length > NAME_MAX_LENGTH) errors.name = `이름은 ${NAME_MAX_LENGTH}자 이하여야 합니다.`;
 
   const slug = draft.slug.trim();
   if (slug.length === 0) {
-    errors.slug = "슬러그를 입력해주세요.";
+    errors.slug = "슬러그를 입력해 주세요.";
   } else if (slug.length < SLUG_MIN_LENGTH || slug.length > SLUG_MAX_LENGTH || !SLUG_PATTERN.test(slug)) {
     errors.slug = `슬러그는 영문 소문자·숫자·하이픈으로 ${SLUG_MIN_LENGTH}~${SLUG_MAX_LENGTH}자여야 합니다.`;
   }
@@ -54,12 +54,12 @@ export function validateDraft(draft: McpServerDraft, hasStoredCredential = false
   // Required, not optional: this is the line another user reads before ticking
   // the box, and a blank one tells them nothing about what they are taking on.
   const description = draft.description.trim();
-  if (description.length === 0) errors.description = "설명을 입력해주세요. 다른 사용자는 이 설명을 보고 채택 여부를 판단합니다.";
+  if (description.length === 0) errors.description = "설명을 입력해 주세요. 다른 사용자는 이 설명을 보고 추가할지 정합니다.";
   else if (description.length > DESCRIPTION_MAX_LENGTH) errors.description = `설명은 ${DESCRIPTION_MAX_LENGTH}자 이하여야 합니다.`;
 
   const url = draft.url.trim();
   if (url.length === 0) {
-    errors.url = "주소를 입력해주세요.";
+    errors.url = "주소를 입력해 주세요.";
   } else {
     let parsed: URL | null = null;
     try {
@@ -79,7 +79,7 @@ export function validateDraft(draft: McpServerDraft, hasStoredCredential = false
     else if (!HEADER_NAME_PATTERN.test(header)) errors.authHeaderName = "헤더 이름에는 영문·숫자·하이픈만 쓸 수 있습니다.";
 
     if (draft.credential.trim().length === 0 && !hasStoredCredential) {
-      errors.credential = "이 인증 방식에는 자격 증명이 필요합니다.";
+      errors.credential = "이 인증 방식에는 개인 키가 필요합니다.";
     }
   }
 

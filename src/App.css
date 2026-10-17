@@ -16,6 +16,47 @@
   position: relative;
 }
 
+/* 본문 자리(<main>). 페이지들은 예전처럼 껍데기의 flex 줄에 선 것처럼 늘어난다 —
+   position 은 일부러 두지 않는다: 출처 창과 페이지 안의 absolute 들이 지금처럼
+   껍데기를 기준으로 삼아야 한다. */
+.app-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+/* 키보드로 처음 Tab 하면 왼쪽 위에 나타난다. 그 전에는 화면 밖에 있다
+   (display: none 이면 Tab 이 닿지 않는다). */
+.skip-link {
+  position: fixed;
+  top: calc(var(--space-4) + env(safe-area-inset-top));
+  left: calc(var(--space-4) + env(safe-area-inset-left));
+  /* 서랍 토글(5)·사이드바보다 위. */
+  z-index: 50;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--space-8) - env(safe-area-inset-top)));
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+/* 폰의 바텀시트 뒤. 누르면 닫힌다(McpPicker 의 inSheet). 시트(61) 바로 아래. */
+.popover-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  animation: app-scrim-in 0.16s ease-out;
+}
+
 
 /* ------------------------------------------------------------ 좁은 화면
 
@@ -54,20 +95,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-scrim {
+  .app-scrim,
+  .popover-sheet-scrim {
     animation: none;
   }
 }
 
-/* 서랍 자리를 비워 둔다. 페이지마다 헤더 클래스가 달라 한 줄로 묶이지
-   않는다 — 새 페이지를 만들면 여기에 한 줄 보태야 한다. */
+/* 서랍 자리를 비워 둔다. 채팅 머리와 공용 페이지 머리(PageHeader, .page-header) 두 가지뿐이다. */
 .app-shell[data-narrow] .chat-header,
-.app-shell[data-narrow] .board-header,
-.app-shell[data-narrow] .documents-header,
-.app-shell[data-narrow] .library-header,
-.app-shell[data-narrow] .tools-page-header,
-.app-shell[data-narrow] .conv-settings-header,
-.app-shell[data-narrow] .admin-header {
+.app-shell[data-narrow] .page-header {
   padding-left: calc(var(--space-5) + 40px + var(--space-5));
 }
 
@@ -85,18 +121,13 @@
    var(--space-10) 을 양쪽에 물면 390px 화면에서 본문이 절반 가까이 깎인다. */
 @media (max-width: 640px) {
   .chat-header,
-  .board-header,
+  .page-header,
   .board-body,
-  .documents-header,
   .documents-body,
-  .library-header,
   .library-body,
-  .tools-page-header,
   .tools-page-body,
-  .conv-settings-header,
   .conv-settings-body,
   .conv-settings-actions,
-  .admin-header,
   .admin-body {
     padding-left: var(--space-6);
     padding-right: var(--space-6);
@@ -117,12 +148,7 @@
   /* 헤더는 서랍 토글 자리를 계속 비워 둬야 한다 — 위 규칙이 그것을 덮어쓰지
      않도록 다시 적는다. */
   .app-shell[data-narrow] .chat-header,
-  .app-shell[data-narrow] .board-header,
-  .app-shell[data-narrow] .documents-header,
-  .app-shell[data-narrow] .library-header,
-  .app-shell[data-narrow] .tools-page-header,
-  .app-shell[data-narrow] .conv-settings-header,
-  .app-shell[data-narrow] .admin-header {
+  .app-shell[data-narrow] .page-header {
     padding-left: calc(var(--space-5) + 40px + var(--space-5));
   }
 
@@ -193,9 +219,7 @@
 
   /* 문서·라이브러리·게시판 머리는 제목+설명 두 줄(46px)이라 위 여백 16px 이면 가운데가
      39px 에 온다. 서랍 토글(16px 위, 36px 높이)의 가운데 34px 와 맞도록 위 여백을 줄인다. */
-  .app-shell[data-narrow] .board-header,
-  .app-shell[data-narrow] .documents-header,
-  .app-shell[data-narrow] .library-header {
+  .app-shell[data-narrow] .page-header {
     padding-top: var(--space-5);
   }
 
@@ -257,18 +281,56 @@
 
   /* 트리거 아래에 뜨는 것들은 제 최소 폭을 고집한다. 화면보다 넓어지면
      한쪽이 잘려 나가므로 화면을 상한으로 둔다. */
-  .mcp-picker-popover,
-  .reasoning-popover,
   .model-switcher-popover,
   .sidebar-settings-popover {
     max-width: calc(100vw - var(--space-6) * 2);
     min-width: 0;
   }
 
-  /* "+" 메뉴는 입력창 왼쪽 단추(화면 왼쪽에서 약 34px)에 붙어 열린다. 화면 폭만큼을
-     상한으로 두면 그 오프셋만큼 오른쪽이 화면 밖으로 나간다. */
-  .mcp-picker-popover {
-    max-width: calc(100vw - var(--space-11) * 2);
+  /* 입력창의 "+" 메뉴와 추론 설정은 폰에서 바텀시트가 된다: 화면 아래 끝에서 폭 전체로
+     올라오고, 뒤에는 스크림이 깔린다. 손가락이 닿는 자리이고, 트리거 위로 띄우면 화면
+     절반을 넘는 메뉴가 위쪽에서 잘린다. 두 컴포넌트가 폰에서 이것을 body 로 포털한다 —
+     입력창의 backdrop-filter 안에서는 fixed 가 화면이 아니라 입력창에 붙기 때문이다.
+     불투명한 바탕에 블러는 없다: 시트는 본문을 완전히 덮고, 비칠 것도 없다. */
+  .mcp-picker-popover,
+  .reasoning-popover {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 61;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: 70dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-8) calc(var(--space-7) + env(safe-area-inset-right))
+      calc(var(--space-8) + env(safe-area-inset-bottom)) calc(var(--space-7) + env(safe-area-inset-left));
+    border: none;
+    border-top: 1px solid var(--outline-variant);
+    border-radius: 20px 20px 0 0;
+    background: var(--surface);
+    backdrop-filter: none;
+    box-shadow: var(--shadow-lg);
+    animation: sheet-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcp-picker-popover,
+  .reasoning-popover {
+    animation: none;
   }
 }
 

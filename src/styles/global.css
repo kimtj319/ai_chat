@@ -79,6 +79,16 @@ select {
 
 button {
   cursor: pointer;
+  /* No double-tap zoom on controls, so a tap lands at once instead of waiting
+     out the zoom gesture. */
+  touch-action: manipulation;
+}
+
+/* One accent for every native control the app leaves unstyled. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"] {
+  accent-color: var(--primary);
 }
 
 button:disabled {
@@ -123,7 +133,26 @@ a {
 :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+  /* A ring of the page's own ground between the control and the outline, so
+     the outline still reads where the control sits on primary or on a
+     coloured part of the canvas (a double ring). */
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--surface) 85%, transparent);
   border-radius: var(--radius-xs);
+}
+
+/* Inside a scrolling list the outer ring is cut off at the list's edge; there
+   it is drawn inward instead. */
+:is(.mcp-picker-list, .sidebar-recents, .md-list) :focus-visible {
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+/* The skip link's target is the whole page body, and a popover with nothing
+   focusable inside takes the focus itself; ringing the whole box says nothing.
+   The next Tab lands on the first control in it, which does get the ring. */
+#main:focus,
+:is(.mcp-picker-popover, .reasoning-popover, .notice-popover):focus {
+  outline: none;
 }
 
 /* Press feedback across the app is the independent `scale` property rather
@@ -202,6 +231,36 @@ a {
   filter: brightness(0.92);
 }
 
+/* The one small button size (list rows, card actions, page toolbars). */
+.btn-sm {
+  padding: var(--space-3) var(--space-7);
+  font-size: var(--text-xs);
+}
+
+/* Deleting one row: quiet until read, so a list of them is not a wall of red.
+   The fill is the glass control's; only the text and the edge carry the
+   danger hue. (glass.css leaves it out of its button rule for that reason.) */
+.btn-danger-quiet {
+  background: var(--glass-control);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.btn-danger-quiet:hover:not(:disabled),
+.btn-danger-quiet:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 8%, var(--glass-control));
+}
+
+/* A primary action that cannot run yet is grey, not a faded blue that still
+   reads as "press me". The composer's send button keeps its own look: it is
+   the same circle in every state and its waiting state is drawn on top. */
+.btn-primary:disabled:not(.composer-send) {
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .btn-icon {
   padding: var(--space-4);
   width: 36px;
@@ -231,6 +290,14 @@ a {
 .btn-icon svg {
   width: 18px;
   height: 18px;
+}
+
+/* Fingers: icon buttons grow to the 44px target. */
+@media (pointer: coarse) {
+  .btn-icon {
+    width: 44px;
+    height: 44px;
+  }
 }
 
 .field {

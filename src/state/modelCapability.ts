@@ -127,14 +127,19 @@ export function conversationKindMeta(kind: ConversationKind | undefined | null):
  * into numbers.
  */
 /**
- * `touch` 는 손가락으로 쓰는 화면(폰·태블릿). 거기에는 Shift 가 없어 Enter 가
- * 줄바꿈이고 보내기는 단추로 하므로, 키 안내를 붙이지 않는다.
+ * 안내문은 짧게 둔다. 키 안내(Enter·Shift+Enter)는 보내기 단추의 풍선 도움말로
+ * 옮겼다(composerKeyHint) — 칸 안에 두면 폰 폭에서 안내문이 몇 줄로 늘어났다.
+ * `inConversation` 은 이미 오간 말이 있는 대화.
  */
-export function composerPlaceholder(kind: ConversationKind, touch = false): string {
-  if (touch) return kind === "embedding" ? "임베딩할 텍스트를 입력하세요…" : "메시지를 입력하세요…";
-  return kind === "embedding"
-    ? "임베딩할 텍스트를 입력하세요…  (Enter 실행, Shift+Enter 줄바꿈)"
-    : "메시지를 입력하세요…  (Enter 전송, Shift+Enter 줄바꿈)";
+export function composerPlaceholder(kind: ConversationKind, inConversation = false): string {
+  if (kind === "embedding") return "임베딩할 텍스트를 입력하세요";
+  return inConversation ? "메시지 입력" : "무엇이든 물어보세요";
+}
+
+/** 보내기 단추의 풍선 도움말. 손가락 화면에는 Shift 가 없어 Enter 가 줄바꿈이다. */
+export function composerKeyHint(kind: ConversationKind, touch = false): string {
+  if (touch) return kind === "embedding" ? "임베딩 실행" : "메시지 전송";
+  return kind === "embedding" ? "Enter 실행 · Shift+Enter 줄바꿈" : "Enter 전송 · Shift+Enter 줄바꿈";
 }
 
 /** The one-line banner above an embedding conversation's composer. */

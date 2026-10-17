@@ -7,7 +7,7 @@
   overflow-wrap: anywhere;
 }
 
-.markdown-body :is(td, th, pre, code) {
+.markdown-body :is(pre, code) {
   word-break: normal;
 }
 
@@ -74,8 +74,27 @@
   border-collapse: collapse;
   margin: var(--space-3) 0 var(--space-8);
   width: 100%;
+}
+
+/* 표는 넘치면 옆으로 민다. 넘칠 때만(data-overflow) 오른쪽 끝을 흐리게. */
+.md-table-scroll {
   overflow-x: auto;
-  display: block;
+  margin: var(--space-3) 0 var(--space-8);
+}
+
+.md-table-scroll > table {
+  margin: 0;
+}
+
+.md-table-scroll[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+@media (max-width: 640px) {
+  .markdown-body td {
+    min-width: 7em;
+  }
 }
 
 /* 표·가로줄의 선은 outline-variant(흰 바탕 약 1.7:1)로는 행이 흐려 보였다. */
@@ -89,6 +108,7 @@
 .markdown-body th {
   background: var(--surface-container);
   font-weight: var(--weight-semibold);
+  white-space: nowrap;
   border-bottom-color: color-mix(in srgb, var(--on-surface) 30%, transparent);
 }
 
@@ -109,6 +129,13 @@
   padding: 1px 5px;
   font-family: var(--font-mono);
   font-size: 0.9em;
+}
+
+.code-block pre .inline-code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
 }
 
 .markdown-raw-fallback {

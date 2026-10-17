@@ -11,7 +11,7 @@ export const MISSING_KEY_MARK = "[API 키 미등록]";
 export function missingKeyMessage(service: string, howToGet: string): string {
   return (
     `${MISSING_KEY_MARK} ${service} API 키가 등록되어 있지 않아 이 도구를 사용할 수 없습니다. ` +
-    `설정 › 개인 키 (API 키·토큰)에서 본인 키를 등록하세요(${howToGet}). ` +
+    `설정 › 개인 키 (API 키·토큰)에서 본인 키를 등록해 주세요(${howToGet}). ` +
     "Tell the user this in Korean; do not retry."
   );
 }

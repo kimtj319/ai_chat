@@ -7,15 +7,18 @@ interface ShortcutHandlers {
 }
 
 /**
- * Cmd/Ctrl+K -> new conversation, Esc -> stop generation. Enter/Shift+Enter are
- * handled locally by the composer.
+ * Cmd/Ctrl+Shift+O -> new conversation, Esc -> stop generation. Enter/Shift+Enter
+ * are handled locally by the composer. Cmd/Ctrl+K(대화 제목 검색)는 검색 칸을 가진
+ * Sidebar 가 직접 받는다.
+ *
+ * 글쇠는 `code` 로도 본다 — 한글 입력 상태에서는 `key` 가 'ㅐ' 처럼 와서 놓친다.
  *
  * Esc 는 떠 있는 것(모달·드롭다운)이 없을 때만 생성을 멈춘다 — overlayStack 참고.
  */
 export function useKeyboardShortcuts({ onNewConversation, onStop }: ShortcutHandlers): void {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.code === "KeyO" || event.key.toLowerCase() === "o")) {
         event.preventDefault();
         onNewConversation();
         return;

@@ -1,21 +1,25 @@
 .composer {
   max-width: 830px;
   margin: 0 auto;
-  /* 살짝 비치는 유리. 뒤로 지나가는 본문이 희미하게 보이되 글은 흐려서 입력칸의
-     글과 섞이지 않게 한다. */
-  background: color-mix(in srgb, var(--composer-surface) 68%, transparent);
-  backdrop-filter: blur(10px) saturate(160%);
+  /* 거의 불투명한 판. 반투명 유리 위에 흐림을 걸면 뒤로 지나가는 본문 글자가 번져
+     입력 중인 글과 겹쳐 보였다. 본문은 이제 입력창 위에서 목록 쪽 마스크로
+     사라지므로(ChatView.css) 입력창이 비칠 이유가 없다. */
+  background: color-mix(in srgb, var(--composer-surface) 97%, transparent);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.06);
   /* Symmetric now that a control leads the row: the 24px left inset was there
      to give a bare textarea a margin, and it left the plus button sitting
      further in than the send button on the other side. */
   padding: 9px var(--space-5);
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
+/* 칸 안의 textarea 는 제 윤곽선을 끄므로(아래) 포커스는 이 테두리와 고리가 대신 보인다. */
 .composer:focus-within {
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-container);
+  border-color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.06),
+    0 0 0 2px color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -183,4 +187,46 @@
   background: var(--primary-container);
   color: var(--on-primary-container);
   font-size: var(--text-xs);
+}
+
+/* 빈 대화의 시작 칩. 입력창 바로 아래 한 줄(좁으면 줄을 바꿔) — 누르면 입력창을
+   채우기만 한다. 칩은 단단한 판이라 뒤 배경과 섞이지 않는다. */
+.composer-starters {
+  max-width: 830px;
+  margin: var(--space-6) auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.composer-starter {
+  padding: var(--space-3) var(--space-6);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-full);
+  background: var(--composer-surface);
+  color: var(--on-surface);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, scale var(--press-out) var(--press-ease);
+}
+
+.composer-starter:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--composer-surface) 88%, var(--on-surface));
+}
+
+.composer-starter:active:not(:disabled) {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.composer-starter:disabled {
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .composer-starter {
+    min-height: 44px;
+  }
 }

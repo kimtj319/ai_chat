@@ -56,6 +56,14 @@ export function shortModelName(id: string): string {
   return trimmed.join("-");
 }
 
+/**
+ * 사이드바 바닥의 좁은 자리에 쓰는 이름 — 괄호 꼬리("(abliterated)")를 뗀다. 꼬리까지
+ * 붙은 이름은 목록의 각 줄에, 원래 id 는 말풍선에 남는다.
+ */
+function triggerModelName(id: string): string {
+  return shortModelName(id).replace(/\s*\([^)]*\)$/, "");
+}
+
 /** The composer's reasoning popover, mirrored here: a text trigger that opens
  * a small listbox of every model in the catalog. The model is a per-
  * conversation field on the backend — selecting one PATCHes the open
@@ -105,7 +113,7 @@ export function ModelSelector() {
   }
 
   const selectedId = resolveSelectedModelId(catalog, current, activeConversation?.model ?? null, ui.lastModel);
-  const selectedLabel = shortModelName(selectedId);
+  const selectedLabel = triggerModelName(selectedId);
 
   // A conversation is locked to one kind by its *first message*, so an empty
   // conversation can still switch freely between chat and embedding models.
@@ -154,7 +162,7 @@ export function ModelSelector() {
         className="model-switcher-trigger"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={selectedLabel}
+        title={selectedId}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={handleTriggerKeyDown}
       >
@@ -174,7 +182,7 @@ export function ModelSelector() {
                 aria-selected={entry.id === selectedId}
                 aria-disabled={availability.selectable ? undefined : true}
                 disabled={!availability.selectable}
-                title={availability.reason ?? shortModelName(entry.id)}
+                title={availability.reason ?? entry.id}
                 className={`model-switcher-option${entry.id === selectedId ? " active" : ""}${
                   availability.selectable ? "" : " unavailable"
                 }`}

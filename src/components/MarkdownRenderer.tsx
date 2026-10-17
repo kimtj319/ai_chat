@@ -1,4 +1,4 @@
-import { Component, isValidElement, useLayoutEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { Component, cloneElement, isValidElement, useEffect, useLayoutEffect, useMemo, useRef, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import { gfm } from "./markdownGfm";
@@ -22,8 +22,9 @@ function extractText(node: ReactNode): string {
   return "";
 }
 
-function CodeRenderer({ className, children }: { className?: string; children?: ReactNode }) {
-  if (!className) {
+function CodeRenderer({ className, children, "data-block": block }: { className?: string; children?: ReactNode; "data-block"?: boolean }) {
+  // <pre> 안의 코드는 언어가 없어도 인라인 칩이 아니다(PreRenderer 가 data-block 으로 표시).
+  if (!className && !block) {
     return <code className="inline-code">{children}</code>;
   }
   return <code className={className}>{children}</code>;
@@ -38,7 +39,7 @@ function PreRenderer({ children }: { children?: ReactNode }) {
 
   const codeProps = codeElement.props as { className?: string; children?: ReactNode };
   const match = /language-(\w+)/.exec(codeProps.className ?? "");
-  const language = match?.[1] ?? "text";
+  const language = match?.[1] ?? "텍스트";
   const rawText = extractText(codeProps.children);
 
   return (
@@ -47,7 +48,7 @@ function PreRenderer({ children }: { children?: ReactNode }) {
         <span className="code-block-lang">{language}</span>
         <CopyButton text={rawText} className="code-block-copy" />
       </div>
-      <pre>{codeElement}</pre>
+      <pre>{cloneElement(codeElement as ReactElement<{ "data-block"?: boolean }>, { "data-block": true })}</pre>
     </div>
   );
 }
@@ -101,6 +102,26 @@ interface MarkdownRendererProps {
  */
 function StableTable(props: ComponentPropsWithoutRef<"table">) {
   const ref = useRef<HTMLTableElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 가로로 넘칠 때만 오른쪽 끝에 흐림 표시(data-overflow)를 건다.
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const update = () => {
+      const more = box.scrollWidth - box.clientWidth - box.scrollLeft > 1;
+      if (more) box.setAttribute("data-overflow", "end");
+      else box.removeAttribute("data-overflow");
+    };
+    update();
+    box.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(box);
+    if (ref.current) observer?.observe(ref.current);
+    return () => {
+      box.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, []);
   const widths = useRef<number[]>([]);
   useLayoutEffect(() => {
     const row = ref.current?.querySelector("tr");
@@ -111,7 +132,11 @@ function StableTable(props: ComponentPropsWithoutRef<"table">) {
       (cell as HTMLElement).style.minWidth = `${widths.current[i]}px`;
     });
   });
-  return <table ref={ref} {...props} />;
+  return (
+    <div className="md-table-scroll" ref={scrollRef}>
+      <table ref={ref} {...props} />
+    </div>
+  );
 }
 
 /** 출처 번호. 누르면 오른쪽 창에 그 단락의 원문이 열린다. */

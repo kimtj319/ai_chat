@@ -12,18 +12,7 @@
   overflow: hidden;
 }
 
-/* 머리·탭·본문이 같은 폭(1120px)으로 가운데에 선다 — 도구·라이브러리·문서와 같다. */
-.admin-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: var(--space-10) var(--space-10) var(--space-6);
-}
-
+/* 머리(PageHeader)·탭·본문이 같은 폭(1120px)으로 가운데에 선다 — 도구·라이브러리·문서와 같다. */
 .admin-tabbar {
   flex-shrink: 0;
   display: flex;
@@ -65,23 +54,6 @@
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
-}
-
-.admin-header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.admin-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
-}
-
-.admin-subtitle {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
 }
 
 .admin-body {
@@ -248,11 +220,6 @@
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
-}
-
-.admin-action {
-  padding: var(--space-3) var(--space-7);
-  font-size: var(--text-xs);
 }
 
 .admin-action-note {
@@ -574,4 +541,10 @@
   .admin-notice-item {
     flex-direction: column;
   }
+}
+
+/* 모델 탭의 동작 줄: 탭에서 하는 일은 하나(서버 연동)라 오른쪽 끝에 하나만 둔다. */
+.admin-models-toolbar {
+  display: flex;
+  justify-content: flex-end;
 }

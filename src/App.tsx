@@ -22,6 +22,7 @@ import { useChatStream } from "./hooks/useChatStream";
 import { useScheduleRunner } from "./browser/scheduler";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useMediaQuery } from "./hooks/useMediaQuery";
+import { FOCUSABLE } from "./hooks/usePopoverFocus";
 import { useScrollbarFade } from "./hooks/useScrollbarFade";
 import { useTheme } from "./hooks/useTheme";
 import { HASHES, shareTokenFromHash, viewFromHash } from "./routes";
@@ -177,6 +178,11 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerToggleRef = useRef<HTMLButtonElement>(null);
   const drawerWasOpen = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  // 열린 서랍은 대화상자다: 그 밖은 inert 로 막고(Tab·스크린리더 모두), 포커스를 안으로
+  // 데려간다. 닫을 때 메뉴 단추로 돌려주는 것은 아래 effect 가 맡는다.
+  const drawerModal = narrow && drawerOpen;
   // 서랍을 닫으면 포커스를 메뉴 단추로 돌려준다. 닫기 단추가 숨은 서랍 안에 포커스를
   // 쥔 채 남으면, iOS 에서 그 뒤의 본문이 손가락 스크롤을 받지 못하는 일이 있다
   // (키보드 사용자에게도 포커스가 사라진 것처럼 보인다).
@@ -188,6 +194,29 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
     }
     drawerWasOpen.current = drawerOpen;
   }, [drawerOpen]);
+
+  // <aside> 는 Sidebar 의 것이라 역할은 여기서 DOM 에 직접 단다. 사이드바가 접힘
+  // 선호값에 따라 다른 <aside> 를 그리므로 그것이 바뀔 때도 다시 단다.
+  useEffect(() => {
+    const aside = shellRef.current?.querySelector<HTMLElement>(":scope > aside.sidebar");
+    if (!aside) return;
+    if (!drawerModal) {
+      aside.removeAttribute("role");
+      aside.removeAttribute("aria-modal");
+      aside.removeAttribute("aria-label");
+      return;
+    }
+    aside.setAttribute("role", "dialog");
+    aside.setAttribute("aria-modal", "true");
+    aside.setAttribute("aria-label", "메뉴");
+  }, [drawerModal, ui.sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!drawerModal) return;
+    const aside = shellRef.current?.querySelector<HTMLElement>(":scope > aside.sidebar");
+    // 미끄러져 들어오는 중이라 스크롤은 막는다.
+    aside?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
+  }, [drawerModal]);
 
   // 서랍은 무엇을 고르면 닫힌다. 무엇을 골랐는지는 주소와 열린 대화가 말해 주므로
   // 사이드바 안의 버튼 하나하나에 손을 댈 필요가 없다 — 설정 팝오버처럼
@@ -243,15 +272,58 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   }, [view]);
 
   useTheme(ui.theme);
-  useKeyboardShortcuts({ onNewConversation: () => void createConversation(), onStop: chatStream.stopGeneration });
+  // 새 대화는 어느 화면에서 눌러도 채팅으로 돌아와 연다 — 라이브러리를 보던 중에 대화만
+  // 만들어지고 화면은 그대로이면 무엇이 일어났는지 보이지 않는다.
+  useKeyboardShortcuts({
+    onNewConversation: () => {
+      navigate("chat");
+      void createConversation();
+    },
+    onStop: chatStream.stopGeneration,
+  });
+
+  // Ctrl/Cmd+K(대화 검색)는 사이드바가 맡는다. 좁은 화면에서 서랍이 닫혀 있으면 검색 칸이
+  // 보이지 않으므로 서랍을 먼저 열고, 서랍이 제 첫 항목으로 포커스를 옮긴 뒤 검색 칸으로 보낸다.
+  useEffect(() => {
+    if (!narrow || drawerOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
+      if (event.code !== "KeyK" && event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      setDrawerOpen(true);
+      window.setTimeout(() => {
+        const input = document.querySelector<HTMLInputElement>(".sidebar-search-input");
+        input?.focus();
+        input?.select();
+      }, 60);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [narrow, drawerOpen]);
 
   return (
     <div
+      ref={shellRef}
       className="app-shell"
       data-narrow={narrow || undefined}
       data-drawer-open={drawerOpen || undefined}
       data-source-open={sourceOpen || undefined}
     >
+      {/* 키보드로 들어오면 처음 닿는 것. 사이드바 목록을 다 지나지 않고 본문으로 간다.
+          href 는 보조 기술에 링크로 읽히게 하려는 것이고, 실제 이동은 onClick 이 한다 —
+          해시를 바꾸면 라우터(routes.ts)가 그것을 화면 주소로 읽는다. */}
+      <a
+        href="#main"
+        className="skip-link"
+        inert={drawerModal}
+        onClick={(event) => {
+          event.preventDefault();
+          mainRef.current?.focus();
+        }}
+      >
+        본문으로 건너뛰기
+      </a>
+
       <AppBackdrop />
 
       {/* 서랍이 열려 있는 동안은 서랍 안의 닫기 단추(로고 줄)를 쓴다. */}
@@ -271,7 +343,8 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
 
       {narrow && drawerOpen && (
         // 버튼으로 둔다: 뒤를 덮는 일만 하는 것이 아니라, 닫는 가장 큰 표적이다.
-        <button type="button" className="app-scrim" aria-label="메뉴 닫기" onClick={() => setDrawerOpen(false)} />
+        // Tab 차례에서는 뺀다 — 서랍 안의 닫기 단추와 Esc 가 키보드의 길이다.
+        <button type="button" className="app-scrim" aria-label="메뉴 닫기" tabIndex={-1} onClick={() => setDrawerOpen(false)} />
       )}
 
       <Sidebar
@@ -289,29 +362,30 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         onOpenAdmin={onOpenAdmin && (() => navigateFromDrawer("admin"))}
         onCloseDrawer={narrow ? () => setDrawerOpen(false) : undefined}
       />
-      {showAdmin ? (
-        <AdminPage onBack={() => navigate("chat")} />
-      ) : showTools ? (
-        <ToolsPage onBack={() => navigate("chat")} />
-      ) : showSettings ? (
-        <ConversationSettingsPage onBack={() => navigate("chat")} />
-      ) : showLibrary ? (
-        <LibraryPage onBack={() => navigate("chat")} onAdminSetStatus={onAdminSetMcpStatus} />
-      ) : showDocuments ? (
-        <DocumentsPage onBack={() => navigate("chat")} />
-      ) : showBoard ? (
-        <BoardPage onBack={() => navigate("chat")} />
-      ) : (
-        <ChatView
-          chatStream={chatStream}
-          onOpenAdmin={onOpenAdmin}
-          onOpenLibrary={() => navigate("library")}
-          onOpenTools={() => navigate("tools")}
-          onOpenBoard={() => navigate("board")}
-        />
-      )}
-      {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
-      {!showLibrary && !showDocuments && !showBoard && !showAdmin && !showTools && !showSettings && <SourcePanel />}
+      <main id="main" ref={mainRef} className="app-main" tabIndex={-1} inert={drawerModal}>
+        {showAdmin ? (
+          <AdminPage onBack={() => navigate("chat")} />
+        ) : showTools ? (
+          <ToolsPage onBack={() => navigate("chat")} />
+        ) : showSettings ? (
+          <ConversationSettingsPage onBack={() => navigate("chat")} />
+        ) : showLibrary ? (
+          <LibraryPage onBack={() => navigate("chat")} onAdminSetStatus={onAdminSetMcpStatus} />
+        ) : showDocuments ? (
+          <DocumentsPage onBack={() => navigate("chat")} />
+        ) : showBoard ? (
+          <BoardPage onBack={() => navigate("chat")} />
+        ) : (
+          <ChatView
+            chatStream={chatStream}
+            onOpenLibrary={() => navigate("library")}
+            onOpenTools={() => navigate("tools")}
+            onOpenBoard={() => navigate("board")}
+          />
+        )}
+        {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
+        {!showLibrary && !showDocuments && !showBoard && !showAdmin && !showTools && !showSettings && <SourcePanel />}
+      </main>
     </div>
   );
 }

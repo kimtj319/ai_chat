@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import * as api from "../api/client";
 import type { MyAccess, PersonalKeyName } from "../api/types";
+import { ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
 import "./PersonalKeysDialog.css";
 
@@ -21,29 +22,29 @@ const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: str
   },
   {
     name: "gitlab",
-    title: "GitLab 토큰 (wisenut 이슈)",
+    title: "GitLab 개인 키 (wisenut 이슈)",
     multi: true,
-    what: "wisenut 이슈 MCP 가 이 토큰들로 GitLab 이슈를 읽습니다. 토큰마다 볼 수 있는 프로젝트를 모두 합쳐 검색합니다.",
-    how: "프로젝트별 토큰이면 프로젝트마다 하나씩 추가하세요(read_api 권한).",
+    what: "wisenut 이슈 MCP 서버가 이 키들로 GitLab 이슈를 읽습니다. 키마다 볼 수 있는 프로젝트를 모두 합쳐 검색합니다.",
+    how: "GitLab 에서 발급한 키(read_api 권한)가 프로젝트별이면 프로젝트마다 하나씩 추가해 주세요.",
   },
   {
     name: "alphavantage",
     title: "Alpha Vantage API 키 (주식·환율)",
-    what: "Alpha Vantage MCP 가 이 키로 시세·재무 데이터를 조회합니다.",
+    what: "Alpha Vantage MCP 서버가 이 키로 시세·재무 데이터를 조회합니다.",
     how: "alphavantage.co › Get Free API Key 에서 받을 수 있습니다.",
   },
 ];
 
 export function PersonalKeysDialog({ onClose }: { onClose: () => void }) {
   const [access, setAccess] = useState<MyAccess | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
+    setLoadFailed(false);
     try {
       setAccess(await api.getMyAccess());
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
+    } catch {
+      setLoadFailed(true);
     }
   }, []);
 
@@ -58,8 +59,8 @@ export function PersonalKeysDialog({ onClose }: { onClose: () => void }) {
           등록한 키는 이 계정의 웹 검색·wisenut 이슈·Alpha Vantage 호출에만 쓰이며, 저장한 뒤에는 다시 보여 주지 않습니다.
         </p>
       )}
-      {loadError && <p className="message-error">{loadError}</p>}
-      {!access && !loadError && <p className="keys-scope">불러오는 중…</p>}
+      {loadFailed && <LoadFailed message="개인 키 목록을 불러오지 못했습니다." onRetry={() => void load()} />}
+      {!access && !loadFailed && <ListSkeleton rows={3} />}
       {access &&
         KEYS.map((key) => (
           <KeyRow
@@ -138,10 +139,10 @@ function KeyRow({
               <span className="keys-row-item-hint">{item.hint}</span>
               <button
                 type="button"
-                className="btn btn-secondary keys-row-item-remove"
+                className="btn btn-sm btn-danger-quiet"
                 disabled={busy}
                 onClick={() => void remove(item.id)}
-                aria-label={`${item.label || item.hint} 토큰 삭제`}
+                aria-label={`${item.label || item.hint} 키 삭제`}
               >
                 삭제
               </button>
@@ -157,7 +158,7 @@ function KeyRow({
             value={label}
             onChange={(event) => setLabel(event.target.value)}
             placeholder="이름(선택, 예: 프로젝트명)"
-            aria-label="토큰 이름"
+            aria-label="키 이름"
             maxLength={60}
           />
         )}
@@ -166,15 +167,15 @@ function KeyRow({
           type="password"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder={spec.multi ? (state.set ? "토큰을 더 추가하려면 붙여 넣으세요" : "토큰을 붙여 넣으세요") : state.set ? "새 키로 바꾸려면 입력" : "키를 붙여 넣으세요"}
+          placeholder={spec.multi ? (state.set ? "키를 더 추가하려면 붙여 넣으세요" : "키를 붙여 넣으세요") : state.set ? "새 키로 바꾸려면 입력" : "키를 붙여 넣으세요"}
           autoComplete="new-password"
           spellCheck={false}
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || value.trim().length === 0}>
+        <button type="submit" className="btn btn-sm" disabled={busy || value.trim().length === 0}>
           {spec.multi ? "추가" : "저장"}
         </button>
         {state.set && !spec.multi && (
-          <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void remove()}>
+          <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={() => void remove()}>
             삭제
           </button>
         )}

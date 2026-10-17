@@ -291,3 +291,94 @@ export const PARAM_COPY: Record<string, Record<string, string>> = {
 export function paramCopy(tool: string, path: string, fallback: string | undefined): string | undefined {
   return PARAM_COPY[tool]?.[path] ?? fallback;
 }
+
+// ---- 답변 속 도구 사용 줄 ----
+//
+// 답변 위의 접힌 줄은 함수 이름(rag_search) 대신 사람이 한 일(문서 검색)로 쓴다.
+// 함수 이름은 펼친 상세에만 남는다.
+
+/** 도구 이름 → 사용자가 읽는 동사. 여기에 없는 내장 도구는 '도구 사용'. */
+export const TOOL_VERBS: Record<string, string> = {
+  rag_search: "문서 검색",
+  rag_fetch: "문서 읽기",
+  rag_collections: "문서 목록 확인",
+  web_search: "웹 검색",
+  http_fetch: "웹 페이지 읽기",
+  get_current_time: "시간 확인",
+  calculator: "계산",
+};
+
+const GENERIC_VERB = "도구 사용";
+
+/**
+ * 한 도구 호출의 동사. MCP 도구(`mcp__{slug}__{tool}`)는 그 서버의 표시 이름을
+ * 알면 "<이름> 사용", 모르면 '도구 사용'이다. `serverNames` 는 slug → 표시 이름.
+ */
+export function toolVerb(name: string, serverNames?: Record<string, string>): string {
+  const known = TOOL_VERBS[name];
+  if (known) return known;
+  if (name.startsWith("browser_")) return "크롬 조작";
+  if (name.startsWith("mcp__")) {
+    const [, slug = "", tool = ""] = name.split("__");
+    if (slug === "gitlab" || tool.startsWith("gitlab_")) return "GitLab 이슈 조회";
+    const display = serverNames?.[slug];
+    return display ? `${display} 사용` : GENERIC_VERB;
+  }
+  if (name.startsWith("gitlab_")) return "GitLab 이슈 조회";
+  return GENERIC_VERB;
+}
+
+const ARG_KEYS = ["query", "q", "keyword", "expression"] as const;
+const ARG_MAX_CHARS = 24;
+
+/** 호출 인자 중 무엇을 찾았는지 보여 줄 한 토막(질의·수식). 없으면 null. */
+export function toolArgPreview(args: unknown): string | null {
+  let value: unknown = args;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  for (const key of ARG_KEYS) {
+    const raw = record[key];
+    if (typeof raw !== "string" && typeof raw !== "number") continue;
+    const text = String(raw).replace(/\s+/g, " ").trim();
+    if (text.length === 0) continue;
+    const chars = Array.from(text);
+    return chars.length > ARG_MAX_CHARS ? `${chars.slice(0, ARG_MAX_CHARS).join("")}…` : text;
+  }
+  return null;
+}
+
+export type ToolCallStatus = "pending" | "ok" | "fail";
+
+/**
+ * 접힌 도구 줄의 글. 진행 중이면 가장 최근에 시작해 아직 끝나지 않은 호출을
+ * "문서 검색 중… (2/3)" 처럼, 끝났으면 첫 호출로 "문서 검색 · "질의" 외 1건".
+ */
+export function toolUsageSummary(
+  calls: { name: string; arguments: unknown }[],
+  statuses: ToolCallStatus[],
+  serverNames?: Record<string, string>,
+): { text: string; running: boolean } {
+  const first = calls[0];
+  if (!first) return { text: "", running: false };
+  const pendingIndex = statuses.lastIndexOf("pending");
+  const pending = calls[pendingIndex];
+  if (pending) {
+    const verb = toolVerb(pending.name, serverNames);
+    const step = calls.length > 1 ? ` (${pendingIndex + 1}/${calls.length})` : "";
+    return { text: `${verb} 중…${step}`, running: true };
+  }
+  const arg = toolArgPreview(first.arguments);
+  const failed = statuses.filter((s) => s === "fail").length;
+  let text = toolVerb(first.name, serverNames);
+  if (arg) text += ` · "${arg}"`;
+  if (calls.length > 1) text += ` 외 ${calls.length - 1}건`;
+  if (failed > 0) text += ` · 실패 ${failed}건`;
+  return { text, running: false };
+}

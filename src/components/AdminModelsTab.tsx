@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/client";
 import type { ModelCatalogEntry, ModelEndpoint } from "../api/types";
+import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
+import { ModelEndpointDialog } from "./ModelEndpointDialog";
 
 /** "http://10.0.0.2:30023/v1" → 보이는 조각들. 포트를 안 적었으면 스킴의 기본값을 밝힌다. */
 function partsOf(baseUrl: string): { scheme: string; host: string; port: string; path: string } {
@@ -32,16 +34,17 @@ function reasoningLabel(entry: ModelCatalogEntry | undefined): string {
 }
 
 /**
- * 관리자 메뉴 › 모델 — 지금 연결된 서빙 서버와 그 서버가 내주는 모델.
+ * 관리자 메뉴 › 모델 — 지금 연결된 모델 서버와 그 서버가 내주는 모델.
  *
  * 서버마다 주소를 스킴·호스트(IP)·포트·경로로 나눠 보이고, 모델마다 종류(대화·임베딩·재순위),
- * 컨텍스트 길이, 추론 조절 방식(REASONING_PROFILES)을 보인다. 고치는 곳은 사이드바 설정의
- * "모델 연동" 이다 — 여기는 보는 곳.
+ * 컨텍스트 길이, 추론 조절 방식(REASONING_PROFILES)을 보인다. 서버를 더하고 빼는 것은
+ * 이 탭의 "모델 서버 연동" 에서 한다 — 보는 곳과 고치는 곳이 한자리에 있다.
  */
 export function AdminModelsTab() {
   const [endpoints, setEndpoints] = useState<ModelEndpoint[] | null>(null);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,12 +61,52 @@ export function AdminModelsTab() {
     void load();
   }, [load]);
 
-  if (error) return <p className="admin-error" role="alert">{error}</p>;
-  if (!endpoints) return <p className="admin-empty">불러오는 중…</p>;
-  if (endpoints.length === 0) return <p className="admin-empty">연결된 서빙 서버가 없습니다.</p>;
+  const openDialog = () => setDialogOpen(true);
+  const dialog = dialogOpen && (
+    <ModelEndpointDialog
+      onClose={() => {
+        setDialogOpen(false);
+        // 대화상자에서 더하거나 뺀 것이 곧장 보이도록.
+        void load();
+      }}
+    />
+  );
+  const toolbar = (
+    <div className="admin-models-toolbar">
+      <button type="button" className="btn btn-primary" onClick={openDialog}>
+        모델 서버 연동
+      </button>
+    </div>
+  );
+
+  if (!endpoints || endpoints.length === 0)
+    return (
+      <div className="admin-models">
+        {toolbar}
+        {error && !endpoints ? (
+          <LoadFailed message="모델 서버 목록을 불러오지 못했습니다." detail={error} onRetry={() => void load()} />
+        ) : !endpoints ? (
+          <ListSkeleton rows={2} />
+        ) : (
+          <EmptyState
+            title="연결된 모델 서버가 없습니다"
+            reason="모델 서버를 연동하면 그 서버의 모델을 대화에서 고를 수 있습니다."
+            actionLabel="모델 서버 연동"
+            onAction={openDialog}
+          />
+        )}
+        {dialog}
+      </div>
+    );
 
   return (
     <div className="admin-models">
+      {toolbar}
+      {error && (
+        <p className="admin-error" role="alert">
+          {error}
+        </p>
+      )}
       {endpoints.map((endpoint) => {
         const parts = partsOf(endpoint.baseUrl);
         const entries = catalog.filter((entry) => entry.baseUrl === endpoint.baseUrl || entry.endpoint === endpoint.label);
@@ -141,8 +184,9 @@ export function AdminModelsTab() {
       })}
       <p className="admin-model-foot">
         모델별 추론 조절 방식은 서버 설정 <code>REASONING_PROFILES</code> 로 정합니다(예:{" "}
-        <code>모델이름=fixed,다른모델=budget:256</code>). 서버를 추가·삭제하는 곳은 사이드바 설정의 "모델 연동" 입니다.
+        <code>모델이름=fixed,다른모델=budget:256</code>).
       </p>
+      {dialog}
     </div>
   );
 }

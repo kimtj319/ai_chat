@@ -4,7 +4,9 @@ import type { BoardPostStatus, BoardPostSummary, BoardPostView } from "../api/ty
 import { BOARD_HASH, boardPostHash, boardPostIdFromHash } from "../routes";
 import { cachedBoardList, loadBoardList } from "../state/boardCache";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
+import { PageHeader } from "./PageHeader";
 import "./BoardPage.css";
 
 /**
@@ -60,6 +62,8 @@ export function BoardPage({ onBack }: Props) {
   const [tab, setTab] = useState<Tab>("open");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(() => cachedBoardList() === null);
+  /** 목록을 가져오지 못했다. 보여 줄 지난 목록이 없으면 목록 자리에 그린다. */
+  const [listFailed, setListFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -105,8 +109,9 @@ export function BoardPage({ onBack }: Props) {
       const body = await loadBoardList();
       setPosts(body.posts);
       setKnownTags(body.tags);
-    } catch (err) {
-      setError(messageOf(err));
+      setListFailed(false);
+    } catch {
+      setListFailed(true);
     } finally {
       setListLoading(false);
     }
@@ -206,35 +211,26 @@ export function BoardPage({ onBack }: Props) {
 
   return (
     <section className="board-page">
-      <header className="board-header">
-        <button
-          type="button"
-          className="btn-icon board-back"
-          onClick={onDetail ? showList : onBack}
-          data-back-to-chat={onDetail ? undefined : true}
-          // 같은 자리의 버튼이지만 가는 곳이 다르다. 화면을 못 보는 사람에게는
-          // 이 문구가 유일한 단서다.
-          aria-label={onDetail ? "게시판 목록으로" : "대화로 돌아가기"}
-          data-tooltip={onDetail ? "목록으로" : "대화로"}
-        >
-          <BackIcon />
-        </button>
-        <div className="board-header-text">
-          <h2 className="board-title">문의 게시판</h2>
-          <p className="board-subtitle">
-            {onDetail
-              ? post
-                ? `${post.status === "open" ? "열림" : "닫힘"} · 답변 ${post.replies.length}개`
-                : "글을 불러오는 중"
-              : `열림 ${counts.open}개 · 닫힘 ${counts.closed}개${tagFilter ? ` · #${tagFilter} 만` : ""}`}
-          </p>
-        </div>
-        {!onDetail && (
-          <button type="button" className="btn btn-primary" onClick={() => setComposing(true)} disabled={busy}>
-            문의 올리기
-          </button>
-        )}
-      </header>
+      {/* 뒤로 단추는 늘 대화로 간다(서랍 화면에서는 숨는다). 글에서 목록으로 가는
+          길은 본문 맨 위의 "목록으로" 다 — 둘은 다른 일이라 한 단추에 겹치지 않는다. */}
+      <PageHeader
+        title="문의 게시판"
+        onBack={onBack}
+        subtitle={
+          onDetail
+            ? post
+              ? `${post.status === "open" ? "열림" : "닫힘"} · 답변 ${post.replies.length}개`
+              : "글을 불러오는 중"
+            : `열림 ${counts.open}개 · 닫힘 ${counts.closed}개${tagFilter ? ` · #${tagFilter} 만` : ""}`
+        }
+        actions={
+          !onDetail && (
+            <button type="button" className="btn btn-primary" onClick={() => setComposing(true)} disabled={busy}>
+              문의 올리기
+            </button>
+          )
+        }
+      />
 
       <div className="board-body" ref={bodyRef}>
         {error && (
@@ -242,6 +238,22 @@ export function BoardPage({ onBack }: Props) {
             {error}
             <button type="button" className="board-banner-close" onClick={() => setError(null)} aria-label="닫기">
               ×
+            </button>
+          </p>
+        )}
+
+        {onDetail && (
+          <button type="button" className="btn btn-sm btn-secondary board-to-list" onClick={showList}>
+            <ListBackIcon />
+            목록으로
+          </button>
+        )}
+
+        {listFailed && posts.length > 0 && !onDetail && (
+          <p className="board-error" role="alert">
+            문의 목록을 새로 불러오지 못했습니다.
+            <button type="button" className="btn btn-sm board-banner-retry" onClick={() => void reload()}>
+              다시 시도
             </button>
           </p>
         )}
@@ -312,7 +324,16 @@ export function BoardPage({ onBack }: Props) {
             <ul className="board-list">
               {/* 불러오는 동안 빈 화면을 보여 주면, 글이 없는 것인지 아직 안 온
                   것인지 구분할 수 없다. */}
-              {listLoading && posts.length === 0 && <li className="board-row-empty">불러오는 중…</li>}
+              {listLoading && posts.length === 0 && (
+                <li className="board-row-loading">
+                  <ListSkeleton rows={4} />
+                </li>
+              )}
+              {listFailed && !listLoading && posts.length === 0 && (
+                <li className="board-row-empty">
+                  <LoadFailed message="문의 목록을 불러오지 못했습니다." onRetry={() => void reload()} />
+                </li>
+              )}
 
               {visible.map((summary) => (
                 <li key={summary.id} className="board-row" data-status={summary.status}>
@@ -335,13 +356,21 @@ export function BoardPage({ onBack }: Props) {
                 </li>
               ))}
 
-              {visible.length === 0 && !listLoading && (
+              {visible.length === 0 && !listLoading && !(listFailed && posts.length === 0) && (
                 <li className="board-row-empty">
-                  {tagFilter
-                    ? `#${tagFilter} 태그가 붙은 ${tab === "open" ? "열린" : "닫힌"} 문의가 없습니다.`
-                    : tab === "open"
-                      ? "열린 문의가 없습니다. 궁금한 것이 있으면 올려 주세요."
-                      : "닫힌 문의가 없습니다."}
+                  {tagFilter ? (
+                    `#${tagFilter} 태그가 붙은 ${tab === "open" ? "열린" : "닫힌"} 문의가 없습니다.`
+                  ) : tab === "open" ? (
+                    <EmptyState
+                      title="열린 문의가 없습니다"
+                      reason="사용 중 막히거나 바라는 기능이 있으면 남겨 주세요. 담당자가 이곳에 답합니다."
+                      actionLabel="문의 올리기"
+                      onAction={() => setComposing(true)}
+                      actionDisabled={busy}
+                    />
+                  ) : (
+                    "닫힌 문의가 없습니다."
+                  )}
                 </li>
               )}
             </ul>
@@ -364,9 +393,9 @@ export function BoardPage({ onBack }: Props) {
 
       {confirming && (
         <ConfirmDialog
-          title="문의를 지울까요?"
-          message={`"${confirming.title}" 과 달린 답변이 함께 사라집니다. 되돌릴 수 없습니다.`}
-          confirmLabel="지우기"
+          title="문의를 삭제할까요?"
+          message={`"${confirming.title}" 글과 달린 답변이 함께 삭제됩니다. 되돌릴 수 없습니다.`}
+          confirmLabel="삭제"
           danger
           onConfirm={() => void removePost(confirming)}
           onCancel={() => setConfirming(null)}
@@ -437,8 +466,8 @@ function PostDetail({ post, busy, onStatus, onDelete, onReplied, onError }: Deta
           >
             {post.status === "open" ? "닫기" : "다시 열기"}
           </button>
-          <button type="button" className="btn btn-danger" disabled={busy} onClick={onDelete}>
-            지우기
+          <button type="button" className="btn btn-danger-quiet" disabled={busy} onClick={onDelete}>
+            삭제
           </button>
         </div>
       )}
@@ -666,9 +695,9 @@ function Composer({ knownTags, onCancel, onDone, onError }: ComposerProps) {
   );
 }
 
-function BackIcon() {
+function ListBackIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );

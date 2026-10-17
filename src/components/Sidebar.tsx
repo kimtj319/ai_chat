@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { pushOverlay } from "../ui/overlayStack";
 import { useAuth } from "../auth/AuthContext";
 import { useModels } from "../hooks/useModels";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
 import { parseImportedConversations } from "../state/exportImport";
+import { filterByTitle, groupConversationsByDate, splitMatch } from "../state/conversationGroups";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { CapabilityIcon } from "./CapabilityIcon";
@@ -142,6 +143,15 @@ function CloseIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.2-4.2" />
+    </svg>
+  );
+}
+
 function KeyIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -238,7 +248,12 @@ export function Sidebar({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Ctrl/Cmd+K 를 누를 때마다 하나씩 는다. 접힌 레일에서 누르면 펼친 뒤 검색 칸이 그려지고
+  // 나서야 포커스를 줄 수 있으므로, 요청을 값으로 남겨 두고 그린 뒤에 처리한다.
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // 메뉴가 떠 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
@@ -277,6 +292,32 @@ export function Sidebar({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [settingsOpen]);
+
+  // Ctrl/Cmd+K: 대화 제목 검색으로. 접힌 레일에는 검색 칸이 없어 펼치고, 설정 화면이
+  // 덮여 있으면 걷는다. 좁은 화면에서 서랍이 닫혀 있으면 검색 칸이 보이지 않아 포커스가
+  // 들어가지 않는다(서랍 여닫기는 App 의 몫).
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
+      if (event.code !== "KeyK" && event.key.toLowerCase() !== "k") return;
+      // 떠 있는 대화상자 밖으로 포커스를 빼내지 않는다.
+      const input = searchRef.current;
+      const modals = document.querySelectorAll('[aria-modal="true"]');
+      if ([...modals].some((modal) => !input || !modal.contains(input))) return;
+      event.preventDefault();
+      setSettingsOpen(false);
+      setSidebarCollapsed(false);
+      setSearchFocusRequest((n) => n + 1);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [setSidebarCollapsed]);
+
+  useEffect(() => {
+    if (searchFocusRequest === 0) return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [searchFocusRequest, ui.sidebarCollapsed]);
 
   // 브라우저 기본 alert 는 앱 밖으로 튀고, 탭 전체를 막고, 이 앱의 테마를
   // 따르지 않는다. 실패도 앱이 말하게 한다.
@@ -390,18 +431,23 @@ export function Sidebar({
         </button>
       )}
 
-      <p className="sidebar-settings-heading">모델</p>
-      <button
-        type="button"
-        className="sidebar-settings-action"
-        onClick={() => {
-          setSettingsOpen(false);
-          setEndpointsOpen(true);
-        }}
-      >
-        <ServerIcon />
-        <span>모델 연동</span>
-      </button>
+      {/* 모델 서버 연동은 서버 전체에 걸리는 설정이라 관리자에게만 보인다. */}
+      {me?.role === "admin" && (
+        <>
+          <p className="sidebar-settings-heading">모델</p>
+          <button
+            type="button"
+            className="sidebar-settings-action"
+            onClick={() => {
+              setSettingsOpen(false);
+              setEndpointsOpen(true);
+            }}
+          >
+            <ServerIcon />
+            <span>모델 연동</span>
+          </button>
+        </>
+      )}
 
       <p className="sidebar-settings-heading">대화</p>
       {/* 파일 입력(fileInputRef)은 메뉴 쪽에 그대로 있다 — 설정 화면은 그 위에 덮일 뿐이라
@@ -458,8 +504,8 @@ export function Sidebar({
       {keysOpen && <PersonalKeysDialog onClose={() => setKeysOpen(false)} />}
     {confirmLogout && (
       <ConfirmDialog
-        title="로그아웃"
-        message={`${me?.name ?? ""} (${me?.id ?? ""}) 계정에서 로그아웃하시겠습니까?`}
+        title="로그아웃할까요?"
+        message={`${me?.name ?? ""} (${me?.id ?? ""}) 계정에서 로그아웃합니다.`}
         confirmLabel="로그아웃"
         onCancel={() => setConfirmLogout(false)}
         onConfirm={() => {
@@ -490,8 +536,9 @@ export function Sidebar({
           <button
             type="button"
             className="btn-icon sidebar-rail-item"
-            data-tooltip="새 대화"
+            data-tooltip="새 대화 (Ctrl+Shift+O)"
             aria-label="새 대화"
+            aria-keyshortcuts="Control+Shift+O Meta+Shift+O"
             onClick={startNewConversation}
           >
             <EditIcon />
@@ -499,8 +546,8 @@ export function Sidebar({
           <button
             type="button"
             className={`btn-icon sidebar-rail-item${libraryOpen ? " selected" : ""}`}
-            data-tooltip="라이브러리"
-            aria-label="라이브러리"
+            data-tooltip="커넥터"
+            aria-label="커넥터"
             aria-current={libraryOpen ? "true" : undefined}
             onClick={onOpenLibrary}
           >
@@ -570,6 +617,8 @@ export function Sidebar({
   // Every page that replaces the body belongs in this list. Leaving one out
   // lights up "새 대화" while the user is plainly looking at something else,
   // and the only clue that the row lies is the screen itself.
+  const visibleConversations = filterByTitle(conversations, query);
+
   const isFreshView =
     (!activeConversation || activeConversation.messages.length === 0) &&
     !conversationSettingsOpen &&
@@ -623,6 +672,8 @@ export function Sidebar({
           type="button"
           className={`sidebar-nav-item${isFreshView ? " selected" : ""}`}
           aria-current={isFreshView ? "true" : undefined}
+          aria-keyshortcuts="Control+Shift+O Meta+Shift+O"
+          data-tooltip="Ctrl+Shift+O"
           onClick={startNewConversation}
         >
           <EditIcon />
@@ -635,7 +686,7 @@ export function Sidebar({
           onClick={onOpenLibrary}
         >
           <LibraryIcon />
-          <span>라이브러리</span>
+          <span>커넥터</span>
         </button>
         <button
           type="button"
@@ -672,78 +723,135 @@ export function Sidebar({
         <input ref={fileInputRef} type="file" accept="application/json" hidden onChange={(e) => void handleImportFile(e)} />
       </nav>
 
-      <p className="sidebar-section-label">최근</p>
+      {/* 검색 칸. 목록 위에 붙박이로 두고(목록만 스크롤된다), 거르는 것은 제목뿐이다. */}
+      <div className="sidebar-search" role="search">
+        <SearchIcon />
+        <input
+          ref={searchRef}
+          type="search"
+          className="sidebar-search-input"
+          placeholder="대화 제목 검색 (Ctrl+K)"
+          aria-label="대화 제목 검색"
+          aria-keyshortcuts="Control+K Meta+K"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            // Esc 는 먼저 검색어를 지운다. 전역 Esc(생성 중단)까지 가지 않게 여기서 멈춘다.
+            if (event.key === "Escape" && query) {
+              event.preventDefault();
+              event.nativeEvent.stopPropagation();
+              setQuery("");
+            }
+          }}
+        />
+        {query && (
+          <button
+            type="button"
+            className="btn-icon sidebar-search-clear"
+            aria-label="검색어 지우기"
+            data-tooltip="검색어 지우기"
+            onClick={() => {
+              setQuery("");
+              searchRef.current?.focus();
+            }}
+          >
+            <CloseIcon />
+          </button>
+        )}
+      </div>
 
       <div className="sidebar-recents">
         {conversationsLoading && <p className="sidebar-empty">불러오는 중…</p>}
         {conversationsError && <p className="sidebar-empty">{conversationsError}</p>}
         {!conversationsLoading && !conversationsError && conversations.length === 0 && (
-          <p className="sidebar-empty">대화가 없습니다. 새 대화를 시작해보세요.</p>
-        )}
-        {conversations.map((conversation) => (
-          <div
-            key={conversation.id}
-            className={`sidebar-item${conversation.id === activeConversationId ? " active" : ""}`}
-            onClick={() => {
-              onShowChat();
-              void selectConversation(conversation.id);
-            }}
-          >
-            <CapabilityIcon kind={conversation.kind} className="sidebar-item-kind" />
-
-            {editingId === conversation.id ? (
-              <input
-                autoFocus
-                className="sidebar-item-input"
-                value={editValue}
-                onChange={(event) => setEditValue(event.target.value)}
-                onBlur={() => void commitEditing()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") void commitEditing();
-                  if (event.key === "Escape") setEditingId(null);
-                }}
-                onClick={(event) => event.stopPropagation()}
-              />
-            ) : (
-              <span
-                className="sidebar-item-title"
-                onDoubleClick={(event) => {
-                  event.stopPropagation();
-                  startEditing(conversation.id, conversation.title);
-                }}
-                data-tooltip={conversation.title}
-              >
-                {conversation.title}
-              </span>
-            )}
-
-            <div className="sidebar-item-actions">
-              <button
-                type="button"
-                className="btn-icon"
-                data-tooltip="이름 변경"
-                aria-label="대화 이름 변경"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  startEditing(conversation.id, conversation.title);
-                }}
-              >
-                <EditIcon />
-              </button>
-              <button
-                type="button"
-                className="btn-icon"
-                data-tooltip="삭제"
-                aria-label="대화 삭제"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setPendingDeleteId(conversation.id);
-                }}
-              >
-                <TrashIcon />
-              </button>
-            </div>
+          <div className="sidebar-empty">
+            <p>아직 대화가 없습니다</p>
+            <p className="sidebar-empty-hint">위의 새 대화로 시작해 보세요</p>
           </div>
+        )}
+        {conversations.length > 0 && visibleConversations.length === 0 && (
+          <p className="sidebar-empty">일치하는 대화가 없습니다</p>
+        )}
+        {groupConversationsByDate(visibleConversations).map((group) => (
+          <Fragment key={group.key}>
+            <p className="sidebar-section-label">{group.label}</p>
+            {group.items.map((conversation) => {
+              const match = splitMatch(conversation.title, query);
+              return (
+                <div
+                  key={conversation.id}
+                  className={`sidebar-item${conversation.id === activeConversationId ? " active" : ""}`}
+                  onClick={() => {
+                    onShowChat();
+                    void selectConversation(conversation.id);
+                  }}
+                >
+                  <CapabilityIcon kind={conversation.kind} className="sidebar-item-kind" />
+
+                  {editingId === conversation.id ? (
+                    <input
+                      autoFocus
+                      className="sidebar-item-input"
+                      value={editValue}
+                      onChange={(event) => setEditValue(event.target.value)}
+                      onBlur={() => void commitEditing()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void commitEditing();
+                        if (event.key === "Escape") setEditingId(null);
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  ) : (
+                    <span
+                      className="sidebar-item-title"
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        startEditing(conversation.id, conversation.title);
+                      }}
+                      data-tooltip={conversation.title}
+                    >
+                      {match ? (
+                        <>
+                          {match[0]}
+                          <mark className="sidebar-item-match">{match[1]}</mark>
+                          {match[2]}
+                        </>
+                      ) : (
+                        conversation.title
+                      )}
+                    </span>
+                  )}
+
+                  <div className="sidebar-item-actions">
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      data-tooltip="이름 변경"
+                      aria-label={`「${conversation.title}」 대화 이름 변경`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        startEditing(conversation.id, conversation.title);
+                      }}
+                    >
+                      <EditIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon"
+                      data-tooltip="삭제"
+                      aria-label={`「${conversation.title}」 대화 삭제`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPendingDelete({ id: conversation.id, title: conversation.title });
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </Fragment>
         ))}
       </div>
 
@@ -802,17 +910,19 @@ export function Sidebar({
 
       {settingsDialogs}
 
-      {pendingDeleteId && (
+      {pendingDelete && (
         <ConfirmDialog
-          title="대화 삭제"
-          message="이 대화를 삭제하시겠습니까? 되돌릴 수 없습니다."
+          title={`「${pendingDelete.title}」 대화를 삭제할까요?`}
+          message="메시지와 첨부 파일이 함께 삭제되며 되돌릴 수 없습니다."
           confirmLabel="삭제"
           danger
-          onCancel={() => setPendingDeleteId(null)}
+          onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
-            const id = pendingDeleteId;
-            setPendingDeleteId(null);
-            void deleteConversation(id).catch(reportError);
+            const { id, title } = pendingDelete;
+            setPendingDelete(null);
+            void deleteConversation(id)
+              .then(() => showToast(`「${title}」 대화를 삭제했습니다.`))
+              .catch(reportError);
           }}
         />
       )}

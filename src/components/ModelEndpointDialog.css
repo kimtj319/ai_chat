@@ -81,6 +81,7 @@
 .endpoint-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-6);
   flex-wrap: wrap;
 }
@@ -183,7 +184,6 @@
   flex-shrink: 0;
   width: 15px;
   height: 15px;
-  accent-color: var(--primary);
 }
 
 .model-chooser-empty {
@@ -194,8 +194,6 @@
 
 .endpoint-models-button {
   flex-shrink: 0;
-  padding: var(--space-2) var(--space-6);
-  font-size: var(--text-xs);
 }
 
 /* 이미 등록된 서버의 줄 아래에 펼치는 고르기. 줄이 꺾여 이 칸이 한 줄을 다 쓴다. */

@@ -1,10 +1,13 @@
 import { useState } from "react";
 import type { ClientChatMessage } from "../state/types";
+import { toolUsageSummary, type ToolCallStatus } from "../state/toolCopy";
 import { ToolCallBlock } from "./ToolCallBlock";
 import "./ToolUsagePanel.css";
 
 interface ToolUsagePanelProps {
   message: ClientChatMessage;
+  /** MCP 서버 slug → 표시 이름. 있으면 "<이름> 사용", 없으면 '도구 사용'. */
+  mcpServerNames?: Record<string, string>;
 }
 
 function ChevronIcon() {
@@ -21,7 +24,7 @@ function ChevronIcon() {
  * while a call is still running, and only reveals the calls when the user
  * clicks. Keeps the transcript readable when a turn makes several calls.
  */
-export function ToolUsagePanel({ message }: ToolUsagePanelProps) {
+export function ToolUsagePanel({ message, mcpServerNames }: ToolUsagePanelProps) {
   const [expanded, setExpanded] = useState(false);
   const toolCalls = message.toolCalls ?? [];
 
@@ -32,22 +35,15 @@ export function ToolUsagePanel({ message }: ToolUsagePanelProps) {
     final: message.toolResults?.find((r) => r.id === id),
   });
 
-  const running = toolCalls.filter((c) => {
+  const statuses: ToolCallStatus[] = toolCalls.map((c) => {
     const { live, final } = resultFor(c.id);
-    return !final && !live;
-  }).length;
-  const failed = toolCalls.filter((c) => {
-    const { live, final } = resultFor(c.id);
-    return final ? !final.ok : live ? !live.ok : false;
-  }).length;
+    const result = final ?? live;
+    return result ? (result.ok ? "ok" : "fail") : "pending";
+  });
 
-  // One line that says what happened without having to open the panel.
-  const summary =
-    running > 0
-      ? `도구 사용 중… (${toolCalls.length}건)`
-      : failed > 0
-        ? `도구 사용 ${toolCalls.length}건 · 실패 ${failed}건`
-        : `도구 사용 ${toolCalls.length}건`;
+  // One line in the user's words — what was done and for what — without
+  // having to open the panel. Function names live in the expanded blocks.
+  const summary = toolUsageSummary(toolCalls, statuses, mcpServerNames);
 
   return (
     <div className="tool-usage-panel">
@@ -61,16 +57,23 @@ export function ToolUsagePanel({ message }: ToolUsagePanelProps) {
           <ChevronIcon />
         </span>
         <span className="tool-usage-label">
-          {running > 0 ? <span className="thinking-shimmer">{summary}</span> : summary}
+          {summary.running ? <span className="thinking-shimmer">{summary.text}</span> : summary.text}
         </span>
-        <span className="tool-usage-names">{toolCalls.map((c) => c.name).join(", ")}</span>
       </button>
 
       <div className={`tool-usage-collapse${expanded ? " expanded" : ""}`}>
         <div className="tool-usage-body">
           {toolCalls.map((call) => {
             const { live, final } = resultFor(call.id);
-            return <ToolCallBlock key={call.id} call={call} liveResult={live} finalResult={final} />;
+            return (
+              <ToolCallBlock
+                key={call.id}
+                call={call}
+                liveResult={live}
+                finalResult={final}
+                mcpServerNames={mcpServerNames}
+              />
+            );
           })}
         </div>
       </div>

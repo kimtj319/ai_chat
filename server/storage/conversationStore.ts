@@ -8,6 +8,18 @@ import { DEFAULT_SETTINGS } from "../types.js";
 import { listTools } from "../tools/index.js";
 import type { Conversation, ConversationSettings, ConversationSummary, HistorySummary } from "../types.js";
 
+/** 새로 만든 대화의 제목. 첫 메시지가 오면 그 내용으로 바뀐다. */
+export const DEFAULT_CONVERSATION_TITLE = "새 대화";
+
+/**
+ * 아직 이름이 붙지 않은 대화인가. 예전 기본 제목 "New Chat" 으로 저장된 파일도
+ * 남아 있으므로 둘 다 기본 제목으로 친다.
+ */
+export function isDefaultConversationTitle(title: string): boolean {
+  const trimmed = title.trim();
+  return trimmed.length === 0 || trimmed === DEFAULT_CONVERSATION_TITLE || trimmed === "New Chat";
+}
+
 function lockKey(ownerId: string, conversationId: string): string {
   return `conv:${ownerId}:${conversationId}`;
 }
@@ -70,7 +82,7 @@ export async function createConversation(
   const now = new Date().toISOString();
   const conversation: Conversation = {
     id: crypto.randomUUID(),
-    title: input.title?.trim() || "New Chat",
+    title: input.title?.trim() || DEFAULT_CONVERSATION_TITLE,
     systemPrompt: input.systemPrompt ?? "",
     model: input.model ?? "",
     settings: { ...DEFAULT_SETTINGS },

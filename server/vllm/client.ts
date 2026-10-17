@@ -34,6 +34,21 @@ export interface CatalogEntry {
 }
 
 /**
+ * What has already been said about a model, so each verdict is logged once per
+ * process rather than on every catalog refresh. The verdicts themselves are
+ * cached in capability.ts; only the log line repeated — a gateway that kept
+ * listing a retired model wrote the same "excluding" line ~50,000 times on the
+ * production server (2026-10-17). A changed reason is logged again.
+ */
+const reported = new Set<string>();
+
+function warnOnce(key: string, message: string): void {
+  if (reported.has(key)) return;
+  reported.add(key);
+  console.warn(message);
+}
+
+/**
  * List one endpoint's models and classify each one. Models that nothing can
  * use are dropped here rather than in the route, so `resolveModel` can never
  * fall back onto one either.
@@ -57,12 +72,16 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
     const verdict = verdicts.get(m.id);
     if (verdict?.capability === "unusable") {
       // One line per exclusion, naming the model and the server's own words.
-      console.warn(`[vllm] excluding "${m.id}" on ${endpoint.label} (${endpoint.baseUrl}): ${verdict.reason}`);
+      warnOnce(
+        `x\u0000${endpoint.baseUrl}\u0000${m.id}\u0000${verdict.reason}`,
+        `[vllm] excluding "${m.id}" on ${endpoint.label} (${endpoint.baseUrl}): ${verdict.reason}`,
+      );
       continue;
     }
     if (!verdict?.capability) {
       // Undecided (see capability.ts): keep it, assume chat, and say so.
-      console.warn(`[vllm] "${m.id}" on ${endpoint.label}: ${verdict?.reason ?? "no verdict"} — listing it as chat`);
+      const reason = verdict?.reason ?? "no verdict";
+      warnOnce(`u\u0000${endpoint.baseUrl}\u0000${m.id}\u0000${reason}`, `[vllm] "${m.id}" on ${endpoint.label}: ${reason} — listing it as chat`);
     }
     entries.push({
       id: m.id,

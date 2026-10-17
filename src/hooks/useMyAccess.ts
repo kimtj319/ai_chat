@@ -37,4 +37,4 @@ export function missingKey(
 }
 
 export const MISSING_KEY_NOTICE =
-  "API 키가 등록되어 있지 않아 이 도구를 사용할 수 없습니다. 설정 › 개인 키 (API 키·토큰)에서 본인 키를 등록하세요.";
+  "API 키가 등록되어 있지 않아 이 도구를 사용할 수 없습니다. 설정 › 개인 키 (API 키·토큰)에서 본인 키를 등록해 주세요.";

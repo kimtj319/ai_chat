@@ -1,11 +1,13 @@
 import type { ToolCall, ToolResult } from "../api/types";
 import type { LiveToolResult } from "../state/types";
+import { toolVerb } from "../state/toolCopy";
 import "./ToolCallBlock.css";
 
 interface ToolCallBlockProps {
   call: ToolCall;
   liveResult?: LiveToolResult;
   finalResult?: ToolResult;
+  mcpServerNames?: Record<string, string>;
 }
 
 function formatJson(value: unknown): string {
@@ -18,7 +20,7 @@ function formatJson(value: unknown): string {
 }
 
 /** Inline, first-class rendering of one tool call + its (eventual) result, used both while a message is still streaming and once it's persisted. */
-export function ToolCallBlock({ call, liveResult, finalResult }: ToolCallBlockProps) {
+export function ToolCallBlock({ call, liveResult, finalResult, mcpServerNames }: ToolCallBlockProps) {
   const status: "pending" | "ok" | "fail" = finalResult
     ? finalResult.ok
       ? "ok"
@@ -37,6 +39,8 @@ export function ToolCallBlock({ call, liveResult, finalResult }: ToolCallBlockPr
     <div className={`tool-call-block tool-call-block-${status}`}>
       <div className="tool-call-header">
         <span className="tool-call-status-dot" aria-hidden="true" />
+        <span className="tool-call-verb">{toolVerb(call.name, mcpServerNames)}</span>
+        {/* 함수 이름은 접힌 줄이 아니라 여기, 펼친 상세에만 남는다. */}
         <span className="tool-call-name">{call.name}</span>
         <span className="tool-call-status-label">
           {status === "pending" ? "실행 중…" : status === "ok" ? "완료" : "실패"}

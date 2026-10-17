@@ -69,20 +69,35 @@
   }
 }
 
+/* The reasoning recedes behind the answer: a size smaller, the muted colour,
+   and a thin rule on the left that marks it as an aside rather than text the
+   model is saying to the user. The rule sits under the caret's column. */
 .thinking-panel-body {
   overflow: hidden;
   min-height: 0;
-  padding: 0 var(--space-7) 0 26px;
+  margin: 0 var(--space-7) 0 20px;
+  padding: 0 0 0 var(--space-5);
+  border-left: 2px solid var(--outline-variant);
   white-space: pre-wrap;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--on-surface-variant);
   max-height: 360px;
   overflow-y: auto;
 }
 
-/* Bottom padding only applies once expanded, so the collapsed grid row can
-   actually shrink to 0 — padding is never clamped away by min-height. */
+/* Bottom spacing only applies once expanded, so the collapsed grid row can
+   actually shrink to 0 — margin is never clamped away by min-height. */
 .thinking-panel-collapse.expanded .thinking-panel-body {
-  padding-bottom: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+/* The seconds tick while the model thinks; fixed-width digits keep the
+   header from jittering on every tick. */
+.thinking-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+.thinking-panel-toggle:disabled {
+  cursor: default;
 }

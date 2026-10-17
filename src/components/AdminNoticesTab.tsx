@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/client";
 import type { Notice } from "../api/types";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { showErrorToast, showToast } from "./Toast";
 
 function formatDate(value: string): string {
@@ -12,7 +13,7 @@ function formatDate(value: string): string {
 }
 
 /**
- * 관리자 메뉴 › 공지사항 — 쓰고, 고치고, 지운다. 올린 공지는 모든 계정의 채팅 머리
+ * 관리자 메뉴 › 공지사항 — 쓰고, 고치고, 삭제한다. 올린 공지는 모든 계정의 채팅 머리
  * 종 아이콘에 점으로 알려지고, 그 사람이 공지 창을 열면 점이 사라진다.
  */
 export function AdminNoticesTab() {
@@ -22,13 +23,14 @@ export function AdminNoticesTab() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<Notice | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setNotices((await api.listNotices()).notices);
-    } catch (err) {
-      showErrorToast(err);
-      setNotices([]);
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
     }
   }, []);
 
@@ -88,10 +90,17 @@ export function AdminNoticesTab() {
 
       <section className="admin-notice-board" aria-label="올린 공지">
         <h2 className="admin-groups-title">올린 공지</h2>
-        {notices === null ? (
-          <p className="admin-empty">불러오는 중…</p>
+        {notices === null && loadFailed ? (
+          <LoadFailed message="공지 목록을 불러오지 못했습니다." onRetry={() => void load()} />
+        ) : notices === null ? (
+          <ListSkeleton rows={3} />
         ) : notices.length === 0 ? (
-          <p className="admin-empty">아직 올린 공지가 없습니다.</p>
+          <EmptyState
+            title="올린 공지가 없습니다"
+            reason="공지를 올리면 모든 계정의 대화 화면 종 아이콘에 새 공지로 알려집니다."
+            actionLabel="공지 쓰기"
+            onAction={() => document.getElementById("notice-title")?.focus()}
+          />
         ) : (
           <ul className="admin-notice-list">
             {notices.map((notice) => (
@@ -107,7 +116,7 @@ export function AdminNoticesTab() {
                 <div className="admin-notice-buttons">
                   <button
                     type="button"
-                    className="btn btn-secondary"
+                    className="btn btn-sm"
                     disabled={busy}
                     onClick={() => {
                       setEditingId(notice.id);
@@ -117,8 +126,8 @@ export function AdminNoticesTab() {
                   >
                     고치기
                   </button>
-                  <button type="button" className="btn btn-danger" disabled={busy} onClick={() => setDeleting(notice)}>
-                    지우기
+                  <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={() => setDeleting(notice)}>
+                    삭제
                   </button>
                 </div>
               </li>
@@ -129,9 +138,9 @@ export function AdminNoticesTab() {
 
       {deleting && (
         <ConfirmDialog
-          title="공지 지우기"
-          message={`"${deleting.title}" 공지를 지우시겠습니까? 모든 계정의 공지 목록에서 사라집니다.`}
-          confirmLabel="지우기"
+          title="공지를 삭제할까요?"
+          message={`"${deleting.title}" 공지가 모든 계정의 공지 목록에서 사라집니다. 되돌릴 수 없습니다.`}
+          confirmLabel="삭제"
           danger
           onCancel={() => setDeleting(null)}
           onConfirm={() => {
@@ -142,7 +151,7 @@ export function AdminNoticesTab() {
               .deleteNotice(target.id)
               .then(() => {
                 if (editingId === target.id) reset();
-                showToast("공지를 지웠습니다.");
+                showToast("공지를 삭제했습니다.");
                 return load();
               })
               .catch(showErrorToast)

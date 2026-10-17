@@ -7,17 +7,9 @@ import { useActiveConversation, useStore } from "../state/StoreContext";
 import type { ActiveConversation } from "../state/StoreContext";
 import { categoryLabel, paramCopy, toolCopy, TYPE_LABELS } from "../state/toolCopy";
 import { MasterDetail } from "./MasterDetail";
+import { PageHeader } from "./PageHeader";
 import { ToggleSwitch } from "./ToggleSwitch";
 import "./ToolsPage.css";
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
-    </svg>
-  );
-}
 
 function typeLabel(node: JsonSchemaNode): string {
   const types = Array.isArray(node.type) ? node.type : node.type ? [node.type] : [];
@@ -80,20 +72,18 @@ export function ToolsPage({ onBack }: { onBack: () => void }) {
 
 function ToolsHeader({ onBack, subtitle, status }: { onBack: () => void; subtitle: string; status?: "idle" | "saving" | "saved" | "error" }) {
   return (
-    <header className="tools-page-header">
-      <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
-        <BackIcon />
-      </button>
-      <div className="tools-page-header-text">
-        <h1 className="tools-page-title">도구 설정</h1>
-        <p className="tools-page-subtitle">
+    <PageHeader
+      title="도구 설정"
+      onBack={onBack}
+      subtitle={
+        <>
           {subtitle}
           {status === "saving" && <span className="tools-panel-saving"> · 저장 중…</span>}
           {status === "saved" && <span className="tools-panel-saved"> · 저장됨</span>}
           {status === "error" && <span className="tools-panel-error"> · 저장 실패</span>}
-        </p>
-      </div>
-    </header>
+        </>
+      }
+    />
   );
 }
 

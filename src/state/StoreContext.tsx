@@ -52,7 +52,8 @@ type Action =
   | { type: "PATCH_ACTIVE_META"; patch: Partial<Conversation> }
   | { type: "APPEND_ACTIVE_MESSAGE"; conversationId: string; message: ClientChatMessage }
   | { type: "PATCH_ACTIVE_MESSAGE"; conversationId: string; messageId: string; patch: Partial<ClientChatMessage> }
-  | { type: "REPLACE_ACTIVE_MESSAGE"; conversationId: string; tempId: string; message: ClientChatMessage };
+  | { type: "REPLACE_ACTIVE_MESSAGE"; conversationId: string; tempId: string; message: ClientChatMessage }
+  | { type: "SET_ACTIVE_MESSAGES"; conversationId: string; messages: ClientChatMessage[] };
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -152,6 +153,11 @@ function reducer(state: State, action: Action): State {
       };
     }
 
+    case "SET_ACTIVE_MESSAGES": {
+      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
+      return { ...state, activeConversation: { ...state.activeConversation, messages: action.messages } };
+    }
+
     default:
       return state;
   }
@@ -214,6 +220,15 @@ interface StoreValue {
   appendMessage: (conversationId: string, message: ClientChatMessage) => void;
   patchMessage: (conversationId: string, messageId: string, patch: Partial<ClientChatMessage>) => void;
   replaceMessage: (conversationId: string, tempId: string, message: ClientChatMessage) => void;
+  /**
+   * 다시 생성·편집 재전송용: 열린 대화에서 마지막 사용자 메시지 뒤를 지우고,
+   * `content` 가 있으면 그 메시지의 내용을 바꾼다. 그 메시지의 id 와, 지우기
+   * 전으로 되돌리는 함수를 돌려준다. 열린 대화가 아니거나 사용자 메시지가 없으면 null.
+   */
+  rewindToLastUserMessage: (
+    conversationId: string,
+    content?: string,
+  ) => { userMessageId: string; restore: () => void } | null;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -424,6 +439,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const rewindToLastUserMessage = useCallback((conversationId: string, content?: string) => {
+    const active = activeConversationRef.current;
+    if (!active || active.id !== conversationId) return null;
+    const before = active.messages;
+    let index = before.length - 1;
+    while (index >= 0 && before[index]?.role !== "user") index--;
+    const user = before[index];
+    if (!user) return null;
+    const messages = [...before.slice(0, index), content === undefined ? user : { ...user, content }];
+    dispatch({ type: "SET_ACTIVE_MESSAGES", conversationId, messages });
+    return {
+      userMessageId: user.id,
+      restore: () => dispatch({ type: "SET_ACTIVE_MESSAGES", conversationId, messages: before }),
+    };
+  }, []);
+
   // 두 값 모두 useMemo 로 감싼다. 객체 리터럴을 그대로 내려보내면 공급자가
   // 다시 그려질 때마다 새 객체가 되어, 안의 내용이 하나도 안 바뀌었어도 모든
   // 소비자가 따라 그려진다.
@@ -462,6 +493,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     appendMessage,
     patchMessage,
     replaceMessage,
+    rewindToLastUserMessage,
     }),
     // 동작들은 전부 useCallback([]) 이라 처음 만들어진 뒤 바뀌지 않는다.
     // 그래서 여기 적힌 상태 조각들만 이 값을 다시 만든다.

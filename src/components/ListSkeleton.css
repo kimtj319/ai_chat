@@ -1,0 +1,99 @@
+.list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 목록 줄과 같은 꼴: 단단한 상자 위에 제목·설명 두 줄. */
+.list-skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--surface-container);
+}
+
+.list-skeleton-line {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--surface-container-highest) 0%,
+    var(--surface-container) 50%,
+    var(--surface-container-highest) 100%
+  );
+  background-size: 200% 100%;
+  animation: list-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.list-skeleton-line[data-width="title"] {
+  width: 32%;
+}
+
+.list-skeleton-line[data-width="desc"] {
+  width: 68%;
+}
+
+@keyframes list-skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-skeleton-line {
+    animation: none;
+    background: var(--surface-container-highest);
+  }
+}
+
+.load-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  margin: var(--space-9) 0;
+  text-align: center;
+}
+
+.load-failed-message {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.load-failed-detail {
+  margin: calc(-1 * var(--space-3)) 0 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-9) auto;
+  max-width: 46ch;
+  text-align: center;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.empty-state-reason {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}

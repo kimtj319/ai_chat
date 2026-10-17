@@ -4,7 +4,7 @@ import { attachmentTotal, draftOverBudget, WAITING_FOR_UPLOAD } from "../attachm
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { AttachmentDraft, DraftAttachment } from "../hooks/useAttachmentDraft";
-import { composerPlaceholder, EMBEDDING_MODE_NOTICE } from "../state/modelCapability";
+import { composerKeyHint, composerPlaceholder, EMBEDDING_MODE_NOTICE } from "../state/modelCapability";
 import type { ActiveConversation } from "../state/StoreContext";
 import { useStore } from "../state/StoreContext";
 import { AttachmentChip } from "./AttachmentChip";
@@ -38,7 +38,18 @@ interface ComposerProps {
   /** Where the MCP picker's footer link goes. */
   onOpenLibrary: () => void;
   onOpenTools?: () => void;
+  /** 빈 대화에서 입력창 아래에 시작 칩을 보인다. */
+  showStarters?: boolean;
 }
+
+/* 시작 칩: 누르면 입력창을 채우고 커서를 끝에 둘 뿐, 절대 저절로 보내지 않는다 —
+   무엇을 물을지는 사용자가 이어 쓴다. "파일" 은 채우는 대신 파일 고르기를 연다. */
+const STARTERS: Array<{ label: string; text: string } | { label: string; pickFile: true }> = [
+  { label: "사내 문서에서 찾기", text: "올린 문서에서 " },
+  { label: "표로 정리하기", text: "다음 내용을 표로 정리해 줘: " },
+  { label: "파일 올려서 묻기", pickFile: true },
+  { label: "웹에서 찾아보기", text: "웹에서 찾아서 알려 줘: " },
+];
 
 function SendIcon() {
   return (
@@ -82,6 +93,7 @@ export function Composer({
   onStop,
   onOpenLibrary,
   onOpenTools,
+  showStarters = false,
 }: ComposerProps) {
   const { updateSettings, setLastReasoning, setLastReasoningMode } = useStore();
   // 손가락으로 쓰는 화면: Shift 가 없으니 Enter 는 줄바꿈, 보내기는 단추(handleKeyDown).
@@ -205,6 +217,17 @@ export function Composer({
     if (picked.length > 0) attachments.addFiles(picked, "picker");
   }
 
+  function fillFromStarter(value: string) {
+    setText(value);
+    // 값이 그려진 뒤에 커서를 끝으로 옮긴다. 지금 옮기면 이전 값의 끝에 선다.
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(value.length, value.length);
+    });
+  }
+
   const share = limits.maxMessageTokens > 0 ? totalTokens / limits.maxMessageTokens : 0;
   const totalTone = overBudget ? "danger" : share > WARN_SHARE ? "warning" : "normal";
   // The gate outranks a transient notice: it is the reason send is off.
@@ -219,152 +242,170 @@ export function Composer({
   const attachInMenu = !isEmbedding && !touch;
 
   return (
-    <div className="composer">
-      {/* Said before anything is typed: on an embedding model Enter does not
-          produce an answer, it produces a vector. */}
-      {isEmbedding && (
-        <p className="composer-mode-notice" role="status">
-          {EMBEDDING_MODE_NOTICE}
-        </p>
-      )}
-
-      {hasAttachments && (
-        <>
-          <div className="composer-attachments">
-            {items.map((item) => (
-              <AttachmentChip
-                key={item.localId}
-                item={item}
-                overBudget={attachments.overBudgetIds.has(item.localId)}
-                onPreview={() => setPreview(previewTargetFor(item))}
-                onRemove={() => attachments.remove(item.localId)}
-                onRetry={() => attachments.retry(item.localId)}
-              />
-            ))}
-          </div>
-          <p className="composer-attachment-total" data-tone={totalTone}>
-            {attachmentTotal(items.length, totalTokens, limits.maxMessageTokens)}
+    <>
+      <div className="composer">
+        {/* Said before anything is typed: on an embedding model Enter does not
+            produce an answer, it produces a vector. */}
+        {isEmbedding && (
+          <p className="composer-mode-notice" role="status">
+            {EMBEDDING_MODE_NOTICE}
           </p>
-        </>
-      )}
-
-      {message && (
-        <p className="composer-attachment-error" role="status" data-tone={message.tone}>
-          {message.text}
-        </p>
-      )}
-
-      <div className="composer-input-row">
-        {/* An embedding turn calls no tools, so the picker would only offer a
-            setting that changes nothing — same reason the reasoning control is
-            hidden there. */}
-        {!isEmbedding && (
-          <div className="composer-leading">
-            <McpPicker
-              conversation={conversation}
-              onOpenLibrary={onOpenLibrary}
-              onOpenTools={onOpenTools}
-              onAttach={attachInMenu ? () => fileInputRef.current?.click() : undefined}
-              extraRows={attachInMenu ? <BrowserControlToggle variant="row" /> : undefined}
-            />
-          </div>
         )}
-        <textarea
-          ref={textareaRef}
-          className="composer-textarea"
-          placeholder={compacting ? COMPACTING_PLACEHOLDER : composerPlaceholder(kind, touch)}
-          disabled={compacting}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          readOnly={pendingSubmit}
-          rows={1}
-        />
-        <div className="composer-trailing">
-          {/* 크롬 제어는 "+" 메뉴에서 켜고, 켜져 있는 동안만 여기 아이콘이 남는다 — 모델이
-              사용자의 브라우저를 만질 수 있는 상태는 메뉴를 열지 않아도 보여야 한다. */}
-          {attachInMenu && browserActive && <BrowserControlToggle />}
-          {!attachInMenu && (
-            <button
-              type="button"
-              className="btn-icon composer-attach"
-              onClick={() => fileInputRef.current?.click()}
-              data-tooltip="파일 첨부"
-              aria-label="파일 첨부"
-            >
-              <PaperclipIcon />
-            </button>
-          )}
-          {/* No `accept` filter: the one validator decides, and a filtered
-              picker would hide the very files whose refusal carries the
-              workaround (a PDF can never be picked to be told to screenshot
-              it). Drag-and-drop and paste cannot be filtered either, so this
-              keeps all three paths behaving identically. */}
-          <input ref={fileInputRef} type="file" multiple hidden onChange={handlePicked} />
-          {/* An embedding model does not reason — the control would only
-              offer a setting that changes nothing. */}
-          {!isEmbedding && (
-            <ReasoningControl
-              level={conversation.settings.reasoningLevel}
-              mode={conversation.settings.reasoningMode}
-              reasoningFixed={reasoningFixed}
-              thinkingTokenBudget={budget}
-              onLevelChange={handleLevelChange}
-              onModeChange={handleModeChange}
-              onBudgetChange={setBudget}
-            />
-          )}
-          {compacting ? (
-            // 압축 중에는 멈추기도 보내기도 받지 않는다 — 압축은 끝까지 가서 저장된다.
-            <button
-              type="button"
-              className="btn btn-primary composer-send composer-send-waiting"
-              disabled
-              aria-label={COMPACTING_PLACEHOLDER}
-              data-tooltip={COMPACTING_PLACEHOLDER}
-            >
-              <span className="composer-send-spinner" aria-hidden="true" />
-            </button>
-          ) : isStreaming ? (
-            <button
-              type="button"
-              className="btn btn-danger composer-send"
-              onClick={onStop}
-              aria-label="생성 중지"
-              data-tooltip="생성 중지"
-            >
-              <StopIcon />
-            </button>
-          ) : pendingSubmit ? (
-            // aria-disabled rather than disabled: it reads and looks disabled,
-            // but a second click still has to be able to cancel the queue.
-            <button
-              type="button"
-              className="btn btn-primary composer-send composer-send-waiting"
-              onClick={() => setPendingSubmit(false)}
-              aria-disabled="true"
-              aria-label={WAITING_FOR_UPLOAD}
-              data-tooltip={`${WAITING_FOR_UPLOAD} (Esc 취소)`}
-            >
-              <span className="composer-send-spinner" aria-hidden="true" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-primary composer-send"
-              onClick={submit}
-              disabled={!canSend}
-              aria-label={isEmbedding ? "임베딩 실행" : "메시지 전송"}
-              data-tooltip={isEmbedding ? "임베딩 실행" : "메시지 전송"}
-            >
-              <SendIcon />
-            </button>
-          )}
-        </div>
-      </div>
 
-      {preview && <AttachmentPreview target={preview} onClose={() => setPreview(null)} />}
-    </div>
+        {hasAttachments && (
+          <>
+            <div className="composer-attachments">
+              {items.map((item) => (
+                <AttachmentChip
+                  key={item.localId}
+                  item={item}
+                  overBudget={attachments.overBudgetIds.has(item.localId)}
+                  onPreview={() => setPreview(previewTargetFor(item))}
+                  onRemove={() => attachments.remove(item.localId)}
+                  onRetry={() => attachments.retry(item.localId)}
+                />
+              ))}
+            </div>
+            <p className="composer-attachment-total" data-tone={totalTone}>
+              {attachmentTotal(items.length, totalTokens, limits.maxMessageTokens)}
+            </p>
+          </>
+        )}
+
+        {message && (
+          <p className="composer-attachment-error" role="status" data-tone={message.tone}>
+            {message.text}
+          </p>
+        )}
+
+        <div className="composer-input-row">
+          {/* An embedding turn calls no tools, so the picker would only offer a
+              setting that changes nothing — same reason the reasoning control is
+              hidden there. */}
+          {!isEmbedding && (
+            <div className="composer-leading">
+              <McpPicker
+                conversation={conversation}
+                onOpenLibrary={onOpenLibrary}
+                onOpenTools={onOpenTools}
+                onAttach={attachInMenu ? () => fileInputRef.current?.click() : undefined}
+                extraRows={attachInMenu ? <BrowserControlToggle variant="row" /> : undefined}
+              />
+            </div>
+          )}
+          <textarea
+            ref={textareaRef}
+            className="composer-textarea"
+            placeholder={compacting ? COMPACTING_PLACEHOLDER : composerPlaceholder(kind, conversation.messages.length > 0)}
+            disabled={compacting}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            readOnly={pendingSubmit}
+            rows={1}
+          />
+          <div className="composer-trailing">
+            {/* 크롬 제어는 "+" 메뉴에서 켜고, 켜져 있는 동안만 여기 아이콘이 남는다 — 모델이
+                사용자의 브라우저를 만질 수 있는 상태는 메뉴를 열지 않아도 보여야 한다. */}
+            {attachInMenu && browserActive && <BrowserControlToggle />}
+            {!attachInMenu && (
+              <button
+                type="button"
+                className="btn-icon composer-attach"
+                onClick={() => fileInputRef.current?.click()}
+                data-tooltip="파일 첨부"
+                aria-label="파일 첨부"
+              >
+                <PaperclipIcon />
+              </button>
+            )}
+            {/* No `accept` filter: the one validator decides, and a filtered
+                picker would hide the very files whose refusal carries the
+                workaround (a PDF can never be picked to be told to screenshot
+                it). Drag-and-drop and paste cannot be filtered either, so this
+                keeps all three paths behaving identically. */}
+            <input ref={fileInputRef} type="file" multiple hidden onChange={handlePicked} />
+            {/* An embedding model does not reason — the control would only
+                offer a setting that changes nothing. */}
+            {!isEmbedding && (
+              <ReasoningControl
+                level={conversation.settings.reasoningLevel}
+                mode={conversation.settings.reasoningMode}
+                reasoningFixed={reasoningFixed}
+                thinkingTokenBudget={budget}
+                onLevelChange={handleLevelChange}
+                onModeChange={handleModeChange}
+                onBudgetChange={setBudget}
+              />
+            )}
+            {compacting ? (
+              // 압축 중에는 멈추기도 보내기도 받지 않는다 — 압축은 끝까지 가서 저장된다.
+              <button
+                type="button"
+                className="btn btn-primary composer-send composer-send-waiting"
+                disabled
+                aria-label={COMPACTING_PLACEHOLDER}
+                data-tooltip={COMPACTING_PLACEHOLDER}
+              >
+                <span className="composer-send-spinner" aria-hidden="true" />
+              </button>
+            ) : isStreaming ? (
+              <button
+                type="button"
+                className="btn btn-danger composer-send"
+                onClick={onStop}
+                aria-label="생성 중지"
+                data-tooltip="생성 중지"
+              >
+                <StopIcon />
+              </button>
+            ) : pendingSubmit ? (
+              // aria-disabled rather than disabled: it reads and looks disabled,
+              // but a second click still has to be able to cancel the queue.
+              <button
+                type="button"
+                className="btn btn-primary composer-send composer-send-waiting"
+                onClick={() => setPendingSubmit(false)}
+                aria-disabled="true"
+                aria-label={WAITING_FOR_UPLOAD}
+                data-tooltip={`${WAITING_FOR_UPLOAD} (Esc 취소)`}
+              >
+                <span className="composer-send-spinner" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary composer-send"
+                onClick={submit}
+                disabled={!canSend}
+                aria-label={isEmbedding ? "임베딩 실행" : "메시지 전송"}
+                data-tooltip={composerKeyHint(kind, touch)}
+              >
+                <SendIcon />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {preview && <AttachmentPreview target={preview} onClose={() => setPreview(null)} />}
+      </div>
+      {/* 임베딩 대화는 답을 하지 않으니 "찾아 줘·정리해 줘" 칩이 맞지 않는다. */}
+      {showStarters && !isEmbedding && (
+        <div className="composer-starters" role="group" aria-label="이렇게 시작해 보세요">
+          {STARTERS.map((starter) => (
+            <button
+              key={starter.label}
+              type="button"
+              className="composer-starter"
+              disabled={compacting}
+              onClick={() => ("pickFile" in starter ? fileInputRef.current?.click() : fillFromStarter(starter.text))}
+            >
+              {starter.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

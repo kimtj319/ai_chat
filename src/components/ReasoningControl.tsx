@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { pushOverlay } from "../ui/overlayStack";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { usePopoverFocus } from "../hooks/usePopoverFocus";
+import { inSheet } from "./McpPicker";
 import { normalizeReasoningLevel, normalizeReasoningMode, type ReasoningLevel, type ReasoningMode } from "../api/types";
 import { MAX_THINKING_TOKEN_BUDGET, MIN_THINKING_TOKEN_BUDGET } from "../state/defaults";
 import "./ReasoningControl.css";
@@ -72,26 +75,27 @@ export function ReasoningControl({
   // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
   useEffect(() => (open ? pushOverlay() : undefined), [open]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // 폰에서는 바텀시트(McpPicker 의 inSheet 참고).
+  const sheet = useMediaQuery("(max-width: 640px)");
+  usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
   const currentLabel = LEVELS.find((option) => option.value === level)?.label ?? level;
 
   useEffect(() => {
     if (!open) return;
 
     function handlePointerDown(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // 폰의 시트는 body 로 포털되어 containerRef 밖에 있다. 스크림은 제 click 으로 닫는다.
+      if (popoverRef.current?.contains(target) || (target as Element).closest?.(".popover-sheet-scrim")) return;
+      if (containerRef.current && !containerRef.current.contains(target)) {
         setOpen(false);
       }
     }
-    function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
 
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
   function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -104,9 +108,10 @@ export function ReasoningControl({
   return (
     <div className="reasoning-control" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="reasoning-trigger"
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={handleTriggerKeyDown}
@@ -115,8 +120,10 @@ export function ReasoningControl({
         <ChevronDownIcon />
       </button>
 
-      {open && (
-        <div className="reasoning-popover" aria-label="추론 설정">
+      {open && inSheet(
+        sheet,
+        () => setOpen(false),
+        <div ref={popoverRef} className="reasoning-popover" role="dialog" aria-label="추론 설정" tabIndex={-1}>
           {/* Built like the sidebar's menu: full-width rows in a stack, pill
               shaped, no card or border — the selected one is filled the way the
               sidebar fills its current item. */}
@@ -177,7 +184,7 @@ export function ReasoningControl({
               />
             </div>
           )}
-        </div>
+        </div>,
       )}
     </div>
   );

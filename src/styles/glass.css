@@ -102,7 +102,7 @@
 }
 
 /* ---- control: buttons ---- */
-.btn:not(.btn-primary, .btn-danger) {
+.btn:not(.btn-primary, .btn-danger, .btn-danger-quiet) {
   background: var(--glass-control);
   border: 1px solid var(--glass-card-border);
   box-shadow:
@@ -112,7 +112,7 @@
   backdrop-filter: blur(12px) saturate(160%);
 }
 
-.btn:not(.btn-primary, .btn-danger):hover:not(:disabled) {
+.btn:not(.btn-primary, .btn-danger, .btn-danger-quiet):hover:not(:disabled) {
   background: var(--glass-control-hover);
 }
 
@@ -294,6 +294,12 @@
     .board-detail-body
   ) {
   background: var(--surface-card);
+  /* Flat on the page: no drop shadow and no lit top edge, just a hairline of
+     ink. The white card-tier rim vanished on a white plate, and a shadow under
+     an opaque box only made it look stacked. Popovers keep their shadow; they
+     really are above the page. */
+  border-color: var(--field-border);
+  box-shadow: none;
 }
 
 .acc-row:hover,

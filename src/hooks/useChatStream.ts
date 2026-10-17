@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { sendMessage as postMessage, stopGeneration as postStopGeneration, answerNow as postAnswerNow } from "../api/client";
-import type { ChatMessage, ToolCall } from "../api/types";
+import type { ChatMessage, SendMessageRequest, ToolCall } from "../api/types";
 import { browserControlActive } from "../browser/browserControl";
 import { runBrowserAction } from "../browser/runBrowserAction";
 import { createId } from "../state/defaults";
@@ -21,8 +21,16 @@ export interface SendOptions {
   onSettled?: (ok: boolean, note?: string) => void;
 }
 
+/** 다시 생성·편집 재전송에서 화면을 미리 되감아 둔 것(StoreContext.rewindToLastUserMessage). */
+interface Rewind {
+  userMessageId: string;
+  restore: () => void;
+}
+
+const BUSY_NOTE = "다른 답변이 진행 중이라 보내지 못했습니다.";
+
 export function useChatStream() {
-  const { appendMessage, patchMessage, replaceMessage, refreshConversations } = useStore();
+  const { appendMessage, patchMessage, replaceMessage, refreshConversations, rewindToLastUserMessage } = useStore();
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // Which conversation the in-flight turn belongs to, so Stop and answerNow
@@ -45,15 +53,15 @@ export function useChatStream() {
   // 지금 흘려 받는 대화 — 그 대화의 압축은 스트림이 알려 주므로 서버에 따로 묻지 않는다.
   const [streamingId, setStreamingId] = useState<string | null>(null);
 
-  const sendMessage = useCallback(
-    (conversationId: string, text: string, attachmentIds: string[] = [], options: SendOptions = {}) => {
-      const trimmed = text.trim();
-      // An attachment with no text is a complete turn, so the guard widens to
-      // "nothing at all to send" rather than "no text".
-      if ((trimmed.length === 0 && attachmentIds.length === 0) || isStreaming) {
-        options.onSettled?.(false, "다른 답변이 진행 중이라 보내지 못했습니다.");
-        return;
-      }
+  /**
+   * 한 턴을 흘려 받는다. 보통 전송과 다시 생성·편집 재전송이 같이 쓴다 — 다른
+   * 것은 `rewind` 하나뿐이다: 있으면 서버의 user_message 가 새로 덧붙지 않고 미리
+   * 되감아 둔 마지막 사용자 메시지 자리를 대신한다(같은 메시지가 두 번 보이지
+   * 않는다). 서버가 그 메시지를 받아들이기 전에 실패하면 되감기를 되돌린다 —
+   * 서버의 기록은 그대로이므로 화면도 그대로여야 한다.
+   */
+  const runTurn = useCallback(
+    (conversationId: string, body: SendMessageRequest, options: SendOptions, rewind: Rewind | null) => {
       let settled = false;
       const settle = (ok: boolean, note?: string) => {
         if (settled) return;
@@ -77,6 +85,22 @@ export function useChatStream() {
       let notice = "";
       let toolCalls: ToolCall[] = [];
       let liveToolResults: LiveToolResult[] = [];
+      // 생각 시간(ThinkingPanel): 첫 reasoning delta 와, 그 뒤 첫 content·도구 호출 시각.
+      let reasoningStartedAt: number | undefined;
+      let reasoningEndedAt: number | undefined;
+      // 서버가 이 턴의 사용자 메시지를 받아들였는가(user_message 도착).
+      let userConfirmed = false;
+
+      /** 생각이 시작됐는데 아직 안 끝났으면 지금 끝낸다. 붙일 patch 를 돌려준다. */
+      function endReasoning(): Partial<ClientChatMessage> {
+        if (reasoningStartedAt === undefined || reasoningEndedAt !== undefined) return {};
+        reasoningEndedAt = Date.now();
+        return { reasoningEndedAt };
+      }
+
+      function undoRewindIfUnconfirmed() {
+        if (rewind && !userConfirmed) rewind.restore();
+      }
 
       function ensurePlaceholder(): string {
         if (assistantId) return assistantId;
@@ -105,17 +129,14 @@ export function useChatStream() {
         setStreamingId(null);
       }
 
-      const body = {
-        content: trimmed,
-        ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
-        // 보내는 순간의 상태로 정한다 — 턴 중간에 스위치를 바꿔도 이번 턴의 도구는 그대로다.
-        ...((options.browserControl ?? browserControlActive()) ? { browserControl: true } : {}),
-      };
       void postMessage(conversationId, body, controller.signal, {
         onEvent: (event) => {
           switch (event.type) {
             case "user_message":
-              appendMessage(conversationId, event.message);
+              userConfirmed = true;
+              // 다시 생성이면 되감아 둔 자리를 서버의 메시지(id·편집된 내용)로 맞춘다.
+              if (rewind) replaceMessage(conversationId, rewind.userMessageId, event.message);
+              else appendMessage(conversationId, event.message);
               // The sidebar row belongs to the request, not to the answer: the
               // server has already stored the conversation under its title by
               // the time this event is sent, so listing it here is what makes
@@ -152,7 +173,12 @@ export function useChatStream() {
               setAnswerStreaming(false);
               reasoning += event.delta;
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { reasoning });
+              if (reasoningStartedAt === undefined) {
+                reasoningStartedAt = Date.now();
+                patchMessage(conversationId, id, { reasoning, reasoningStartedAt });
+              } else {
+                patchMessage(conversationId, id, { reasoning });
+              }
               break;
             }
 
@@ -160,7 +186,7 @@ export function useChatStream() {
               setAnswerStreaming(true);
               content += event.delta;
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { content });
+              patchMessage(conversationId, id, { content, ...endReasoning() });
               break;
             }
 
@@ -168,7 +194,7 @@ export function useChatStream() {
               setAnswerStreaming(false);
               toolCalls = [...toolCalls, { id: event.id, name: event.name, arguments: event.arguments }];
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { toolCalls });
+              patchMessage(conversationId, id, { toolCalls, ...endReasoning() });
               break;
             }
 
@@ -223,7 +249,12 @@ export function useChatStream() {
             }
 
             case "done": {
-              const finalMessage: ClientChatMessage = { ...(event.message as ChatMessage) };
+              endReasoning();
+              // 서버의 메시지가 자리를 대신해도 생각 시각은 남긴다(서버는 이 둘을 모른다).
+              const finalMessage: ClientChatMessage = {
+                ...(event.message as ChatMessage),
+                ...(reasoningStartedAt !== undefined ? { reasoningStartedAt, reasoningEndedAt } : {}),
+              };
               if (assistantId) {
                 replaceMessage(conversationId, assistantId, finalMessage);
               } else {
@@ -237,7 +268,7 @@ export function useChatStream() {
 
             case "error": {
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { error: event.message, streaming: false });
+              patchMessage(conversationId, id, { error: event.message, streaming: false, ...endReasoning() });
               stopStreamingFlag();
               settle(false, event.message);
               break;
@@ -251,21 +282,108 @@ export function useChatStream() {
           // Covers the normal end-of-stream sentinel as well as an aborted
           // (Stop button) stream that never got a "done"/"error" event —
           // either way the UI must stop showing this message as streaming.
+          undoRewindIfUnconfirmed();
           if (assistantId) {
-            patchMessage(conversationId, assistantId, { streaming: false });
+            patchMessage(conversationId, assistantId, { streaming: false, ...endReasoning() });
           }
           stopStreamingFlag();
           settle(false, "답변이 끝나기 전에 중지되었습니다.");
         },
         onError: (message) => {
+          // 409(다른 턴이 진행 중)·400 처럼 서버가 아무것도 바꾸지 않은 실패다.
+          undoRewindIfUnconfirmed();
           const id = ensurePlaceholder();
-          patchMessage(conversationId, id, { error: message, streaming: false });
+          patchMessage(conversationId, id, { error: message, streaming: false, ...endReasoning() });
           stopStreamingFlag();
           settle(false, message);
         },
       });
     },
-    [isStreaming, appendMessage, patchMessage, replaceMessage, refreshConversations],
+    [appendMessage, patchMessage, replaceMessage, refreshConversations],
+  );
+
+  const sendMessage = useCallback(
+    (conversationId: string, text: string, attachmentIds: string[] = [], options: SendOptions = {}) => {
+      const trimmed = text.trim();
+      // An attachment with no text is a complete turn, so the guard widens to
+      // "nothing at all to send" rather than "no text".
+      if ((trimmed.length === 0 && attachmentIds.length === 0) || isStreaming) {
+        options.onSettled?.(false, BUSY_NOTE);
+        return;
+      }
+      runTurn(
+        conversationId,
+        {
+          content: trimmed,
+          ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+          // 보내는 순간의 상태로 정한다 — 턴 중간에 스위치를 바꿔도 이번 턴의 도구는 그대로다.
+          ...((options.browserControl ?? browserControlActive()) ? { browserControl: true } : {}),
+        },
+        options,
+        null,
+      );
+    },
+    [isStreaming, runTurn],
+  );
+
+  /**
+   * 마지막 답을 다시 생성한다. 화면에서 마지막 사용자 메시지 뒤를 먼저 지우고,
+   * 서버가 같은 자리를 잘라 같은 질문(첨부 포함)으로 다시 돌린다.
+   */
+  const regenerateLast = useCallback(
+    (conversationId: string, options: SendOptions = {}) => {
+      if (isStreaming) {
+        options.onSettled?.(false, BUSY_NOTE);
+        return;
+      }
+      const rewind = rewindToLastUserMessage(conversationId);
+      if (!rewind) {
+        options.onSettled?.(false, "다시 생성할 메시지가 없습니다.");
+        return;
+      }
+      runTurn(
+        conversationId,
+        {
+          content: "",
+          regenerate: true,
+          ...((options.browserControl ?? browserControlActive()) ? { browserControl: true } : {}),
+        },
+        options,
+        rewind,
+      );
+    },
+    [isStreaming, rewindToLastUserMessage, runTurn],
+  );
+
+  /** 마지막 사용자 메시지의 내용을 바꿔 다시 보낸다(첨부는 그대로). 빈 내용은 보내지 않는다. */
+  const editLastAndResend = useCallback(
+    (conversationId: string, content: string, options: SendOptions = {}) => {
+      const trimmed = content.trim();
+      if (trimmed.length === 0) {
+        options.onSettled?.(false, "내용을 입력해 주세요.");
+        return;
+      }
+      if (isStreaming) {
+        options.onSettled?.(false, BUSY_NOTE);
+        return;
+      }
+      const rewind = rewindToLastUserMessage(conversationId, trimmed);
+      if (!rewind) {
+        options.onSettled?.(false, "고칠 메시지가 없습니다.");
+        return;
+      }
+      runTurn(
+        conversationId,
+        {
+          content: trimmed,
+          regenerate: true,
+          ...((options.browserControl ?? browserControlActive()) ? { browserControl: true } : {}),
+        },
+        options,
+        rewind,
+      );
+    },
+    [isStreaming, rewindToLastUserMessage, runTurn],
   );
 
   const stopGeneration = useCallback(() => {
@@ -295,6 +413,8 @@ export function useChatStream() {
     streamingId,
     compactingId,
     sendMessage,
+    regenerateLast,
+    editLastAndResend,
     stopGeneration,
     turnStartedAt,
     answerNowAfterMs,

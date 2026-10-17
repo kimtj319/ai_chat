@@ -16,3 +16,11 @@
   padding: var(--space-2) var(--space-5);
   font-size: var(--text-xs);
 }
+
+/* 안내가 두세 줄이 되는 폰 폭에서는 단추가 글을 한 글자 폭으로 밀지 않게 아래 줄로 보낸다. */
+@media (max-width: 640px) {
+  .status-banner {
+    flex-wrap: wrap;
+    padding: var(--space-4) var(--space-6);
+  }
+}

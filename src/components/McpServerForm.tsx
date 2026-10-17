@@ -13,7 +13,7 @@ interface McpServerFormProps {
 
 const AUTH_MODES: Array<{ value: McpAuthMode; label: string }> = [
   { value: "none", label: "인증 없음" },
-  { value: "header", label: "헤더로 자격 증명 전송" },
+  { value: "header", label: "헤더로 개인 키 전송" },
 ];
 
 function draftFrom(server: McpServerSummary | null): McpServerDraft {
@@ -115,7 +115,7 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
             onChange={(event) => set("url", event.target.value)}
           />
           <span className="field-hint">
-            요청은 {hostOf(draft.url.trim()) || "…"} 으로 나갑니다. 이 서버를 채택한 모든 사용자의 대화 내용이 이 호스트로
+            요청은 {hostOf(draft.url.trim()) || "…"} 으로 나갑니다. 이 서버를 추가한 모든 사용자의 대화 내용이 이 호스트로
             전달됩니다.
           </span>
           {errors.url && <span className="mcp-form-error">{errors.url}</span>}
@@ -151,7 +151,7 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
             </div>
 
             <div className="field">
-              <label htmlFor="mcp-credential">자격 증명</label>
+              <label htmlFor="mcp-credential">개인 키</label>
               <input
                 id="mcp-credential"
                 type="password"
@@ -161,7 +161,7 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
               />
               <span className="field-hint">
                 {server?.hasCredential
-                  ? "비워두면 저장된 값을 그대로 둡니다."
+                  ? "비워 두면 저장된 값을 그대로 둡니다."
                   : "서버에 저장되며 다시 보이지 않습니다."}
               </span>
               {errors.credential && <span className="mcp-form-error">{errors.credential}</span>}

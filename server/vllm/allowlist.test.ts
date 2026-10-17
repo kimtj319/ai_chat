@@ -104,6 +104,40 @@ try {
   const reread = listEndpoints().find((e) => e.baseUrl === openrouterish.url);
   check("허용 목록을 비우면 줄이 label|url 로 돌아간다", reread?.models === undefined, JSON.stringify(reread));
   openrouterish.close();
+
+  // ---- a stale gateway entry is excluded, and said so once — not on every catalog refresh
+  const stale = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.method === "GET" && req.url === "/v1/models") return res.end(JSON.stringify({ object: "list", data: [{ id: "good" }, { id: "stale" }] }));
+      const model = raw ? String(JSON.parse(raw).model) : "";
+      if (model === "stale") {
+        res.statusCode = 400;
+        return res.end(JSON.stringify({ error: { message: "Invalid model name passed in model=stale" } }));
+      }
+      if (req.url === "/v1/chat/completions") return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] }));
+      res.statusCode = 404;
+      res.end("{}");
+    });
+  });
+  stale.listen(0, "127.0.0.1");
+  await new Promise((r) => stale.once("listening", r));
+  const staleUrl = `http://127.0.0.1:${(stale.address() as AddressInfo).port}/v1`;
+  await upsertFileEndpoint({ label: "Gateway", baseUrl: staleUrl, apiKey: "" });
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+  try {
+    for (let i = 0; i < 3; i++) await fetchCatalog(undefined, true);
+  } finally {
+    console.warn = warn;
+  }
+  const exclusions = warnings.filter((w) => w.includes('excluding "stale"'));
+  check("낡은 모델은 목록에서 빠진다", !(await fetchCatalog(undefined, true)).some((e) => e.id === "stale"));
+  check("  그리고 그 사실은 세 번 갱신해도 한 번만 남긴다", exclusions.length === 1, `${exclusions.length}회: ${exclusions[0] ?? ""}`);
+  stale.close();
 } finally {
   await fs.rm(dataDir, { recursive: true, force: true });
 }

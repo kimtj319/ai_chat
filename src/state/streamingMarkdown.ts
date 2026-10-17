@@ -8,8 +8,23 @@
  */
 const TABLE_LINE = /^\s*\|/;
 
+const FENCE_LINE = /^ {0,3}(```|~~~)/;
+// 줄 하나가 마커만(제목 #, 목록 -, *, 1., 인용 >) 도착한 상태.
+const LONE_MARKER = /^\s*(#{1,6}|-|\*|\d+\.|>)\s*$/;
+
 export function stableStreamingMarkdown(source: string): string {
   let text = source;
+  // 0) 코드 울타리. 열린 채 오는 중이면 코드 블록으로 그대로 보여 주되, 울타리 줄이
+  //    "```" + 반쯤 온 언어명으로만 와 있으면 그 줄을 감춘다.
+  let fences = text.split("\n").filter((l) => FENCE_LINE.test(l)).length;
+  const tailStart = text.lastIndexOf("\n") + 1;
+  if (fences % 2 === 1 && /^ {0,3}(```|~~~)[^`\s]*$/.test(text.slice(tailStart))) {
+    text = text.slice(0, tailStart);
+    fences -= 1;
+  }
+  if (fences % 2 === 1) return text;
+  // 0b) 마지막 줄이 마커 하나뿐이면 감춘다.
+  if (LONE_MARKER.test(text.slice(text.lastIndexOf("\n") + 1))) text = text.slice(0, text.lastIndexOf("\n") + 1);
   // 1) 끝나지 않은 마지막 줄이 표 줄이면 줄이 끝날 때까지 감춘다.
   const lastBreak = text.lastIndexOf("\n");
   if (TABLE_LINE.test(text.slice(lastBreak + 1))) text = text.slice(0, lastBreak + 1);

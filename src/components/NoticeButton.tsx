@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/client";
 import type { Notice } from "../api/types";
+import { usePopoverFocus } from "../hooks/usePopoverFocus";
 import { pushOverlay } from "../ui/overlayStack";
 import "./NoticeButton.css";
 
@@ -34,6 +35,8 @@ export function NoticeButton() {
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -57,21 +60,16 @@ export function NoticeButton() {
   }, [refresh]);
 
   useEffect(() => (open ? pushOverlay() : undefined), [open]);
+  // 열면 포커스가 목록으로 들어가고, Esc 는 종 단추로 돌려준다.
+  usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
     }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
     document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
   async function toggle() {
@@ -91,6 +89,7 @@ export function NoticeButton() {
   return (
     <div className="notice-button" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="btn-icon"
         aria-haspopup="dialog"
@@ -103,7 +102,7 @@ export function NoticeButton() {
         {unread > 0 && <span className="notice-dot" aria-hidden="true" />}
       </button>
       {open && (
-        <div className="notice-popover" role="dialog" aria-label="공지사항">
+        <div ref={popoverRef} className="notice-popover" role="dialog" aria-label="공지사항" tabIndex={-1}>
           <p className="notice-popover-title">공지사항</p>
           {notices.length === 0 ? (
             <p className="notice-empty">아직 공지가 없습니다.</p>

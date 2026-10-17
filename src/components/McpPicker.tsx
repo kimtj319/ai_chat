@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { pushOverlay } from "../ui/overlayStack";
 import { useAuth } from "../auth/AuthContext";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { usePopoverFocus } from "../hooks/usePopoverFocus";
 import {
   isMcpToolName,
   mergeMcpSelection,
@@ -64,6 +67,7 @@ function TriStateCheckbox({
     <input
       ref={ref}
       type="checkbox"
+      className="mcp-picker-check"
       checked={state === "all"}
       disabled={disabled}
       aria-label={label}
@@ -157,7 +161,14 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
   const [query, setQuery] = useState("");
   const [expandedServers, setExpandedServers] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const searchId = useId();
+  // 폰에서는 입력창 위의 팝오버가 아니라 화면 아래에서 올라오는 시트다(App.css).
+  // 입력창에 backdrop-filter 가 걸려 있어 그 안의 position: fixed 는 화면이 아니라
+  // 입력창에 붙는다 — 그래서 시트는 body 로 포털한다.
+  const sheet = useMediaQuery("(max-width: 640px)");
+  usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
 
   const [selected, setSelected] = useState<string[]>(() => conversation.enabledTools.filter(isMcpToolName));
 
@@ -186,21 +197,18 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
     function handlePointerDown(event: MouseEvent) {
       // A dialog opened from inside the menu (the Chrome setup guide) is
       // portalled to <body>; a click in it is not a click away from the menu.
-      if ((event.target as Element).closest?.('[role="dialog"]')) return;
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      // The menu itself is a dialog too, and so is the sheet on a phone, which
+      // sits outside the container. The sheet's scrim closes on its own click:
+      // closing on mousedown would hand the tap's click to whatever lies under it.
+      const target = event.target as Element;
+      if (target.closest?.('[role="dialog"], .popover-sheet-scrim')) return;
+      if (containerRef.current && !containerRef.current.contains(target)) {
         setOpen(false);
       }
     }
-    function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
 
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [open]);
 
   function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -238,9 +246,10 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
   return (
     <div className="mcp-picker" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="btn-icon mcp-picker-trigger"
-        aria-haspopup="true"
+        aria-haspopup="dialog"
         aria-expanded={open}
         data-tooltip="도구와 파일"
         aria-label="도구와 파일"
@@ -251,8 +260,10 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
         {selected.length > 0 && <span className="mcp-picker-count">{selected.length}</span>}
       </button>
 
-      {open && (
-        <div className="mcp-picker-popover" aria-label="도구와 파일">
+      {open && inSheet(
+        sheet,
+        () => setOpen(false),
+        <div ref={popoverRef} className="mcp-picker-popover" role="dialog" aria-label="도구와 파일" tabIndex={-1}>
           {onAttach && (
             <>
               <button
@@ -302,10 +313,10 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
             ) : unavailable ? (
               <p className="mcp-picker-empty">이 서버에는 아직 MCP 기능이 배포되지 않았습니다.</p>
             ) : mine.length === 0 && !hasLibrary ? (
-              <p className="mcp-picker-empty">내 라이브러리가 비어 있습니다. 라이브러리에서 서버를 추가해보세요.</p>
+              <p className="mcp-picker-empty">내 커넥터가 비어 있습니다. 커넥터에서 MCP 서버를 추가해 보세요.</p>
             ) : mine.length === 0 ? (
               <div className="mcp-picker-empty">
-                <p>라이브러리에서 사용할 MCP 를 켜 주세요.</p>
+                <p>커넥터에서 쓸 MCP 서버를 켜 주세요.</p>
                 <button
                   type="button"
                   className="mcp-picker-link"
@@ -314,7 +325,7 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
                     onOpenLibrary();
                   }}
                 >
-                  라이브러리 열기
+                  커넥터 열기
                 </button>
               </div>
             ) : visible.length === 0 ? (
@@ -366,6 +377,7 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
                         <label key={tool.name} className="mcp-picker-row mcp-picker-tool">
                           <input
                             type="checkbox"
+                            className="mcp-picker-check"
                             checked={enabled.has(tool.name)}
                             disabled={off}
                             onChange={() => toggleTool(tool.name)}
@@ -421,11 +433,26 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
                 onOpenLibrary();
               }}
             >
-              라이브러리 관리
+              커넥터 관리
             </button>
           </div>
-        </div>
+        </div>,
       )}
     </div>
+  );
+}
+
+/**
+ * 폰에서는 팝오버를 바텀시트로: body 로 포털하고 뒤에 스크림을 깐다(누르면 닫힌다).
+ * 넓은 화면에서는 제자리에 그대로 둔다. ReasoningControl 도 같은 것을 쓴다.
+ */
+export function inSheet(sheet: boolean, onClose: () => void, popover: ReactNode): ReactNode {
+  if (!sheet) return popover;
+  return createPortal(
+    <>
+      <div className="popover-sheet-scrim" aria-hidden="true" onClick={onClose} />
+      {popover}
+    </>,
+    document.body,
   );
 }

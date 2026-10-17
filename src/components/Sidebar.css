@@ -232,6 +232,81 @@
   letter-spacing: 0.02em;
 }
 
+/* 날짜 묶음 이름. 목록 칸 안에 들어가 있어 좌우 여백은 칸의 안쪽 여백만큼 덜 준다. */
+.sidebar-recents .sidebar-section-label {
+  margin: var(--space-8) var(--space-5) var(--space-2);
+}
+
+.sidebar-recents .sidebar-section-label:first-child {
+  margin-top: var(--space-3);
+}
+
+/* ---- 대화 제목 검색 ---- */
+
+.sidebar-search {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin: var(--space-9) var(--space-6) var(--space-3);
+}
+
+.sidebar-search > svg {
+  position: absolute;
+  left: var(--space-6);
+  width: 16px;
+  height: 16px;
+  color: var(--on-surface-variant);
+  pointer-events: none;
+}
+
+/* 거의 불투명한 입력 칸 바탕 — 유리판 위에 유리를 또 얹지 않는다. */
+.sidebar-search-input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 calc(var(--space-6) + 28px) 0 calc(var(--space-6) + 16px + var(--space-4));
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-full);
+  background: var(--glass-field);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.sidebar-search-input::placeholder {
+  color: var(--on-surface-variant);
+}
+
+.sidebar-search-input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+/* 지우기 단추는 우리 것을 쓴다. 브라우저마다 다른 기본 ×는 숨긴다. */
+.sidebar-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.sidebar-search-clear {
+  position: absolute;
+  right: var(--space-2);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.sidebar-search-clear svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-item-match {
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
 .sidebar-recents {
   flex: 1;
   overflow-y: auto;
@@ -246,6 +321,14 @@
   font-size: var(--text-xs);
   padding: var(--space-6) var(--space-4);
   text-align: center;
+}
+
+.sidebar-empty p {
+  margin: 0;
+}
+
+.sidebar-empty .sidebar-empty-hint {
+  margin-top: var(--space-2);
 }
 
 .sidebar-item {
@@ -722,6 +805,28 @@
   .app-shell[data-narrow] .sidebar-nav-item,
   .app-shell[data-narrow] .sidebar-item {
     min-height: 44px;
+  }
+
+  /* 줄마다 늘 보이는 이름 변경·삭제는 손가락 표적(40px)으로 키우고 사이를 띄운다 —
+     26px 두 개가 붙어 있으면 이름을 바꾸려다 삭제를 누른다(삭제는 확인창을 거친다).
+     줄 높이가 버튼만큼 커지지 않게 위아래 여백은 줄인다. */
+  .app-shell[data-narrow] .sidebar-item {
+    padding-block: var(--space-1);
+    padding-right: var(--space-2);
+  }
+
+  .app-shell[data-narrow] .sidebar-item-actions {
+    gap: var(--space-4);
+  }
+
+  .app-shell[data-narrow] .sidebar-item-actions .btn-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .app-shell[data-narrow] .sidebar-item-actions .btn-icon svg {
+    width: 18px;
+    height: 18px;
   }
 
   .app-shell[data-narrow] .sidebar-bottom {

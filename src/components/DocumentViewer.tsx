@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/client";
 import type { DocumentChunk, RagDocument } from "../api/types";
+import { LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
 import "./DocumentViewer.css";
 
@@ -27,6 +28,8 @@ export function DocumentViewer({ document, onClose }: Props) {
   const [text, setText] = useState<string | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** 다시 시도할 때마다 올려 아래 effect 를 다시 돌린다. */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -46,7 +49,7 @@ export function DocumentViewer({ document, onClose }: Props) {
     return () => {
       alive = false;
     };
-  }, [document.id]);
+  }, [document.id, attempt]);
 
   const loading = text === null && error === null;
 
@@ -78,11 +81,7 @@ export function DocumentViewer({ document, onClose }: Props) {
           </span>
         </div>
 
-        {error && (
-          <p className="docview-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <LoadFailed message="문서를 불러오지 못했습니다." onRetry={() => setAttempt((n) => n + 1)} />}
         {loading && <p className="docview-loading">불러오는 중…</p>}
 
         {!loading && !error && tab === "text" && <pre className="docview-text">{text}</pre>}

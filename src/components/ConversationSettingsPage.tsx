@@ -4,18 +4,10 @@ import type { ConversationSettings } from "../api/types";
 import { MAX_MAX_TOKENS, MIN_MAX_TOKENS } from "../state/defaults";
 import type { ActiveConversation } from "../state/StoreContext";
 import { useActiveConversation, useStore } from "../state/StoreContext";
+import { PageHeader } from "./PageHeader";
 import { ProhibitionsDialog } from "./ProhibitionsDialog";
 import { showErrorToast, showToast } from "./Toast";
 import "./ConversationSettingsPage.css";
-
-function BackIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5" />
-      <path d="M12 19l-7-7 7-7" />
-    </svg>
-  );
-}
 
 /** The sampling fields this page edits. Everything else in the settings (the
  *  reasoning level and budget the composer owns) is left as it is stored. */
@@ -61,17 +53,7 @@ export function ConversationSettingsPage({ onBack }: { onBack: () => void }) {
 }
 
 function SettingsHeader({ onBack, subtitle }: { onBack: () => void; subtitle: string }) {
-  return (
-    <header className="conv-settings-header">
-      <button type="button" className="btn-icon" onClick={onBack} data-tooltip="채팅으로 돌아가기" aria-label="채팅으로 돌아가기" data-back-to-chat>
-        <BackIcon />
-      </button>
-      <div className="conv-settings-header-text">
-        <h1 className="conv-settings-title">대화 설정</h1>
-        <p className="conv-settings-subtitle">{subtitle}</p>
-      </div>
-    </header>
-  );
+  return <PageHeader title="대화 설정" subtitle={subtitle} onBack={onBack} />;
 }
 
 function SettingsBody({ conversation, onBack }: { conversation: ActiveConversation; onBack: () => void }) {
@@ -225,7 +207,7 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
               <input
                 id="param-seed"
                 type="number"
-                placeholder="비워두면 무작위"
+                placeholder="비워 두면 무작위"
                 value={sampling.seed ?? ""}
                 onChange={(event) => {
                   const raw = event.target.value;
@@ -258,15 +240,17 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
 
       {/* 아래에 붙어 있어 목록을 어디까지 내렸든 늘 닿는다. */}
       <footer className="conv-settings-actions">
-        <span className="conv-settings-state" role="status">
-          {applying ? "적용하는 중…" : dirty ? "적용하지 않은 변경이 있습니다" : "저장된 설정과 같습니다"}
-        </span>
-        <button type="button" className="btn btn-secondary" disabled={!dirty || applying} onClick={revert}>
-          되돌리기
-        </button>
-        <button type="button" className="btn btn-primary" disabled={!dirty || applying} onClick={() => void apply()}>
-          적용
-        </button>
+        <div className="conv-settings-actions-row">
+          <span className="conv-settings-state" role="status">
+            {applying ? "적용하는 중…" : dirty ? "적용하지 않은 변경이 있습니다" : "저장된 설정과 같습니다"}
+          </span>
+          <button type="button" className="btn btn-secondary" disabled={!dirty || applying} onClick={revert}>
+            되돌리기
+          </button>
+          <button type="button" className="btn btn-primary" disabled={!dirty || applying} onClick={() => void apply()}>
+            적용
+          </button>
+        </div>
       </footer>
 
       {prohibitionsOpen && <ProhibitionsDialog onClose={() => setProhibitionsOpen(false)} />}

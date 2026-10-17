@@ -60,10 +60,7 @@ for (const name of [...referenced].sort()) {
 // 좁은 화면 규칙이 실제로 노리는 것들은 빠짐없이 들어 있어야 한다.
 for (const must of [
   "chat-header",
-  "board-header",
-  "documents-header",
-  "library-header",
-  "admin-header",
+  "page-header",
   "mcp-picker-popover",
   "reasoning-popover",
   "model-switcher-popover",

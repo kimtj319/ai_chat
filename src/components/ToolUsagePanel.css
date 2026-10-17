@@ -49,20 +49,13 @@
   transform: rotate(90deg);
 }
 
+/* The summary quotes the query, which can be long — it yields with an
+   ellipsis instead of pushing the row wider than the answer column. */
 .tool-usage-label {
-  flex-shrink: 0;
-}
-
-/* The tool names are a hint, not the point — they yield space first. */
-.tool-usage-names {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-  opacity: 0.75;
 }
 
 @media (prefers-reduced-motion: reduce) {

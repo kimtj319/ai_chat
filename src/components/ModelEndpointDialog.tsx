@@ -10,6 +10,7 @@ import {
   normalizeEndpointInput,
 } from "../state/modelEndpoints";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { ModelChooser } from "./ModelChooser";
 import { Modal } from "./Modal";
 import "./ModelEndpointDialog.css";
@@ -46,7 +47,7 @@ interface ModelEndpointDialogProps {
 /** The 모델 연동 dialog: what is configured now, and a form to add one more. */
 export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const [data, setData] = useState<ModelEndpointsResponse | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listFailed, setListFailed] = useState(false);
 
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
@@ -67,9 +68,9 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const load = useCallback(async () => {
     try {
       setData(await api.listModelEndpoints());
-      setListError(null);
-    } catch (error) {
-      setListError(error instanceof Error ? error.message : String(error));
+      setListFailed(false);
+    } catch {
+      setListFailed(true);
     }
   }, []);
 
@@ -199,10 +200,12 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   // in a "/v1" suffix, which the display form deliberately strips.
   const entries = data?.endpoints ?? [];
   const pending = status.kind === "pending";
+  const deleteTarget = pendingDelete ? entries.find((entry) => entry.baseUrl === pendingDelete) : undefined;
+  const deleteHost = deleteTarget ? endpointRow(deleteTarget).host : pendingDelete;
 
   return (
     <Modal
-      title="서빙 서버 연동"
+      title="모델 서버 연동"
       // While the confirm is up, Esc and the overlay cancel *it*, not the
       // dialog underneath — both handlers then agree on the same outcome.
       onClose={pendingDelete ? () => setPendingDelete(null) : onClose}
@@ -220,7 +223,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
         </p>
       )}
 
-      {listError && <p className="message-error">{listError}</p>}
+      {listFailed && <LoadFailed message="모델 서버 목록을 불러오지 못했습니다." onRetry={() => void load()} />}
 
       <ul className="endpoint-list">
         {entries.map((entry) => {
@@ -239,7 +242,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
               {row.removable && (
                 <button
                   type="button"
-                  className="btn endpoint-models-button"
+                  className="btn btn-sm endpoint-models-button"
                   disabled={editBusy}
                   aria-expanded={editing?.baseUrl === entry.baseUrl}
                   onClick={() => (editing?.baseUrl === entry.baseUrl ? setEditing(null) : void startEditing(entry.baseUrl, entry.allowedModels))}
@@ -252,8 +255,8 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
                   type="button"
                   className="btn-icon"
                   onClick={() => setPendingDelete(entry.baseUrl)}
-                  data-tooltip="제거"
-                  aria-label={`${row.host} 제거`}
+                  data-tooltip="삭제"
+                  aria-label={`${row.host} 삭제`}
                 >
                   <TrashIcon />
                 </button>
@@ -279,8 +282,12 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
             </li>
           );
         })}
-        {data && entries.length === 0 && <li className="endpoint-empty">등록된 서버가 없습니다.</li>}
-        {!data && !listError && <li className="endpoint-empty">불러오는 중…</li>}
+        {data && entries.length === 0 && <li className="endpoint-empty">등록된 모델 서버가 없습니다.</li>}
+        {!data && !listFailed && (
+          <li>
+            <ListSkeleton rows={2} />
+          </li>
+        )}
       </ul>
 
       <form className="endpoint-form" onSubmit={(event) => void handleSubmit(event)}>
@@ -314,7 +321,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
         </div>
 
         <div className="field">
-          <label htmlFor="endpoint-token">토큰 (선택)</label>
+          <label htmlFor="endpoint-token">개인 키 (선택)</label>
           <input
             id="endpoint-token"
             type="password"
@@ -325,7 +332,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
           {/* These servers answer 200 to a wrong token, so a "확인됨" here
               would be a lie. Say exactly what the field does. */}
           <span className="field-hint">
-            토큰은 입력한 경우에만 전송되며, 서버가 토큰을 요구하지 않으면 확인되지 않습니다.
+            개인 키는 입력한 경우에만 전송되며, 모델 서버가 키를 요구하지 않으면 확인되지 않습니다.
           </span>
         </div>
 
@@ -333,7 +340,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
             otherwise the field would ask for something that does not exist. */}
         {data && !data.unprotected && (
           <div className="field">
-            <label htmlFor="endpoint-admin">관리 토큰</label>
+            <label htmlFor="endpoint-admin">관리 키</label>
             <input
               id="endpoint-admin"
               type="password"
@@ -348,7 +355,18 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
           <ModelChooser models={probed.models} chosen={chosen} mustChoose={probed.mustChoose} onChange={setChosen} />
         )}
 
+        {/* 동작은 다른 대화상자처럼 오른쪽 끝에 서고, 결과 문구는 그 왼쪽에 붙는다. */}
         <div className="endpoint-actions">
+          {status.kind !== "idle" && status.kind !== "pending" && (
+            <p className="endpoint-status" role="status" data-tone={status.kind === "ok" ? "ok" : "danger"}>
+              {status.text}
+            </p>
+          )}
+          {pending && (
+            <p className="endpoint-status" role="status" data-tone="pending">
+              연결을 확인하는 중…
+            </p>
+          )}
           <button type="submit" className="btn btn-primary" disabled={pending || (probed !== null && probed.mustChoose && chosen.length === 0)}>
             {pending
               ? "연결을 확인하는 중…"
@@ -360,24 +378,14 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
                     ? "쓸 모델을 고르세요"
                     : "모든 모델로 추가"}
           </button>
-          {status.kind !== "idle" && status.kind !== "pending" && (
-            <p className="endpoint-status" role="status" data-tone={status.kind === "ok" ? "ok" : "danger"}>
-              {status.text}
-            </p>
-          )}
-          {pending && (
-            <p className="endpoint-status" role="status" data-tone="pending">
-              연결을 확인하는 중…
-            </p>
-          )}
         </div>
       </form>
 
       {pendingDelete && (
         <ConfirmDialog
-          title="서버 제거"
-          message="이 서버를 목록에서 제거할까요?"
-          confirmLabel="제거"
+          title={`${deleteHost} 서버를 삭제할까요?`}
+          message="목록에서 빠지고, 이 모델 서버의 모델은 더 이상 고를 수 없습니다. 되돌릴 수 없습니다."
+          confirmLabel="삭제"
           danger
           onConfirm={() => void handleDelete(pendingDelete)}
           onCancel={() => setPendingDelete(null)}
