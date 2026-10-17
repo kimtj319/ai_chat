@@ -206,6 +206,12 @@
   width: fit-content;
 }
 
+@media (pointer: coarse) {
+  .message-error-details summary {
+    padding-block: 6px;
+  }
+}
+
 .message-error-details pre {
   margin: var(--space-3) 0 0;
   white-space: pre-wrap;

@@ -77,11 +77,23 @@ export function useFollowBottom(
       touchY = y;
     };
 
+    // 목록 칸이 줄어들 때(폰 키보드가 올라오거나 입력창이 여러 줄로 커질 때)는 scroll
+    // 이벤트도 메시지 변화도 없어 끝에 있던 화면이 그대로 남고, 답변 끝이 입력창 뒤로
+    // 숨었다(390px 에서 키보드 344px·다섯 줄 437px 실측). 따라가는 중이면 끝으로 다시 붙인다.
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            if (followBottomRef.current) el.scrollTop = el.scrollHeight;
+          });
+    resizeObserver?.observe(el);
+
     el.addEventListener("scroll", onScroll, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
     return () => {
+      resizeObserver?.disconnect();
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("touchstart", onTouchStart);

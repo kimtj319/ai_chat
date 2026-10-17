@@ -319,6 +319,20 @@
   transition: background var(--press-out) var(--press-ease);
 }
 
+/* 손가락: 17px 짜리 번호의 누르는 자리만 위아래로 넓힌다. 좌우는 붙어 있는 [1][2] 가
+   서로를 덮지 않도록 조금만. */
+@media (pointer: coarse) {
+  .markdown-body .citation-link {
+    position: relative;
+  }
+
+  .markdown-body .citation-link::after {
+    content: "";
+    position: absolute;
+    inset: -10px -2px;
+  }
+}
+
 .markdown-body .citation-link:hover {
   background: var(--primary);
   color: var(--on-primary);

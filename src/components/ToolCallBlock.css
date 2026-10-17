@@ -88,6 +88,13 @@
   transition: opacity var(--press-out) var(--press-ease);
 }
 
+/* 손가락: 글자 한 줄(20px)이던 "인자"·"결과" 줄을 누르기 좋게 위아래로 늘린다. */
+@media (pointer: coarse) {
+  .tool-call-details summary {
+    padding-block: 6px;
+  }
+}
+
 .tool-call-details summary:active {
   opacity: var(--press-opacity);
   transition-duration: var(--press-in);
