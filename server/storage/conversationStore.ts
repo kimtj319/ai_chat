@@ -24,6 +24,39 @@ function lockKey(ownerId: string, conversationId: string): string {
   return `conv:${ownerId}:${conversationId}`;
 }
 
+/**
+ * 목록에 쓰는 요약을 파일의 (수정 시각, 크기)로 기억한다. 목록은 사이드바가 열릴 때와
+ * 답이 끝날 때마다 불리는데, 매번 모든 대화를 끝까지 읽고 해석했다 — 도구 결과가 실린
+ * 대화는 파일 하나가 수 MB 라 대화가 쌓일수록 목록이 느려졌다. 쓰기는 늘 임시 파일 +
+ * rename 이라(atomic.ts) 바뀐 파일은 수정 시각이 바뀌고, 그 파일만 다시 읽는다.
+ */
+const summaryCache = new Map<string, { mtimeMs: number; size: number; summary: ConversationSummary | null }>();
+
+async function summaryOf(file: string): Promise<ConversationSummary | null> {
+  const stat = await fs.stat(file);
+  const hit = summaryCache.get(file);
+  if (hit && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) return hit.summary;
+  const conv = await readJsonFile<Conversation>(file);
+  // A conversation the user opened but never typed in is not history —
+  // it exists only so the composer has something to write to. Hiding it
+  // here (rather than deleting it) keeps the open tab working while
+  // keeping the sidebar clean; it becomes visible on its first message.
+  const summary: ConversationSummary | null =
+    conv && conv.messages.length > 0
+      ? {
+          id: conv.id,
+          title: conv.title,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+          messageCount: conv.messages.length,
+          // So the sidebar can mark an embedding conversation without loading it.
+          ...(conv.kind ? { kind: conv.kind } : {}),
+        }
+      : null;
+  summaryCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+  return summary;
+}
+
 export async function listConversations(ownerId: string): Promise<ConversationSummary[]> {
   const dir = conversationsDir(ownerId);
   const entries = await readdirOrEmpty(dir);
@@ -34,25 +67,19 @@ export async function listConversations(ownerId: string): Promise<ConversationSu
     const id = entry.slice(0, -".json".length);
     if (!isValidId(id)) continue;
     try {
-      const conv = await readJsonFile<Conversation>(`${dir}/${entry}`);
-      if (!conv) continue;
-      // A conversation the user opened but never typed in is not history —
-      // it exists only so the composer has something to write to. Hiding it
-      // here (rather than deleting it) keeps the open tab working while
-      // keeping the sidebar clean; it becomes visible on its first message.
-      if (conv.messages.length === 0) continue;
-      summaries.push({
-        id: conv.id,
-        title: conv.title,
-        createdAt: conv.createdAt,
-        updatedAt: conv.updatedAt,
-        messageCount: conv.messages.length,
-        // So the sidebar can mark an embedding conversation without loading it.
-        ...(conv.kind ? { kind: conv.kind } : {}),
-      });
+      const summary = await summaryOf(`${dir}/${entry}`);
+      if (summary) summaries.push({ ...summary });
     } catch (err) {
+      // 읽는 사이 지워진 파일(ENOENT)은 목록에서 빠질 뿐이다.
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
       console.warn(`[conversationStore] skipping corrupt conversation file "${entry}" (owner ${ownerId}):`, err);
     }
+  }
+
+  // 지워진 대화의 요약은 들고 있지 않는다.
+  const present = new Set(entries.map((entry) => `${dir}/${entry}`));
+  for (const file of summaryCache.keys()) {
+    if (file.startsWith(`${dir}/`) && !present.has(file)) summaryCache.delete(file);
   }
 
   summaries.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));

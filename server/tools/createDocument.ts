@@ -16,13 +16,39 @@ export const MAX_DOCUMENT_TITLE_CHARS = 120;
 export const DOCUMENT_FORMATS = ["pdf", "md", "txt"] as const;
 export type DocumentFormat = (typeof DOCUMENT_FORMATS)[number];
 
+/**
+ * 이번 질문이 정리한 내용을 "파일로" 받겠다는 것인가.
+ *
+ * 이 도구는 이 판단이 참인 턴에만 모델에게 보인다(chat/turnTools.ts). 설명문에 "분명히
+ * 원할 때만" 이라고 적는 것으로는 모자랐다: "내 이슈를 정리해서 작성해줘" 에 Gemma·
+ * WiseLLoA 가 PDF 를 만들어 버렸다. 모델마다 다르게 읽는 말 대신, 보이지 않는 도구는
+ * 부를 수 없다는 사실에 기댄다.
+ *
+ * 형식 이름(PDF·TXT…) 하나만으로는 판단하지 않는다 — "이 PDF 내용을 요약해줘" 의 PDF 는
+ * 받을 형식이 아니라 읽을 대상이다. 형식 뒤에 만들기·받기 동사가 오거나, 다운로드·
+ * "파일로" 처럼 받는다는 말이 있을 때만 참이다.
+ */
+const FORMAT = "(?:pdf|피디에프|txt|텍스트\\s*파일|docx|워드\\s*파일|hwp|한글\\s*파일|마크다운|markdown|md\\s*파일)";
+const MAKE = "(?:만들|생성|저장|받|뽑|출력|내보내|변환|정리|작성|줘|주세요|달라|해\\s*줘)";
+const DOWNLOAD_INTENT: RegExp[] = [
+  new RegExp(`${FORMAT}\\s*(?:파일|문서|형식|형태|버전)?\\s*(?:으로|로)?\\s*${MAKE}`, "i"),
+  /다운\s*로드|다운\s*받|내려\s*받|download/i,
+  /파일\s*(?:로|을|를|로서|형태로)?\s*(?:만들|생성|저장|받|뽑|내보내|줘|주세요|달라)/,
+  /(?:저장|보관)\s*(?:할\s*수\s*있게|용으로|용\s*파일)/,
+  /\bexport\b|\bas\s+a\s+(?:pdf|file)\b|\bsave\s+(?:it\s+|this\s+)?as\b/i,
+];
+
+export function wantsDownloadableFile(text: string): boolean {
+  return DOWNLOAD_INTENT.some((pattern) => pattern.test(text));
+}
+
 export const createDocumentTool: ToolDefinition = {
   name: "create_document",
   description:
-    "사용자가 내려받을 문서 파일을 만듭니다. 사용자가 정리한 내용을 PDF·문서·파일로 받고 싶다거나 " +
-    "다운로드를 원할 때, 정리한 본문 전체를 content 에 마크다운으로 넣어 호출하세요(표·목록·제목 사용 가능). " +
-    "대화에 다운로드 상자가 나타나 사용자가 PDF·Markdown·TXT 로 받습니다. " +
-    "호출한 뒤 답변에는 본문을 다시 옮겨 쓰지 말고, 무엇을 담았는지만 짧게 알려 주세요.",
+    "사용자가 내려받을 문서 파일을 만듭니다. 사용자가 PDF·TXT·Markdown 파일로 받거나 다운로드하겠다고 " +
+    "분명히 말했을 때만 호출하세요. '정리해줘', '작성해줘' 처럼 파일을 말하지 않은 요청에는 쓰지 말고 " +
+    "답변 본문에 바로 쓰세요. 호출할 때는 정리한 본문 전체를 content 에 마크다운으로 넣고(표·목록·제목 사용 가능), " +
+    "호출한 뒤 답변에는 본문을 다시 옮겨 쓰지 말고 무엇을 담았는지만 짧게 알려 주세요.",
   category: "utility",
   parameters: {
     type: "object",

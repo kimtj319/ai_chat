@@ -1,6 +1,7 @@
 import { getTool, readAttachmentTool } from "../tools/index.js";
 import { BROWSER_TOOLS, isBrowserTool } from "../tools/browser.js";
 import { SCHEDULE_TOOLS } from "../tools/schedule.js";
+import { createDocumentTool, wantsDownloadableFile } from "../tools/createDocument.js";
 import type { ToolDefinition } from "../tools/types.js";
 import type { ChatToolDef } from "../vllm/client.js";
 import type { Conversation } from "../types.js";
@@ -71,7 +72,11 @@ export function buildTurnTools(conversation: Conversation, mcpTools: ToolDefinit
     // only when there is an attachment it could read.
     .filter((name) => name !== readAttachmentTool.name)
     .map((name) => getTool(name))
-    .filter((t): t is ToolDefinition => Boolean(t));
+    .filter((t): t is ToolDefinition => Boolean(t))
+    // 파일로 받겠다는 말이 이번 질문에 있을 때만 — "정리해서 작성해줘" 에 PDF 를 만들던 것
+    // (tools/createDocument.ts wantsDownloadableFile). 보통 턴에는 빠져 있어 도구 목록(프롬프트
+    // 앞부분)이 턴마다 바뀌지 않는다.
+    .filter((t) => t.name !== createDocumentTool.name || wantsDownloadableFile(lastUserText(conversation)));
   // Offered only when this conversation actually holds a text attachment whose
   // body was left out of the prompt. Otherwise it is a schema with nothing to
   // read, which the model calls anyway when a question mentions a file.
@@ -109,6 +114,14 @@ export function buildTurnTools(conversation: Conversation, mcpTools: ToolDefinit
     maxToolCalls: browserControl ? MAX_TOOL_CALLS_PER_BROWSER_TURN : MAX_TOOL_CALLS_PER_TURN,
     identicalLimit: (name) => (isBrowserTool(name) ? MAX_IDENTICAL_BROWSER_CALLS : MAX_IDENTICAL_TOOL_CALLS),
   };
+}
+
+function lastUserText(conversation: Conversation): string {
+  for (let i = conversation.messages.length - 1; i >= 0; i--) {
+    const message = conversation.messages[i]!;
+    if (message.role === "user") return typeof message.content === "string" ? message.content : "";
+  }
+  return "";
 }
 
 /** "mcp__alphavantage__GLOBAL_QUOTE" → "alphavantage(GLOBAL_QUOTE)", builtins as they are. */

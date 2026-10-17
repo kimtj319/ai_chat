@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { sessionMiddleware } from "./middleware/session.js";
 import { attachUser, requireActiveUser } from "./middleware/auth.js";
 import { requestLog } from "./middleware/requestLog.js";
+import { compressJson } from "./middleware/compressJson.js";
+import { staticAssets } from "./middleware/staticAssets.js";
 import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { sessionRouter } from "./routes/session.js";
@@ -73,6 +75,7 @@ export function createApp() {
     }
     next();
   });
+  app.use("/api", compressJson());
   app.use("/api", sessionMiddleware);
   // Resolve the session's account (may be none), then refuse every /api route
   // except the auth ones. This sits BEFORE the body parsers so it covers the
@@ -112,7 +115,7 @@ export function createApp() {
 
   // The SPA itself is served to anyone: the browser has to be able to load the
   // app before it can show a login form. Only /api is gated.
-  app.use(express.static(distDir));
+  app.use(...staticAssets(distDir));
 
   // 해시가 붙은 자산이 없으면 **없다고 말한다**. 아래의 SPA 폴백에 맡기면
   // index.html 이 200 으로 돌아가고, 그걸 <script> 자리에서 받은 브라우저는
@@ -127,6 +130,8 @@ export function createApp() {
   });
 
   app.use((_req, res) => {
+    // 이름이 바뀌지 않는 파일이라 매번 확인하게 둔다 — 새 배포가 곧바로 닿도록.
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(distDir, "index.html"), (err) => {
       if (err) res.status(404).send("Not built: run `npm run build` first.");
     });

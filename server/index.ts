@@ -7,6 +7,7 @@ import { checkHealth } from "./vllm/client.js";
 import { endpointsSource, listEndpoints } from "./vllm/endpoints.js";
 import { sweepAllAttachments } from "./storage/attachmentStore.js";
 import { sweepEmptyConversations } from "./storage/conversationStore.js";
+import { sweepStaleSessions } from "./storage/sessionStore.js";
 import { ensureAdminFromEnv } from "./auth/bootstrap.js";
 import { seedBuiltinServers } from "./mcp/builtinServers.js";
 import { warm as warmMcpDiscovery } from "./mcp/discovery.js";
@@ -63,6 +64,13 @@ const server = app.listen(config.port, () => {
   void seedBuiltinServers()
     .then(() => warmMcpDiscovery())
     .catch((err) => console.warn("[server] MCP discovery warm-up failed:", err));
+
+  // 만료되었거나 로그아웃한 지 오래된 세션 기록 — 아무 것도 열어 주지 못하는데 쌓이기만 한다.
+  void sweepStaleSessions(config.sessionMaxAgeHours)
+    .then((removed) => {
+      if (removed > 0) console.log(`[server] session sweep: removed ${removed} stale session(s)`);
+    })
+    .catch((err) => console.warn("[server] session sweep failed:", err));
 
   // A chat window that was opened and never used leaves a record behind, and
   // nothing else removes it: 91 of them against 6 real conversations after one

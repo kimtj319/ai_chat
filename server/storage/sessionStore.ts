@@ -115,3 +115,32 @@ async function signOutSessions(userId: string, keepSessionId: string | null): Pr
   }
   return signedOut;
 }
+
+/** 로그아웃한 세션 기록은 이만큼 지나면 지운다 — 같은 쿠키로 곧 다시 들어오는 경우만 남긴다. */
+const SIGNED_OUT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 더는 아무 것도 열어 주지 못하는 세션 기록을 지운다: 로그인 시한(sessionMaxAgeHours)이
+ * 지난 것과, 로그아웃한 지 하루가 지난 것.
+ *
+ * 지우는 곳이 없어서 기록이 한 번 로그인할 때마다 하나씩 영영 쌓였고(운영에서 257개),
+ * 비밀번호를 바꿀 때의 전수 조사(signOutSessions)가 그만큼 길어졌다. 지워도 달라지는
+ * 것은 없다 — 만료된 세션은 이미 로그인으로 인정되지 않고(middleware/auth.ts), 기록이
+ * 없는 쿠키는 로그인하지 않은 방문자와 같다.
+ */
+export async function sweepStaleSessions(maxAgeHours: number, now: number = Date.now()): Promise<number> {
+  let removed = 0;
+  for (const sessionId of await readdirOrEmpty(sessionsDir())) {
+    const record = await readJsonFile<SessionRecord>(sessionFile(sessionId)).catch(() => undefined);
+    if (!record) continue;
+    const loggedInAt = record.loggedInAt ? Date.parse(record.loggedInAt) : NaN;
+    const createdAt = Date.parse(record.createdAt);
+    const expired = record.userId
+      ? Number.isFinite(loggedInAt) && now - loggedInAt > maxAgeHours * 60 * 60 * 1000
+      : Number.isFinite(createdAt) && now - createdAt > SIGNED_OUT_GRACE_MS;
+    if (!expired) continue;
+    await withLock(`session:${sessionId}`, () => fs.rm(sessionDir(sessionId), { recursive: true, force: true }));
+    removed++;
+  }
+  return removed;
+}
