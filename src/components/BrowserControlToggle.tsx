@@ -115,13 +115,14 @@ function BrowserControlGuide({ onClose }: { onClose: () => void }) {
             <b>압축해제된 확장 프로그램을 로드합니다</b>를 눌러 푼 폴더를 고릅니다.
           </li>
           <li>
-            툴바의 퍼즐 아이콘에서 <b>AI Console 크롬 연결</b>을 열고, 주소 칸에 아래 주소를 넣고 저장합니다.
+            툴바의 퍼즐 아이콘에서 <b>AI Console 크롬 연결</b>을 열고, <b>AI Console 웹 서버 주소</b> 칸에 아래 웹 서버
+            주소(지금 이 채팅 화면의 주소)를 넣고 저장합니다. 크롬으로 조작할 사이트의 도메인을 넣는 칸이 아닙니다.
             <span className="browser-guide-origin">
               <code>{origin}</code>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => void copyText(origin).then((ok) => showToast(ok ? "주소를 복사했습니다." : "복사하지 못했습니다."))}
+                onClick={() => void copyText(origin).then((ok) => showToast(ok ? "웹 서버 주소를 복사했습니다." : "복사하지 못했습니다."))}
               >
                 복사
               </button>

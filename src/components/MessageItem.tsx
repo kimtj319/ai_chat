@@ -183,7 +183,9 @@ function MessageItemView({
           thinking/tool panels and the answer fill in below it. */}
       {!isUser && message.streaming && (
         <span className="message-status thinking-shimmer" role="status" aria-label="응답 생성 중">
-          답변을 생성하는 중…
+          {message.queuedAhead !== undefined
+            ? `사용자가 많아 차례를 기다리는 중…${message.queuedAhead > 0 ? ` (앞에 ${message.queuedAhead}명)` : ""}`
+            : "답변을 생성하는 중…"}
         </span>
       )}
 

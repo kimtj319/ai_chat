@@ -6,9 +6,6 @@
 
 import type { McpAuthMode, McpHealthState, McpServerSummary } from "../api/types";
 
-/** Every MCP tool is stored as `mcp__{slug}__{tool}` in `enabledTools`. */
-export const MCP_TOOL_PREFIX = "mcp__";
-
 export const NAME_MAX_LENGTH = 40;
 export const DESCRIPTION_MAX_LENGTH = 200;
 export const SLUG_MIN_LENGTH = 2;
@@ -104,36 +101,6 @@ export function hostOf(url: string): string {
 export function shortToolName(fullName: string): string {
   const parts = fullName.split("__");
   return parts.length > 2 ? parts.slice(2).join("__") : fullName;
-}
-
-export function isMcpToolName(name: string): boolean {
-  return name.startsWith(MCP_TOOL_PREFIX);
-}
-
-/**
- * The picker owns only the MCP half of `enabledTools`; 도구 설정 owns the
- * builtin half. Composing the array at save time from whatever is stored right
- * now — rather than saving a copy taken when the picker opened — is what keeps
- * the two views from overwriting each other's side of the same array.
- */
-export function mergeMcpSelection(current: string[], mcpSelected: string[]): string[] {
-  return [...current.filter((name) => !isMcpToolName(name)), ...mcpSelected];
-}
-
-/** Order-insensitive: the two views build the array in different orders. */
-export function sameTools(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const set = new Set(a);
-  return b.every((name) => set.has(name));
-}
-
-export type SelectionState = "none" | "some" | "all";
-
-export function selectionState(toolNames: string[], enabled: ReadonlySet<string>): SelectionState {
-  if (toolNames.length === 0) return "none";
-  const on = toolNames.filter((name) => enabled.has(name)).length;
-  if (on === 0) return "none";
-  return on === toolNames.length ? "all" : "some";
 }
 
 /**

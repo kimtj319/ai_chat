@@ -171,7 +171,6 @@
     .admin-cell-group select,
     .library-credential input,
     .proh-editor,
-    .mcp-picker-search,
     .keys-row-input input
   ) {
   background: var(--glass-field);

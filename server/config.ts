@@ -297,6 +297,13 @@ export const config = {
    */
   answerNowThresholdMs: toDurationMs(process.env.ANSWER_NOW_THRESHOLD_MS, 3 * 60 * 1000),
   /**
+   * 모델 하나에 한꺼번에 보내는 요청 수의 상한(vllm/concurrency.ts). 넘친 요청은
+   * 줄을 서고, 화면에는 "차례를 기다리는 중" 이 뜬다. 운영 게이트웨이의 모델은
+   * 30 개까지 멀쩡하고 40 개에서 무너졌다 — 제목 만들기 같은 곁 호출도 같은
+   * 자리를 쓰므로 여유를 둔 24. 0 이면 상한 없음.
+   */
+  modelMaxConcurrency: toInt(process.env.MODEL_MAX_CONCURRENCY, 24),
+  /**
    * 사용자의 말에서 "하지 말라" 는 뜻을 찾아 그 사용자의 금지 목록 검토 대기에
    * 보탤지. 단서가 있는 말에만 모델 호출이 하나 더 붙는다(chat/prohibitionDetect.ts).
    * 끄면 목록은 사용자가 직접 적은 것만 반영된다.

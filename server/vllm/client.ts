@@ -3,6 +3,7 @@ import type { VllmEndpoint } from "../config.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
 import { endpointsRevision, listEndpoints, reportedWindow, requestHeaders } from "./endpoints.js";
 import { probeModels, type ModelCapability } from "./capability.js";
+import { acquireModelSlot, waitingAhead, type SlotPriority } from "./concurrency.js";
 
 interface ModelsListResponse {
   /** context_length is OpenRouter's name for the same number. */
@@ -492,23 +493,56 @@ async function* parseSseStream(
   }
 }
 
-/** POST {endpoint}/chat/completions with stream:true, returning parsed SSE chunks. */
+function modelSlotKey(endpoint: VllmEndpoint, model: string): string {
+  return `${endpoint.baseUrl}|${model}`;
+}
+
+/** 이 모델에 지금 보내면 줄을 서야 하는가: -1 이면 바로, 아니면 앞에 선 요청 수. */
+export function modelQueueAhead(endpoint: VllmEndpoint, model: string): number {
+  return waitingAhead(modelSlotKey(endpoint, model), config.modelMaxConcurrency);
+}
+
+/**
+ * POST {endpoint}/chat/completions with stream:true, returning parsed SSE chunks.
+ *
+ * 모델마다 동시 요청 수에 상한이 있다(vllm/concurrency.ts): 자리가 날 때까지 여기서
+ * 기다리고, 답이 끝나거나 끊기거나 그만두면 자리를 놓는다. 돌려받은 스트림을 끝까지
+ * 읽지 않고 버려도 signal 이 끊기면 놓는다.
+ */
 export async function streamChatCompletion(
   body: ChatCompletionRequestBody,
   signal: AbortSignal,
   endpoint: VllmEndpoint = config.vllmEndpoints[0]!,
+  priority: SlotPriority = "turn",
 ): Promise<AsyncGenerator<VllmStreamChunk>> {
-  const res = await fetch(`${endpoint.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: requestHeaders(endpoint, true),
-    body: JSON.stringify({ ...body, messages: toWire(body.messages) }),
-    signal,
-  });
+  const release = await acquireModelSlot(modelSlotKey(endpoint, body.model), signal, config.modelMaxConcurrency, priority);
+  signal.addEventListener("abort", release, { once: true });
+  let res: Response;
+  try {
+    res = await fetch(`${endpoint.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: requestHeaders(endpoint, true),
+      body: JSON.stringify({ ...body, messages: toWire(body.messages) }),
+      signal,
+    });
+  } catch (err) {
+    release();
+    throw err;
+  }
   if (!res.ok || !res.body) {
+    release();
     const text = await res.text().catch(() => "");
     throw new Error(`vLLM /chat/completions responded ${res.status}: ${text.slice(0, 500)}`);
   }
-  return parseSseStream(res.body, signal);
+  const chunks = parseSseStream(res.body, signal);
+  return (async function* () {
+    try {
+      yield* chunks;
+    } finally {
+      release();
+      signal.removeEventListener("abort", release);
+    }
+  })();
 }
 
 /**
@@ -549,7 +583,8 @@ export async function completeWithoutThinking(input: {
 
   let text = "";
   let thought = false;
-  const stream = await streamChatCompletion(body, input.signal, input.endpoint);
+  // 곁 호출: 자리가 모자라면 사용자가 기다리는 답 뒤에 선다(vllm/concurrency.ts).
+  const stream = await streamChatCompletion(body, input.signal, input.endpoint, "side");
   for await (const chunk of stream) {
     if (input.signal.aborted) break;
     const delta = chunk.choices?.[0]?.delta;

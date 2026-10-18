@@ -140,6 +140,94 @@ let postId = "";
   check("없는 글에 답변하면 404", missing.status === 404 && missing.json.code === "not_found", `${missing.status} ${missing.json?.code}`);
 }
 
+/* ------------------------------------------------------- 고치기: 글 */
+
+// 고치는 권한도 닫기·지우기와 같은 한 줄(canManage)을 탄다. 따로 규칙을 두면
+// "닫을 수는 없는데 고칠 수는 있는" 어긋난 자리가 생긴다.
+{
+  const fresh = await call("alice", "GET", `/board/${postId}`);
+  check("고친 적 없는 글에는 editedAt 이 없다", fresh.json.post.editedAt === undefined, String(fresh.json?.post?.editedAt));
+
+  const edited = await call("alice", "PATCH", `/board/${postId}`, {
+    title: "색인이 멈춥니다",
+    body: "## 고친 본문\n5MB pdf 에서 멈춥니다.",
+    tags: ["PDF", " 색인"],
+  });
+  check("쓴 사람은 제목·본문·라벨을 고칠 수 있다", edited.status === 200 &&
+    edited.json.post.title === "색인이 멈춥니다" &&
+    edited.json.post.body === "## 고친 본문\n5MB pdf 에서 멈춥니다." &&
+    edited.json.post.tags.join() === "pdf,색인", `${edited.status} ${JSON.stringify(edited.json?.post)}`);
+  check("고친 시각이 남는다", typeof edited.json.post.editedAt === "string", String(edited.json?.post?.editedAt));
+  check("고쳐도 상태와 답변은 그대로다", edited.json.post.status === "open" && edited.json.post.replies.length === 1);
+
+  const stranger = await call("bob", "PATCH", `/board/${postId}`, { title: "남이 고친 제목" });
+  check("남이 고치려 하면 403", stranger.status === 403 && stranger.json.code === "forbidden", `${stranger.status} ${stranger.json?.code}`);
+  const after = await call("alice", "GET", `/board/${postId}`);
+  check("  막힌 뒤에도 제목은 그대로다", after.json.post.title === "색인이 멈춥니다", after.json?.post?.title);
+
+  const byAdmin = await call("admin", "PATCH", `/board/${postId}`, { body: "관리자가 다듬은 본문" });
+  check("관리자는 남의 글도 고칠 수 있다", byAdmin.status === 200 && byAdmin.json.post.body === "관리자가 다듬은 본문", `${byAdmin.status} ${byAdmin.json?.post?.body}`);
+  check("  준 칸만 바뀐다", byAdmin.json.post.title === "색인이 멈춥니다" && byAdmin.json.post.tags.join() === "pdf,색인", JSON.stringify(byAdmin.json?.post));
+
+  for (const [name, patch] of [
+    ["빈 제목", { title: "   " }],
+    ["너무 긴 제목", { title: "가".repeat(121) }],
+    ["너무 긴 본문", { body: "a".repeat(20_001) }],
+    ["문자열이 아닌 제목", { title: 42 }],
+    ["바꿀 것이 없음", {}],
+  ] as const) {
+    const res = await call("alice", "PATCH", `/board/${postId}`, patch);
+    check(`글 고치기 — ${name}은 400`, res.status === 400 && res.json.code === "invalid_input", `${res.status} ${res.json?.code}`);
+  }
+  const kept = await call("alice", "GET", `/board/${postId}`);
+  check("  거절된 고치기는 아무것도 바꾸지 않는다", kept.json.post.body === "관리자가 다듬은 본문" && kept.json.post.title === "색인이 멈춥니다");
+
+  const missing = await call("alice", "PATCH", "/board/post_없는글", { title: "제목" });
+  check("없는 글을 고치면 404", missing.status === 404 && missing.json.code === "not_found", `${missing.status} ${missing.json?.code}`);
+}
+
+/* ------------------------------------------------------- 고치기: 답변 */
+
+{
+  const before = await call("bob", "GET", `/board/${postId}`);
+  const reply = before.json.post.replies[0];
+  const replyPath = `/board/${postId}/replies/${reply.id}`;
+  check("답변을 쓴 사람에게는 고칠 수 있다고 말해 준다", reply.canEdit === true, String(reply.canEdit));
+  const asCarol = await call("carol", "GET", `/board/${postId}`);
+  check("  남에게는 고칠 수 없다고", asCarol.json.post.replies[0].canEdit === false, String(asCarol.json?.post?.replies?.[0]?.canEdit));
+
+  const edited = await call("bob", "PATCH", replyPath, { body: "**고친** 답변입니다." });
+  const got = edited.json?.post?.replies?.[0];
+  check("답변을 쓴 사람은 고칠 수 있다", edited.status === 200 && got?.body === "**고친** 답변입니다.", `${edited.status} ${got?.body}`);
+  check("  고친 시각이 남고, 처음 쓴 시각과 쓴 사람은 그대로다",
+    typeof got?.editedAt === "string" && got.createdAt === reply.createdAt && got.authorId === "bob", JSON.stringify(got));
+  check("  답변 수는 그대로다", edited.json?.post?.replies?.length === 1);
+
+  // 글을 쓴 사람이라도 남의 답변은 못 고친다 — 남의 말을 그 사람 이름으로 바꾸는 일이다.
+  const byPostAuthor = await call("alice", "PATCH", replyPath, { body: "글쓴이가 고침" });
+  check("글쓴이라도 남의 답변을 고치면 403", byPostAuthor.status === 403 && byPostAuthor.json?.code === "forbidden", `${byPostAuthor.status} ${byPostAuthor.json?.code}`);
+  const byStranger = await call("carol", "PATCH", replyPath, { body: "남이 고침" });
+  check("남이 답변을 고치면 403", byStranger.status === 403 && byStranger.json?.code === "forbidden", `${byStranger.status} ${byStranger.json?.code}`);
+  const still = await call("bob", "GET", `/board/${postId}`);
+  check("  막힌 뒤에도 답변은 그대로다", still.json.post.replies[0].body === "**고친** 답변입니다.", still.json?.post?.replies?.[0]?.body);
+
+  const empty = await call("bob", "PATCH", replyPath, { body: "   " });
+  check("빈 답변으로 고치면 400", empty.status === 400 && empty.json?.code === "invalid_input", `${empty.status} ${empty.json?.code}`);
+  const long = await call("bob", "PATCH", replyPath, { body: "a".repeat(20_001) });
+  check("너무 긴 답변으로 고치면 400", long.status === 400 && long.json?.code === "invalid_input", `${long.status} ${long.json?.code}`);
+
+  const byAdmin = await call("admin", "PATCH", replyPath, { body: "관리자가 가린 답변" });
+  check("관리자는 남의 답변도 고칠 수 있다", byAdmin.status === 200 && byAdmin.json?.post?.replies?.[0]?.body === "관리자가 가린 답변", `${byAdmin.status}`);
+
+  const noReply = await call("bob", "PATCH", `/board/${postId}/replies/reply_없는답변`, { body: "안녕" });
+  check("없는 답변을 고치면 404", noReply.status === 404 && noReply.json?.code === "not_found", `${noReply.status} ${noReply.json?.code}`);
+  const noPost = await call("bob", "PATCH", `/board/post_없는글/replies/${reply.id}`, { body: "안녕" });
+  check("없는 글의 답변을 고치면 404", noPost.status === 404 && noPost.json?.code === "not_found", `${noPost.status} ${noPost.json?.code}`);
+
+  // 아래 지우기 검사가 원래 답변 문구로 "함께 사라졌는가" 를 본다. 되돌려 둔다.
+  await call("bob", "PATCH", replyPath, { body: "전처리 모듈이 붙기 전 파일인가요?" });
+}
+
 /* ------------------------------------------------------------ 열고 닫기 */
 
 {

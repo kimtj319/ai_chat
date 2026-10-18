@@ -130,6 +130,16 @@ export function documentSourceFile(ownerId: string, documentId: string): string 
 }
 
 /**
+ * 올린 텍스트 파일(.txt·.md·.csv…)의 원본 글 — 전처리 **전**, 나누기 **전**. 출처 창이
+ * 이것을 띄우고 인용된 단락을 제자리에 칠한다. `{id}.txt` 는 색인용으로 다듬은 글이라
+ * 원본이 아니다. 한 파일이 여러 조각으로 나뉘어도 한 벌만 두고, 조각마다 메타의
+ * `originalId` 가 이 파일을 가리킨다. 이 기능 전에 올린 문서에는 없다.
+ */
+export function documentOriginalFile(ownerId: string, originalId: string): string {
+  return path.join(documentsDir(ownerId), `${originalId}.original.txt`);
+}
+
+/**
  * The GLOBAL MCP registry: one JSON file per server,
  * {DATA_DIR}/mcp/servers/{id}.json, in the same one-file-per-record shape as
  * accounts and groups. Under DATA_DIR rather than in the image because that is

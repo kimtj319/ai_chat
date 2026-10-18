@@ -6,6 +6,8 @@ export interface BoardReply {
   authorId: string;
   body: string;
   createdAt: string;
+  /** 마지막으로 고친 때. 고친 적이 없으면 없다 — 화면이 "(수정됨)" 을 붙이는 근거다. */
+  editedAt?: string;
 }
 
 /**
@@ -27,6 +29,8 @@ export interface BoardPost {
   replies: BoardReply[];
   createdAt: string;
   updatedAt: string;
+  /** 제목·본문·라벨을 마지막으로 고친 때. 상태를 바꾸거나 답변이 달린 것은 고친 것이 아니다. */
+  editedAt?: string;
   /** 누가 언제 닫았는가. 다시 열면 지운다. */
   closedBy?: string;
   closedAt?: string;
@@ -35,6 +39,8 @@ export interface BoardPost {
 /** 화면에 나가는 모양 — 작성자 이름이 붙고, 목록에서는 본문과 답변이 빠진다. */
 export interface BoardReplyView extends BoardReply {
   authorName: string | null;
+  /** 지금 보는 사람이 이 답변을 고칠 수 있는가. 글의 canManage 와 같은 규칙을 답변에 댄다. */
+  canEdit: boolean;
 }
 
 export interface BoardPostView extends Omit<BoardPost, "replies"> {

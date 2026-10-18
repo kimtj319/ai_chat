@@ -410,6 +410,8 @@ export type ServerEvent =
   | { type: "compaction"; kind: CompactionKind; phase: "start" | "progress" | "end"; progress: number; ok?: boolean }
   /** The conversation was renamed from a summary of the request that opened it. */
   | { type: "title"; title: string }
+  /** 모델이 동시 요청 상한에 차서 줄을 섰다. ahead = 앞에 선 요청 수. 첫 글자가 오면 풀린다. */
+  | { type: "queued"; ahead: number }
   | { type: "done"; message: ChatMessage }
   | { type: "error"; message: string };
 
@@ -436,6 +438,8 @@ export interface AuthUser {
   status: AccountStatus;
   /** 공용 키·모든 모델을 쓸 수 있는 계정(관리자·AI Product 팀). 서버가 정한다. */
   privileged?: boolean;
+  /** 대화 공유 링크를 만들 서버 주소. 없으면 지금 연 주소로 만든다(AI Product 구성원). */
+  shareBaseUrl?: string;
 }
 
 /** One row of `GET /api/admin/users`. */
@@ -544,6 +548,8 @@ export interface RagDocument {
   scope: RagDocumentScope;
   status: "ready" | "failed";
   error?: string;
+  /** 올린 원본 글의 id. 나뉜 조각들이 같은 값을 가리킨다. PDF·예전 문서에는 없다. */
+  originalId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -650,11 +656,15 @@ export interface BoardReply {
   authorId: string;
   body: string;
   createdAt: string;
+  /** 마지막으로 고친 때. 있으면 시각 옆에 "(수정됨)". */
+  editedAt?: string;
 }
 
 export interface BoardReplyView extends BoardReply {
   /** 계정이 지워졌으면 null — 화면은 id 를 대신 쓴다. */
   authorName: string | null;
+  /** 지금 보는 사람이 이 답변을 고칠 수 있는가. 서버가 판단해서 보낸다. */
+  canEdit: boolean;
 }
 
 /** 글 하나의 전체. 본문과 답변이 함께 온다. */
@@ -671,6 +681,8 @@ export interface BoardPostView {
   replies: BoardReplyView[];
   createdAt: string;
   updatedAt: string;
+  /** 제목·본문·라벨을 마지막으로 고친 때. */
+  editedAt?: string;
   closedBy?: string;
   closedAt?: string;
   /** 지금 보는 사람이 상태를 바꾸거나 지울 수 있는가. 서버가 판단해서 보낸다. */
@@ -690,6 +702,7 @@ export interface BoardPostSummary {
   canManage: boolean;
   createdAt: string;
   updatedAt: string;
+  editedAt?: string;
 }
 
 export interface Notice {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiPath } from "../api/base";
 import type { CitationSource } from "../state/citations";
-import { findPassage } from "../state/highlightMatch";
+import { findPassage, type Range } from "../state/highlightMatch";
 import { closeSource, useOpenSource } from "../state/sourcePanel";
 import { pushOverlay } from "../ui/overlayStack";
 import { CloseIcon } from "./icons";
@@ -10,9 +10,14 @@ import "./SourcePanel.css";
 /**
  * 답변 속 출처 "[n]" 을 누르면 오른쪽에서 밀려 나오는 창.
  *
- * PDF 로 올린 문서는 그 PDF 를 그대로 띄우고, 인용된 단락을 노란 형광펜처럼
- * 칠한다. PDF 가 아닌 문서, 또는 원본을 보관하기 전에 올린 PDF 는 색인한 원문
- * 텍스트를 보여 주고 같은 자리를 칠한다.
+ * 언제나 **원본 문서**에서 인용된 자리를 노란 형광펜처럼 칠한다.
+ *
+ *   - PDF 로 올린 문서: 그 PDF 를 그대로 띄운다(/file).
+ *   - 텍스트 파일(.txt·.md·.csv…): 올린 그대로의 글을 띄운다(/original). 단락은 색인용으로
+ *     다듬은 글이라 글자 그대로는 안 맞을 수 있어 findPassage 로 찾는다.
+ *   - 원본을 보관하기 전에 올린 문서: 색인용으로 다듬은 글(/text)로 물러서고 그렇다고 적는다.
+ *   - 이 앱에 원문이 없는 문서(엔진에 바로 넣은 시드 코퍼스): 검색 색인에서 청크를 이어
+ *     다시 엮은 글(/sources)을 띄운다. 여기서는 단락의 순번을 알므로 글자 맞추기 없이 칠한다.
  *
  * 창이 열리면 앱 레이아웃이 본문을 왼쪽(사이드바 바로 옆)으로 붙인다 — App.css 의
  * `[data-source-open]` 규칙.
@@ -71,8 +76,26 @@ export function SourcePanel() {
 type View =
   | { kind: "loading" }
   | { kind: "pdf"; found: boolean; page: number; pages: number }
-  | { kind: "text"; text: string }
+  /** note: 원본이 아니라 다른 것을 보여 줄 때 그 사실을 한 줄로 알린다. */
+  | { kind: "text"; text: string; note?: string; ranges?: Range[] }
   | { kind: "missing" };
+
+/** /sources 응답. server/rag/engineSource.ts 의 RebuiltSource. */
+interface RebuiltSource {
+  text: string;
+  chunks: Array<{ ord: number; start: number; end: number }>;
+  truncated: boolean;
+}
+
+/** 오류 응답의 code. 문서가 아예 없는 것(not_found)과 원본만 없는 것(no_source)을 가른다. */
+async function errorCode(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { code?: unknown };
+    return typeof body.code === "string" ? body.code : "";
+  } catch {
+    return "";
+  }
+}
 
 function SourceBody({ source }: { source: CitationSource }) {
   const [view, setView] = useState<View>({ kind: "loading" });
@@ -82,8 +105,12 @@ function SourceBody({ source }: { source: CitationSource }) {
     const controller = new AbortController();
     const { signal } = controller;
     const base = apiPath(`/documents/${encodeURIComponent(source.documentId)}`);
+    const get = (url: string) => fetch(url, { credentials: "include", signal });
+    const show = (next: View) => {
+      if (!signal.aborted) setView(next);
+    };
     (async () => {
-      const file = await fetch(`${base}/file`, { credentials: "include", signal });
+      const file = await get(`${base}/file`);
       if (file.ok) {
         const data = await file.arrayBuffer();
         const host = pdfHost.current;
@@ -91,17 +118,36 @@ function SourceBody({ source }: { source: CitationSource }) {
         setView({ kind: "pdf", found: false, page: 0, pages: 0 });
         const { renderPdf } = await import("./sourcePdf");
         const result = await renderPdf(host, data, source.text, signal);
-        if (!signal.aborted) setView({ kind: "pdf", ...result });
+        show({ kind: "pdf", ...result });
         return;
       }
-      // PDF 원본이 없는 문서: 색인한 원문 텍스트로 보여 준다.
-      const text = await fetch(`${base}/text`, { credentials: "include", signal });
-      if (text.ok) {
-        const body = await text.text();
-        if (!signal.aborted) setView({ kind: "text", text: body });
-        return;
+      // 이 앱의 문서 저장소에 있는 문서(내 것이거나 공개된 것)만 아래 두 길을 탄다.
+      // 없거나 볼 수 없는 문서는 곧장 검색 색인으로 간다 — 묻는 횟수를 줄인다.
+      if ((await errorCode(file)) !== "not_found") {
+        const original = await get(`${base}/original`);
+        // 줄 끝만 맞춘다: pre-wrap 은 CRLF 의 \r 도 줄바꿈으로 그려 윈도에서 만든 파일이 두 줄씩 벌어진다.
+        if (original.ok) return show({ kind: "text", text: (await original.text()).replace(/\r\n?/g, "\n") });
+        const reason = await errorCode(original);
+        const text = await get(`${base}/text`);
+        if (text.ok) {
+          const note =
+            reason === "source_restricted"
+              ? "원본 파일의 다른 부분이 공개되어 있지 않아, 이 부분을 색인용으로 정리한 본문을 보여 드립니다."
+              : "원본 파일을 보관하기 전에 올린 문서라, 색인용으로 정리한 본문을 보여 드립니다.";
+          return show({ kind: "text", text: await text.text(), note });
+        }
       }
-      if (!signal.aborted) setView({ kind: "missing" });
+      // 이 앱에 원문이 없는 문서: 검색 색인에서 다시 엮는다. 권한은 서버가 내 계정으로 건다.
+      const rebuilt = await get(apiPath(`/sources/${encodeURIComponent(source.documentId)}`));
+      if (rebuilt.ok) {
+        const body = (await rebuilt.json()) as RebuiltSource;
+        const cited = body.chunks.find((c) => c.ord === source.ord);
+        const note = body.truncated
+          ? "검색 색인에서 단락을 이어 다시 엮은 문서입니다. 길어서 앞부분만 가져왔습니다."
+          : "검색 색인에서 단락을 이어 다시 엮은 문서입니다. 줄바꿈은 원본과 다를 수 있습니다.";
+        return show({ kind: "text", text: body.text, note, ...(cited ? { ranges: [{ start: cited.start, end: cited.end }] } : {}) });
+      }
+      show({ kind: "missing" });
     })().catch((err: unknown) => {
       if (signal.aborted) return;
       console.warn("[source] could not open the source:", err);
@@ -121,7 +167,8 @@ function SourceBody({ source }: { source: CitationSource }) {
       {view.kind === "pdf" && view.pages === 0 && <p className="source-panel-note">PDF 를 그리는 중…</p>}
       {/* PDF 는 이 칸에 그려진다. 다른 모양일 때는 비어 있어 공간을 차지하지 않는다. */}
       <div ref={pdfHost} className={`source-pdf${view.kind === "pdf" ? "" : " empty"}`} />
-      {view.kind === "text" && <SourceText text={view.text} passage={source.text} />}
+      {view.kind === "text" && view.note && <p className="source-panel-note">{view.note}</p>}
+      {view.kind === "text" && <SourceText text={view.text} passage={source.text} known={view.ranges} />}
       {view.kind === "missing" && (
         <>
           <p className="source-panel-note">문서를 열 수 없습니다. 지워졌거나 볼 수 없는 문서입니다. 검색된 단락만 보여 드립니다.</p>
@@ -134,8 +181,9 @@ function SourceBody({ source }: { source: CitationSource }) {
   );
 }
 
-function SourceText({ text, passage }: { text: string; passage: string }) {
-  const ranges = useMemo(() => findPassage(text, passage), [text, passage]);
+/** `known` 은 자리를 이미 아는 경우(색인에서 엮은 문서의 순번)다. 없으면 글자로 찾는다. */
+function SourceText({ text, passage, known }: { text: string; passage: string; known?: Range[] }) {
+  const ranges = useMemo(() => known ?? findPassage(text, passage), [known, text, passage]);
   const scroller = useRef<HTMLDivElement>(null);
   const firstMark = useRef<HTMLElement>(null);
 

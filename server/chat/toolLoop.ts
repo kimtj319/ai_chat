@@ -2,6 +2,7 @@ import { modelAccessForOwner } from "../vllm/access.js";
 import { citationSources } from "./citations.js";
 import {
   resolveModel,
+  modelQueueAhead,
   streamChatCompletion,
   countPromptTokens,
   type ChatCompletionRequestBody,
@@ -57,6 +58,8 @@ export type ChatEvent =
   | { type: "notice"; message: string }
   // 컨텍스트 압축 진행률(chat/compactionProgress.ts). 그동안 화면은 입력을 막는다.
   | CompactionEvent
+  // 모델이 동시 요청 상한에 차 있어 줄을 선다(vllm/concurrency.ts). ahead = 앞에 선 요청 수.
+  | { type: "queued"; ahead: number }
   | { type: "error"; message: string };
 
 export interface TurnResult {
@@ -510,6 +513,8 @@ export async function* runConversationTurn(
     let leakGate: BudgetLeakGate | null = null;
 
     try {
+      const ahead = modelQueueAhead(endpoint, body.model);
+      if (ahead >= 0) yield { type: "queued", ahead };
       const stream = await streamChatCompletion(body, signal, endpoint);
       for await (const chunk of stream) {
         if (signal.aborted) throw new Error("aborted-by-user");

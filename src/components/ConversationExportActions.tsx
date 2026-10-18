@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { getShareToken, saveShare } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import type { ChatMessage } from "../api/types";
 import { useDismiss } from "../hooks/useDismiss";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -34,9 +35,14 @@ function newShareToken(): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** 지금 주소에서 해시만 바꾼 공유 링크. 앱이 하위 경로·다른 도메인에 있어도 맞다. */
-function shareLink(token: string): string {
-  const url = new URL(window.location.href);
+/**
+ * 공유 링크. 서버가 shareBaseUrl 을 주면(AI Product 구성원이 아닌 계정) 서버의 실제
+ * 주소로, 아니면 지금 주소에서 해시만 바꿔 만든다 — 앱이 하위 경로·다른 도메인에
+ * 있어도 맞다.
+ */
+function shareLink(token: string, shareBaseUrl?: string): string {
+  const url = new URL(shareBaseUrl ? `${shareBaseUrl}/` : window.location.href);
+  if (shareBaseUrl) url.search = "";
   url.hash = shareHash(token);
   return url.toString();
 }
@@ -65,6 +71,7 @@ export function ConversationExportActions({
   fallbackModel,
 }: ConversationExportActionsProps) {
   const totals = conversationTokenTotals(activeConversation.messages);
+  const shareBaseUrl = useAuth().me?.shareBaseUrl;
 
   // 다운로드 형식 선택(JSON / PDF). 바깥을 누르거나 Esc 면 닫힌다.
   const [downloadOpen, setDownloadOpen] = useState(false);
@@ -106,15 +113,15 @@ export function ConversationExportActions({
     const known = shareToken?.conversationId === shareConversationId ? shareToken.token : null;
     const proposed = known ?? newShareToken();
     // 누른 순간에 복사한다(위 설명). copyText 는 http 에서 그 자리에서 바로 복사한다.
-    const copied = copyText(shareLink(proposed));
+    const copied = copyText(shareLink(proposed, shareBaseUrl));
     setShareBusy(true);
     saveShare(shareConversationId, proposed)
       .then(async (token) => {
         setShareToken({ conversationId: shareConversationId, token });
         // 다른 창에서 먼저 공유해 서버의 토큰이 다르면, 그 링크로 다시 복사해 본다.
-        const ok = token === proposed ? await copied : await copyText(shareLink(token));
+        const ok = token === proposed ? await copied : await copyText(shareLink(token, shareBaseUrl));
         if (ok) showToast("링크가 복사되었습니다");
-        else showToast(`링크를 복사하지 못했습니다. 이 주소를 직접 복사하세요: ${shareLink(token)}`, "error");
+        else showToast(`링크를 복사하지 못했습니다. 이 주소를 직접 복사하세요: ${shareLink(token, shareBaseUrl)}`, "error");
       })
       .catch(showErrorToast)
       .finally(() => setShareBusy(false));

@@ -56,6 +56,8 @@ export function BoardPage({ onBack }: Props) {
   const [post, setPost] = useState<BoardPostView | null>(null);
   const [postLoading, setPostLoading] = useState(false);
   const [composing, setComposing] = useState(false);
+  /** 고치는 중인 글. 새 글 쓰기와 같은 창을 그 글의 내용으로 연다. */
+  const [editing, setEditing] = useState<BoardPostView | null>(null);
   const [confirming, setConfirming] = useState<BoardPostView | null>(null);
 
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -272,6 +274,7 @@ export function BoardPage({ onBack }: Props) {
               post={post}
               busy={busy}
               onStatus={changeStatus}
+              onEdit={() => setEditing(post)}
               onDelete={() => setConfirming(post)}
               onReplied={(next) => {
                 setPost(next);
@@ -435,6 +438,21 @@ export function BoardPage({ onBack }: Props) {
             setComposing(false);
             showPost(created.id);
             void reload();
+          }}
+          onError={setError}
+        />
+      )}
+
+      {editing && (
+        <BoardComposer
+          editing={editing}
+          knownTags={knownTags}
+          onCancel={() => setEditing(null)}
+          onDone={(updated) => {
+            setEditing(null);
+            setPost(updated);
+            void reload();
+            showToast(`${ref(updated.number)} 글을 고쳤습니다.`.trim());
           }}
           onError={setError}
         />

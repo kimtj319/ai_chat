@@ -33,9 +33,10 @@
   <p>AI Console 의 모델이 허용한 사이트에서 이 크롬을 읽고 조작합니다. 제출·전송·구매·삭제처럼 보이는 동작은 매번 AI Console 화면에서 확인을 받습니다.</p>
 
   <section>
-    <label for="app-origin">연결할 AI Console 주소</label>
+    <label for="app-origin">AI Console 웹 서버 주소</label>
+    <p>채팅 화면을 여는 웹 서버 주소(http://주소:포트)를 넣습니다. 크롬으로 조작할 사이트의 도메인이 아닙니다.</p>
     <div class="row">
-      <input id="app-origin" type="url" placeholder="http://서버주소:9000" autocomplete="off">
+      <input id="app-origin" type="url" placeholder="http://웹 서버 주소:9000" autocomplete="off">
       <button id="save" class="primary" type="button">저장</button>
     </div>
     <p class="status" id="status" role="status"></p>

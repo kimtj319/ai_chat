@@ -169,13 +169,20 @@ export function useChatStream() {
               setAnswerNowAfterMs(event.answerNowAfterMs);
               break;
 
+            // 모델이 동시 요청 상한에 차 있다. 차례가 오면 첫 생각·글자·도구 호출이 지운다.
+            case "queued": {
+              const id = ensurePlaceholder();
+              patchMessage(conversationId, id, { queuedAhead: event.ahead });
+              break;
+            }
+
             case "reasoning": {
               setAnswerStreaming(false);
               reasoning += event.delta;
               const id = ensurePlaceholder();
               if (reasoningStartedAt === undefined) {
                 reasoningStartedAt = Date.now();
-                patchMessage(conversationId, id, { reasoning, reasoningStartedAt });
+                patchMessage(conversationId, id, { reasoning, reasoningStartedAt, queuedAhead: undefined });
               } else {
                 patchMessage(conversationId, id, { reasoning });
               }
@@ -186,7 +193,7 @@ export function useChatStream() {
               setAnswerStreaming(true);
               content += event.delta;
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { content, ...endReasoning() });
+              patchMessage(conversationId, id, { content, queuedAhead: undefined, ...endReasoning() });
               break;
             }
 
@@ -194,7 +201,7 @@ export function useChatStream() {
               setAnswerStreaming(false);
               toolCalls = [...toolCalls, { id: event.id, name: event.name, arguments: event.arguments }];
               const id = ensurePlaceholder();
-              patchMessage(conversationId, id, { toolCalls, ...endReasoning() });
+              patchMessage(conversationId, id, { toolCalls, queuedAhead: undefined, ...endReasoning() });
               break;
             }
 

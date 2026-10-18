@@ -8,12 +8,17 @@
  */
 import express from "express";
 import {
+  MAX_BODY_CHARS,
   MAX_TITLE_CHARS,
   addReply,
+  cleanEditText,
   createPost,
   deletePost,
+  editPost,
+  editReply,
   getPost,
   listPosts,
+  normalizeTags,
   setStatus,
 } from "../storage/boardStore.js";
 import { userNamesById } from "../storage/userStore.js";
@@ -32,9 +37,12 @@ export const boardRouter = express.Router();
 
 const fail = sendError<BoardErrorCode>;
 
-/** 글을 바꿀 수 있는 사람: 쓴 사람, 또는 관리자. 이 한 줄이 규칙의 전부다. */
-function canManage(req: Request, post: BoardPost): boolean {
-  return post.authorId === req.ownerId || req.user?.role === "admin";
+/**
+ * 글이나 답변을 바꿀 수 있는 사람: 쓴 사람, 또는 관리자. 이 한 줄이 규칙의 전부다.
+ * 답변에도 같은 줄을 댄다 — 글을 쓴 사람이라도 남의 답변은 그 사람의 말이라 못 고친다.
+ */
+function canManage(req: Request, record: { authorId: string }): boolean {
+  return record.authorId === req.ownerId || req.user?.role === "admin";
 }
 
 /**
@@ -66,7 +74,7 @@ async function toView(post: BoardPost, req: Request): Promise<BoardPostView> {
   return {
     ...post,
     authorName: names.get(post.authorId) ?? null,
-    replies: post.replies.map((r) => ({ ...r, authorName: names.get(r.authorId) ?? null })),
+    replies: post.replies.map((r) => ({ ...r, authorName: names.get(r.authorId) ?? null, canEdit: canManage(req, r) })),
     canManage: canManage(req, post),
   };
 }
@@ -137,20 +145,71 @@ boardRouter.post("/board/:id/replies", express.json({ limit: "64kb" }), async (r
   }
 });
 
-/** 열고 닫기. 여기가 권한이 걸리는 첫 자리다. */
-boardRouter.patch("/board/:id", express.json({ limit: "8kb" }), async (req, res, next) => {
+/**
+ * 열고 닫기, 그리고 제목·본문·라벨 고치기. 여기가 권한이 걸리는 첫 자리다.
+ *
+ * 준 칸만 바꾼다 — 상태만 주면 상태만, 라벨만 주면 라벨만. 하나라도 틀리면
+ * 아무것도 바꾸지 않는다: 다 따져 본 다음에 쓴다. 본문이 들어오므로 새 글과
+ * 같은 크기까지 받는다.
+ */
+boardRouter.patch("/board/:id", express.json({ limit: "64kb" }), async (req, res, next) => {
   try {
     const post = await loadPostOr404(req, res);
     if (!post) return;
     if (!canManage(req, post)) {
-      return fail(res, 403, "forbidden", "글을 쓴 사람과 관리자만 상태를 바꿀 수 있습니다.");
+      return fail(res, 403, "forbidden", "글을 쓴 사람과 관리자만 글을 고치거나 상태를 바꿀 수 있습니다.");
     }
-    const wanted = (req.body as { status?: unknown } | undefined)?.status;
-    if (wanted !== "open" && wanted !== "closed") {
+    const input = (req.body ?? {}) as { status?: unknown; title?: unknown; body?: unknown; tags?: unknown };
+    const wanted = input.status;
+    if (wanted !== undefined && wanted !== "open" && wanted !== "closed") {
       return fail(res, 400, "invalid_input", "상태는 open 또는 closed 여야 합니다.");
     }
-    const updated = await setStatus(post.id, wanted as BoardPostStatus, req.ownerId);
+    const changes: { title?: string; body?: string; tags?: string[] } = {};
+    if (input.title !== undefined) {
+      const title = cleanEditText(input.title, MAX_TITLE_CHARS);
+      if (!title) return fail(res, 400, "invalid_input", `제목을 적어 주세요 (${MAX_TITLE_CHARS}자까지).`);
+      changes.title = title;
+    }
+    if (input.body !== undefined) {
+      // 본문은 비워도 된다 — 새 글도 제목만으로 올릴 수 있다.
+      const body = cleanEditText(input.body, MAX_BODY_CHARS);
+      if (body === null) return fail(res, 400, "invalid_input", `본문은 ${MAX_BODY_CHARS.toLocaleString()}자까지 쓸 수 있습니다.`);
+      changes.body = body;
+    }
+    if (input.tags !== undefined) changes.tags = normalizeTags(input.tags);
+    const editing = Object.keys(changes).length > 0;
+    if (!editing && wanted === undefined) return fail(res, 400, "invalid_input", "바꿀 것이 없습니다.");
+
+    let updated: BoardPost | null = post;
+    if (editing) updated = await editPost(post.id, changes);
+    if (updated && wanted !== undefined) updated = await setStatus(post.id, wanted as BoardPostStatus, req.ownerId);
     if (!updated) return fail(res, 404, "not_found", "존재하지 않는 글입니다.");
+    res.json({ post: await toView(updated, req) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** 답변 고치기. 답변을 쓴 사람과 관리자만 — 달 때와 같은 한도로 따진다. */
+boardRouter.patch("/board/:id/replies/:replyId", express.json({ limit: "64kb" }), async (req, res, next) => {
+  try {
+    const post = await loadPostOr404(req, res);
+    if (!post) return;
+    const reply = post.replies.find((r) => r.id === req.params.replyId);
+    if (!reply) return fail(res, 404, "not_found", "존재하지 않는 답변입니다.");
+    if (!canManage(req, reply)) {
+      return fail(res, 403, "forbidden", "답변을 쓴 사람과 관리자만 고칠 수 있습니다.");
+    }
+    const raw = (req.body as { body?: unknown } | undefined)?.body;
+    const text = cleanEditText(raw, MAX_BODY_CHARS);
+    if (!text) {
+      return typeof raw === "string" && text === null
+        ? fail(res, 400, "invalid_input", `답변은 ${MAX_BODY_CHARS.toLocaleString()}자까지 쓸 수 있습니다.`)
+        : fail(res, 400, "invalid_input", "답변 내용을 적어 주세요.");
+    }
+    const updated = await editReply(post.id, reply.id, text);
+    // 그 사이 글이 지워졌다.
+    if (!updated) return fail(res, 404, "not_found", "존재하지 않는 답변입니다.");
     res.json({ post: await toView(updated, req) });
   } catch (err) {
     next(err);

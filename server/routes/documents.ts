@@ -26,12 +26,15 @@ import {
   listSharedDocuments,
   type OwnedRagDocument,
   documentSourcePath,
+  readDocumentOriginal,
   readDocumentText,
   saveDocumentMeta,
+  saveDocumentOriginal,
   saveDocumentSource,
   saveDocumentText,
 } from "../storage/documentStore.js";
 import { RagEngineError, countChunks, ragConfigured, reindexScope, removeDocument } from "../rag/engineIndex.js";
+import { readSourceFromEngine } from "../rag/engineSource.js";
 import {
   MIN_PDF_CHARS,
   NO_TEXT_IN_PDF,
@@ -89,6 +92,7 @@ type DocumentErrorCode =
   | "too_large"
   | "not_found"
   | "no_source"
+  | "source_restricted"
   | "invalid_input"
   | "index_failed";
 
@@ -206,6 +210,8 @@ documentsRouter.post(
         text = sniffed.text;
         mime = sniffed.mime;
       }
+      // 올린 그대로의 글. 출처 창이 이것을 띄운다 — 아래에서 다듬고 나누는 글은 색인용이다.
+      const original = text;
 
       // 어디서 왔든 여기서 본문만 남긴다. 쪽번호·깨진 줄·보이지 않는 글자를
       // 달고 청킹에 들어가면 그 청크는 검색에도 안 걸리고 답에도 못 쓴다.
@@ -230,6 +236,8 @@ documentsRouter.post(
 
       const stored: RagDocument[] = [];
       const failures: string[] = [];
+      /** 원본 글을 담은 id. 첫 조각의 id 로 한 벌만 쓰고, 조각마다 이것을 가리킨다. */
+      let originalId: string | undefined;
       for (const part of parts) {
         const name = partName(baseName, part.index, part.total);
         send({ type: "part", index: part.index, total: parts.length, name, message: `${name} 색인 중…` });
@@ -252,6 +260,16 @@ documentsRouter.post(
           updatedAt: now,
         };
         if (meta.chunks === 0) continue; // 공백만 남은 조각. 나눌 때 생길 수 있다.
+
+        // PDF 는 아래의 .pdf 가 원본이다. 텍스트 파일은 원본 글을 한 번만 남긴다 —
+        // 1MB 파일이 다섯 조각이면 다섯 벌이 되는 것을 피한다. 메타보다 먼저 쓴다.
+        if (mime !== "application/pdf") {
+          if (!originalId) {
+            originalId = meta.id;
+            await saveDocumentOriginal(req.ownerId, originalId, original);
+          }
+          meta.originalId = originalId;
+        }
 
         // Text first: runIndex writes the metadata, and metadata pointing at
         // text that is not on disk yet is a document no retry could ever fix.
@@ -422,6 +440,63 @@ documentsRouter.get("/documents/:id/file", async (req, res, next) => {
     res.setHeader("Cache-Control", "private, max-age=300");
     res.sendFile(file);
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * 올린 텍스트 파일의 원본 글. 출처 "[n]" 을 누르면 오른쪽 창이 이것을 띄우고, 인용된
+ * 단락을 제자리에 칠한다. /text 는 색인용으로 다듬은(그리고 나뉜 조각의) 글이라, 그걸
+ * 띄우면 사람은 자기가 올린 적 없는 글을 보게 된다.
+ *
+ * 볼 수 있는 사람은 /text 와 같다(loadReadable). 하나 더 막는다: 원본은 **파일 전체**다.
+ * 나뉜 조각 가운데 일부만 공개되어 있으면, 공개 조각을 거쳐 비공개 조각의 글까지
+ * 읽게 되므로 주인이 아닌 사람에게는 주지 않는다(404 `source_restricted`).
+ *
+ * PDF·이 기능 전에 올린 문서는 404 `no_source` — 화면은 /file 이나 /text 로 물러선다.
+ */
+documentsRouter.get("/documents/:id/original", async (req, res, next) => {
+  try {
+    const found = await loadReadable(req.ownerId, req.params.id);
+    if (!found) return fail(res, 404, "not_found", "존재하지 않는 문서입니다.");
+    const { ownerId, doc } = found;
+    if (!doc.originalId) return fail(res, 404, "no_source", "이 문서는 원본 파일이 보관되어 있지 않습니다.");
+    if (ownerId !== req.ownerId) {
+      const siblings = (await listDocuments(ownerId)).filter((d) => d.originalId === doc.originalId);
+      if (siblings.some((d) => d.scope !== "shared")) {
+        return fail(res, 404, "source_restricted", "이 문서의 원본에는 공개되지 않은 부분이 있어 보여 드릴 수 없습니다.");
+      }
+    }
+    const text = await readDocumentOriginal(ownerId, doc.originalId);
+    if (text === null) return fail(res, 404, "no_source", "이 문서는 원본 파일이 보관되어 있지 않습니다.");
+    res.type("text/plain; charset=utf-8").send(text);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * 웹 문서 저장소에 없는 문서(엔진에 바로 넣은 시드 코퍼스 등)를 검색 색인에서 다시 엮는다.
+ *
+ * 그런 문서는 이 앱에 원문이 없어서, 출처 창은 여태 검색된 단락 하나만 보여 줬다.
+ * 엔진에는 그 문서의 청크가 모두 있으므로 PARENT_ID 로 모아 순서대로 잇고, 청크 사이의
+ * 겹침을 빼면 원문에 가까운 글이 된다(rag/engineSource.ts).
+ *
+ * 권한은 엔진이 건다: 요청한 계정을 엔진의 authority 로 그대로 보낸다 — MCP 검색이
+ * 이 사람의 계정으로 단락을 찾는 것과 같은 규칙이다. 그래서 이 사람이 검색으로 볼 수
+ * 없는 청크는 여기서도 오지 않는다. 읽을 수 있는 청크가 하나도 없으면(남의 비공개
+ * 문서, 엔진이 모르는 계정, 없는 문서) 모두 같은 404 다 — 무엇이 이유인지 구별해 주면
+ * 남의 문서가 있다는 사실을 알려 주는 셈이다.
+ */
+documentsRouter.get("/sources/:parentId", async (req, res, next) => {
+  try {
+    if (!requireEnabled(res)) return;
+    const source = await readSourceFromEngine(req.params.parentId, req.ownerId);
+    if (!source) return fail(res, 404, "not_found", "검색 색인에서 이 문서를 찾지 못했습니다.");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.json(source);
+  } catch (err) {
+    if (err instanceof RagEngineError) return fail(res, 502, "index_failed", err.message);
     next(err);
   }
 });

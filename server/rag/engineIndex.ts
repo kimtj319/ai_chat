@@ -7,6 +7,10 @@
  * a search means. What this file owns is the other half — turning an uploaded
  * document into chunks the engine can hold, and taking them away again.
  *
+ * 하나의 예외는 출처 창이다(engineSource.ts): 시드 코퍼스처럼 이 앱에 원문이 없는
+ * 문서를 보여 주려고 한 문서의 청크를 통째로 읽는다. 검색이 아니라 PARENT_ID 로 고르는
+ * 것이라 "검색이 무엇인가" 를 두 곳이 정하게 되지는 않는다.
+ *
  * PERMISSIONS ARE THE POINT. A chunk carries `ACL`, and that value is a KEY,
  * not an account: who may read the key is decided by the engine's authority
  * table (`/authorities/{collection}`), not by the document. So indexing a
@@ -71,7 +75,7 @@ interface CallOptions {
   timeoutMs?: number;
 }
 
-async function call(path: string, { method = "POST", body, headers = {}, timeoutMs = CALL_TIMEOUT_MS }: CallOptions = {}): Promise<unknown> {
+export async function call(path: string, { method = "POST", body, headers = {}, timeoutMs = CALL_TIMEOUT_MS }: CallOptions = {}): Promise<unknown> {
   const url = `${requireConfigured()}${path}`;
   let res: Response;
   try {

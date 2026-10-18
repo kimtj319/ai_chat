@@ -281,7 +281,6 @@ export function Composer({
           {!isEmbedding && (
             <div className="composer-leading">
               <McpPicker
-                conversation={conversation}
                 onOpenLibrary={onOpenLibrary}
                 onOpenTools={onOpenTools}
                 onAttach={attachInMenu ? () => fileInputRef.current?.click() : undefined}

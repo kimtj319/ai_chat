@@ -87,13 +87,12 @@ export function buildTurnTools(conversation: Conversation, mcpTools: ToolDefinit
   // the same for the same set of servers. Never throws: an unreachable server
   // contributes no tools and a notice instead.
   //
-  // Filtered by the same enabledTools list as every builtin, because adopting a
-  // server in the library is not the same as wanting its tools in THIS
-  // conversation: the composer's picker writes these names into that list, and
-  // without this filter its toggles would do nothing and every adopted tool's
-  // schema would ride in every prompt whether or not anyone wanted it.
-  const enabledNames = new Set(conversation.enabledTools ?? []);
-  snapshotTools.push(...mcpTools.filter((t) => enabledNames.has(t.name)));
+  // Every tool of a server switched on in 커넥터 goes in — the switch is the
+  // whole choice. There used to be a second, per-conversation choice in the
+  // composer's picker (MCP names in enabledTools); users switched a server on
+  // and then found the model ignoring it because nothing was ticked in that
+  // conversation. MCP names still stored there from that time are ignored.
+  snapshotTools.push(...mcpTools);
   // 크롬 도구는 대화 설정이 아니라 이 턴을 보낸 브라우저가 정한다(tools/browser.ts).
   if (browserControl) {
     snapshotTools.push(...BROWSER_TOOLS);

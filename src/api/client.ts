@@ -391,6 +391,20 @@ export function setBoardPostStatus(id: string, status: BoardPostStatus): Promise
   });
 }
 
+export function editBoardPost(id: string, input: { title: string; body: string; tags: string[] }): Promise<{ post: BoardPostView }> {
+  return request<{ post: BoardPostView }>(`/board/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function editBoardReply(id: string, replyId: string, body: string): Promise<{ post: BoardPostView }> {
+  return request<{ post: BoardPostView }>(`/board/${encodeURIComponent(id)}/replies/${encodeURIComponent(replyId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ body }),
+  });
+}
+
 export function deleteBoardPost(id: string): Promise<void> {
   return request<void>(`/board/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

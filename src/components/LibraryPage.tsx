@@ -160,8 +160,8 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                 내 커넥터 <span className="library-column-count">{mine.length}</span>
               </h2>
               <p className="library-column-hint">
-                기본 제공 서버와 내가 등록하거나 추가한 MCP 서버입니다. 스위치를 켠 서버만 대화 입력창의 MCP 도구 선택(+)에
-                나타나고, 모델에게도 그 서버의 도구가 전달됩니다.
+                기본 제공 서버와 내가 등록하거나 추가한 MCP 서버입니다. 스위치를 켠 서버의 도구는 모든 대화에서 모델에게
+                전달되어, 필요할 때 모델이 알아서 씁니다. 따로 고를 필요가 없습니다.
               </p>
               {mine.length === 0 ? (
                 <EmptyState

@@ -1,6 +1,8 @@
 import type React from "react";
+import { useDeferredValue, type TextareaHTMLAttributes } from "react";
 import type { BoardPostStatus } from "../api/types";
 import { hueOf } from "../state/boardFormat";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 /* 문의 게시판의 목록·글·새 글 쓰기가 같이 쓰는 조각들. */
 
@@ -19,6 +21,35 @@ export const ref = (n: number | undefined) => (n ? `#${n}` : "");
 /** 여러 줄 입력에서의 제출. Enter 는 줄바꿈으로 남겨 둬야 하므로 수식키를 쓴다. */
 export function isSubmitChord(e: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
   return e.key === "Enter" && (e.ctrlKey || e.metaKey);
+}
+
+/**
+ * 마크다운 입력칸과 그 결과를 한 상자에. GitLab 은 작성·미리보기 탭을 오가야
+ * 결과가 보이지만 여기서는 치는 대로 바로 그려진다 — 표나 코드 블록이 제대로
+ * 닫혔는지 올리기 전에 안다. 넓으면 나란히, 좁으면 입력칸 아래에 놓인다.
+ *
+ * 글과 답변을 그리는 것과 같은 MarkdownRenderer 를 쓰고, 서버가 하듯 앞뒤 공백을
+ * 걷은 뒤에 그린다(앞에 공백 넷이면 코드 블록이 되지만 올리면 사라진다). 미리보기와
+ * 올린 결과가 어긋나면 미리보기를 믿을 수 없다.
+ *
+ * 그리기는 useDeferredValue 로 한 박자 늦춘다. 긴 글에서 글자마다 다시 그리면
+ * 입력이 끊기는데, 늦춘 값은 손이 쉬는 틈에 따라잡고 입력칸은 늘 바로 반응한다.
+ */
+export function MarkdownField({ value, ...textarea }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+  const shown = useDeferredValue(value).trim();
+  return (
+    <div className="board-md">
+      <div className="board-md-split">
+        <textarea {...textarea} value={value} />
+        <section className="board-md-preview board-note-body" aria-label="미리보기">
+          <span className="board-md-preview-label" aria-hidden="true">
+            미리보기
+          </span>
+          {shown ? <MarkdownRenderer content={shown} /> : <p className="board-md-preview-empty">적는 대로 여기에 바로 보입니다.</p>}
+        </section>
+      </div>
+    </div>
+  );
 }
 
 export function Label({ name }: { name: string }) {

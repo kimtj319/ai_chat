@@ -13,7 +13,16 @@
  */
 import fs from "node:fs/promises";
 import { readJsonFile, readdirOrEmpty, writeFileAtomic, writeJsonFileAtomic } from "./atomic.js";
-import { documentChunksFile, documentMetaFile, documentSourceFile, documentTextFile, documentsDir, isValidId, ownersRoot } from "./paths.js";
+import {
+  documentChunksFile,
+  documentMetaFile,
+  documentOriginalFile,
+  documentSourceFile,
+  documentTextFile,
+  documentsDir,
+  isValidId,
+  ownersRoot,
+} from "./paths.js";
 import type { RagDocument } from "../types.js";
 
 /** PDF 원본을 그대로 둔다. 여러 조각으로 나뉜 PDF 는 조각마다 한 벌씩 — 한 조각을 지워도 나머지가 원본을 잃지 않는다. */
@@ -29,6 +38,21 @@ export async function documentSourcePath(ownerId: string, documentId: string): P
     return file;
   } catch {
     return null;
+  }
+}
+
+/** 올린 텍스트 파일의 원본 글. 조각이 여럿이어도 한 번만 쓴다 — 조각들은 메타의 originalId 로 가리킨다. */
+export async function saveDocumentOriginal(ownerId: string, originalId: string, text: string): Promise<void> {
+  await writeFileAtomic(documentOriginalFile(ownerId, originalId), text);
+}
+
+export async function readDocumentOriginal(ownerId: string, originalId: string): Promise<string | null> {
+  if (!isValidId(originalId)) return null;
+  try {
+    return await fs.readFile(documentOriginalFile(ownerId, originalId), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 }
 
@@ -104,12 +128,20 @@ export async function listDocuments(ownerId: string): Promise<RagDocument[]> {
  * page but still turns up in search, with nothing left to identify it by.
  */
 export async function deleteDocumentFiles(ownerId: string, documentId: string): Promise<void> {
+  const originalId = (await getDocument(ownerId, documentId))?.originalId;
   await Promise.all([
     fs.rm(documentTextFile(ownerId, documentId), { force: true }),
     fs.rm(documentMetaFile(ownerId, documentId), { force: true }),
     fs.rm(documentChunksFile(ownerId, documentId), { force: true }),
     fs.rm(documentSourceFile(ownerId, documentId), { force: true }),
   ]);
+  // 원본은 같은 파일에서 나온 조각들이 함께 쓴다. 마지막 조각이 지워질 때만 지운다 —
+  // 한 조각을 지웠다고 남은 조각이 원본을 잃으면 안 된다. 지우기는 소유자의 색인
+  // 잠금 안에서 하나씩 돌므로 두 조각이 서로를 "아직 남았다" 고 볼 일은 없다.
+  if (originalId && isValidId(originalId)) {
+    const stillUsed = (await listDocuments(ownerId)).some((d) => d.originalId === originalId);
+    if (!stillUsed) await fs.rm(documentOriginalFile(ownerId, originalId), { force: true });
+  }
 }
 
 /**

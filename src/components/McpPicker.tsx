@@ -1,25 +1,11 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { inSheet } from "./popoverSheet";
 import { useDismiss } from "../hooks/useDismiss";
 import { useAuth } from "../auth/AuthContext";
-import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { usePopoverFocus } from "../hooks/usePopoverFocus";
-import {
-  isMcpToolName,
-  mergeMcpSelection,
-  myLibrary,
-  sameTools,
-  selectionState,
-  shortToolName,
-  visibleLibrary,
-  type SelectionState,
-} from "../mcp/rules";
-import type { McpServerSummary, McpToolSummary } from "../api/types";
-import type { ActiveConversation } from "../state/StoreContext";
-import { useStore } from "../state/StoreContext";
-import { ChevronRightIcon } from "./icons";
+import { myLibrary, visibleLibrary } from "../mcp/rules";
 import "./McpPicker.css";
 
 function PlusIcon() {
@@ -38,82 +24,7 @@ function PaperclipIcon() {
   );
 }
 
-/** A checkbox with the third state a browser cannot express in markup. */
-function TriStateCheckbox({
-  state,
-  disabled,
-  label,
-  onChange,
-}: {
-  state: SelectionState;
-  disabled?: boolean;
-  label: string;
-  onChange: (on: boolean) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = state === "some";
-  }, [state]);
-
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className="mcp-picker-check"
-      checked={state === "all"}
-      disabled={disabled}
-      aria-label={label}
-      onChange={(event) => onChange(event.target.checked)}
-    />
-  );
-}
-
-interface VisibleServer {
-  server: McpServerSummary;
-  /** Under a query, only the tools that matched; otherwise the whole list. */
-  tools: McpToolSummary[];
-  forcedOpen: boolean;
-}
-
-/**
- * The list the query leaves behind. A server whose own name matched keeps its
- * whole tool list and its collapsed state — the user named the server, not
- * something inside it. A server reached only through a tool shows just the
- * matching tools and opens itself, because the thing that was searched for is
- * exactly what a closed row would hide.
- */
-function visibleServers(servers: McpServerSummary[], query: string): VisibleServer[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return servers.map((server) => ({ server, tools: server.tools, forcedOpen: false }));
-
-  const visible: VisibleServer[] = [];
-  for (const server of servers) {
-    // The server's own description counts as naming it. Every server here is
-    // described in Korean while the tools it ships describe themselves in
-    // English, so without this a reader searching "주가" — the word actually
-    // in Alpha Vantage's description — gets nothing back.
-    if (
-      server.name.toLowerCase().includes(needle) ||
-      server.description.toLowerCase().includes(needle)
-    ) {
-      visible.push({ server, tools: server.tools, forcedOpen: false });
-      continue;
-    }
-    // The description is searched too: the short name is often an abbreviation
-    // ("TIME_SERIES_DAILY"), and the sentence beside it is where the word the
-    // user actually has in mind ("주가") lives.
-    const tools = server.tools.filter(
-      (tool) =>
-        shortToolName(tool.name).toLowerCase().includes(needle) || tool.description.toLowerCase().includes(needle),
-    );
-    if (tools.length > 0) visible.push({ server, tools, forcedOpen: true });
-  }
-  return visible;
-}
-
 interface McpPickerProps {
-  conversation: ActiveConversation;
   onOpenLibrary: () => void;
   /** 도구 설정 페이지로. 없으면 아래쪽 링크에서 빠진다. */
   onOpenTools?: () => void;
@@ -123,65 +34,31 @@ interface McpPickerProps {
   extraRows?: ReactNode;
 }
 
-/** 서버가 이만큼은 되어야 검색창이 자리를 값한다. */
-const SEARCH_FROM = 6;
-
 /**
- * The composer's plus button: which MCP tools are live in THIS conversation —
- * and, Gemini-style, the one place the composer's other add-ons live too:
- * uploading a file on top, the Chrome control below the servers, links to the
- * management pages at the foot. Before, each of those was its own icon on the
- * composer's right, which is what made the input row read as crowded.
+ * The composer's plus button — Gemini-style, the one place the composer's
+ * add-ons live: uploading a file on top, the connectors that are on, the Chrome
+ * control below them, links to the management pages at the foot. Before, each
+ * of those was its own icon on the composer's right, which is what made the
+ * input row read as crowded.
  *
- * It writes the same `conversation.enabledTools` array the 도구 설정 panel
- * writes, with the same debounce — the two are two views of one list, not two
- * mechanisms. The builtin tools are deliberately absent: that list is 24 items
- * long and belongs to 도구 설정.
- *
- * Servers arrive collapsed, and a search sits above them, because switching a
- * whole server on is the common case and picking single tools is the
- * exception: one server that ships 11 tools would otherwise bury the other
- * three in a scroll.
+ * The connector list is read-only. Whether a server's tools reach the model is
+ * decided by its switch in 커넥터 and nothing else (server/chat/turnTools.ts):
+ * this menu used to hold a second, per-conversation checklist, and a server
+ * switched on in 커넥터 did nothing until its tools were also ticked here.
  */
-export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, extraRows }: McpPickerProps) {
-  const { updateEnabledTools } = useStore();
+export function McpPicker({ onOpenLibrary, onOpenTools, onAttach, extraRows }: McpPickerProps) {
   const { me } = useAuth();
   const { servers, adopted, hidden, loading, unavailable } = useMcpLibrary();
   const [open, setOpen] = useState(false);
 
-  // 열려 있는 동안은 Esc 가 이쪽 몫이다 — 전역 Esc(생성 중단)와 겹치지 않게.
-  const [query, setQuery] = useState("");
-  const [expandedServers, setExpandedServers] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const searchId = useId();
   // 폰에서는 입력창 위의 팝오버가 아니라 화면 아래에서 올라오는 시트다(App.css).
   // 입력창에 backdrop-filter 가 걸려 있어 그 안의 position: fixed 는 화면이 아니라
   // 입력창에 붙는다 — 그래서 시트는 body 로 포털한다.
   const sheet = useMediaQuery("(max-width: 640px)");
   usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
-
-  const [selected, setSelected] = useState<string[]>(() => conversation.enabledTools.filter(isMcpToolName));
-
-  // Composed against whatever is stored at save time rather than against a copy
-  // taken when the picker opened: that is what stops this and 도구 설정 from
-  // overwriting each other's half of the array.
-  const saveStatus = useDebouncedSave(
-    selected,
-    (names) => {
-      const next = mergeMcpSelection(conversation.enabledTools, names);
-      if (sameTools(next, conversation.enabledTools)) return Promise.resolve();
-      return updateEnabledTools(next);
-    },
-    400,
-  );
-
-  // Another conversation opened underneath the picker. Keyed on the id alone:
-  // seeding from the array itself would re-fire on the PATCH's own response.
-  useEffect(() => {
-    setSelected(conversation.enabledTools.filter(isMcpToolName));
-  }, [conversation.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useDismiss(open, containerRef, () => setOpen(false), {
     // A dialog opened from inside the menu (the Chrome setup guide) is
@@ -199,30 +76,13 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
     }
   }
 
-  function toggleTool(name: string) {
-    setSelected((current) => (current.includes(name) ? current.filter((tool) => tool !== name) : [...current, name]));
-  }
-
-  function toggleServer(toolNames: string[], on: boolean) {
-    setSelected((current) => {
-      const without = current.filter((name) => !toolNames.includes(name));
-      return on ? [...without, ...toolNames] : without;
-    });
-  }
-
-  function toggleExpanded(id: string) {
-    setExpandedServers((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]));
-  }
-
   // The exact same rule the server applies before handing tools to the model
-  // (server/mcp/ownerPrefs.ts effectiveServers): a server switched off here
-  // must not be a server the model can still call.
+  // (server/mcp/ownerPrefs.ts effectiveServers): what is listed here is what
+  // the model gets.
   const mine = visibleLibrary(servers, adopted, hidden, me?.id ?? "");
   // Membership without the switch, only to tell "라이브러리가 비어 있다" apart
   // from "라이브러리는 있지만 전부 꺼져 있다" — the two need different guidance.
   const hasLibrary = myLibrary(servers, adopted, me?.id ?? "").length > 0;
-  const enabled = new Set(selected);
-  const visible = visibleServers(mine, query);
 
   return (
     <div className="mcp-picker" ref={containerRef}>
@@ -238,7 +98,6 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
         onKeyDown={handleTriggerKeyDown}
       >
         <PlusIcon />
-        {selected.length > 0 && <span className="mcp-picker-count">{selected.length}</span>}
       </button>
 
       {open && inSheet(
@@ -265,28 +124,9 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
             </>
           )}
           <div className="mcp-picker-head">
-            <p className="mcp-picker-title">MCP 도구</p>
-            {saveStatus === "saving" && <span className="mcp-picker-status">저장 중…</span>}
-            {saveStatus === "saved" && <span className="mcp-picker-status saved">저장됨</span>}
-            {saveStatus === "error" && <span className="mcp-picker-status error">저장 실패</span>}
+            <p className="mcp-picker-title">켜 둔 커넥터</p>
           </div>
-
-          {/* Nothing to narrow while the library is loading, missing or empty. */}
-          {!loading && !unavailable && mine.length >= SEARCH_FROM && (
-            <>
-              <label className="visually-hidden" htmlFor={searchId}>
-                서버·도구 검색
-              </label>
-              <input
-                id={searchId}
-                type="search"
-                className="mcp-picker-search"
-                placeholder="서버·도구 검색"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </>
-          )}
+          <p className="mcp-picker-hint">커넥터에서 켠 서버는 모든 대화에서 모델이 필요할 때 알아서 씁니다.</p>
 
           <div className="mcp-picker-list">
             {loading ? (
@@ -297,7 +137,7 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
               <p className="mcp-picker-empty">내 커넥터가 비어 있습니다. 커넥터에서 MCP 서버를 추가해 보세요.</p>
             ) : mine.length === 0 ? (
               <div className="mcp-picker-empty">
-                <p>커넥터에서 쓸 MCP 서버를 켜 주세요.</p>
+                <p>켜 둔 커넥터가 없습니다. 쓸 MCP 서버를 커넥터에서 켜 주세요.</p>
                 <button
                   type="button"
                   className="mcp-picker-link"
@@ -309,76 +149,20 @@ export function McpPicker({ conversation, onOpenLibrary, onOpenTools, onAttach, 
                   커넥터 열기
                 </button>
               </div>
-            ) : visible.length === 0 ? (
-              <p className="mcp-picker-empty">검색 결과가 없습니다.</p>
             ) : (
-              visible.map(({ server, tools, forcedOpen }) => {
-                const toolNames = server.tools.map((tool) => tool.name);
-                const state = selectionState(toolNames, enabled);
-                const off = server.status === "disabled";
-                const expanded = forcedOpen || expandedServers.includes(server.id);
-                return (
-                  <section key={server.id} className="mcp-picker-server">
-                    {/* Two sibling controls, not a label around both: ticking the
-                        box must not open the row, and opening the row must not
-                        tick the box. While a query is holding the row open the
-                        expander only records what to do once it is cleared. */}
-                    <div className="mcp-picker-row">
-                      <TriStateCheckbox
-                        state={state}
-                        disabled={off || toolNames.length === 0}
-                        label={`${server.name} 전체 사용`}
-                        onChange={(on) => toggleServer(toolNames, on)}
-                      />
-                      <button
-                        type="button"
-                        className="mcp-picker-disclosure"
-                        aria-expanded={expanded}
-                        aria-label={`${server.name} 도구 목록`}
-                        onClick={() => toggleExpanded(server.id)}
-                      >
-                        <span className="mcp-picker-server-text">
-                          <span className="mcp-picker-server-name">{server.name}</span>
-                          {server.description && <span className="mcp-picker-server-desc">{server.description}</span>}
-                        </span>
-                        <span className="mcp-picker-server-count">{toolNames.length}</span>
-                        <span className={`mcp-picker-chevron${expanded ? " open" : ""}`}>
-                          <ChevronRightIcon />
-                        </span>
-                      </button>
-                    </div>
-
-                    {off && <p className="mcp-picker-note">관리자가 비활성화한 서버입니다.</p>}
+              <ul className="mcp-picker-connectors">
+                {mine.map((server) => (
+                  <li key={server.id} className="mcp-picker-connector" title={server.description || undefined}>
+                    <span className="mcp-picker-server-name">{server.name}</span>
+                    <span className="mcp-picker-server-count" aria-label={`도구 ${server.tools.length}개`}>
+                      {server.tools.length}
+                    </span>
                     {server.requiresCredential && !server.hasCredential && (
-                      <p className="mcp-picker-note">자격 증명을 입력해야 실행됩니다.</p>
+                      <span className="mcp-picker-note">자격 증명 필요</span>
                     )}
-
-                    {expanded &&
-                      tools.map((tool) => (
-                        <label key={tool.name} className="mcp-picker-row mcp-picker-tool">
-                          <input
-                            type="checkbox"
-                            className="mcp-picker-check"
-                            checked={enabled.has(tool.name)}
-                            disabled={off}
-                            onChange={() => toggleTool(tool.name)}
-                          />
-                          <span data-tooltip={tool.description}>{shortToolName(tool.name)}</span>
-                        </label>
-                      ))}
-                  </section>
-                );
-              })
-            )}
-          </div>
-
-          {/* Collapsed rows hide which tools are on, so the count is stated. */}
-          <div className="mcp-picker-foot">
-            <span>{selected.length > 0 ? `도구 ${selected.length}개 선택됨` : "선택한 도구 없음"}</span>
-            {selected.length > 0 && (
-              <button type="button" className="mcp-picker-clear" onClick={() => setSelected([])}>
-                모두 해제
-              </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

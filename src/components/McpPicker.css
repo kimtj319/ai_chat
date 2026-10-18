@@ -11,24 +11,6 @@
   height: 20px;
 }
 
-/* How many MCP tools this conversation is carrying, without opening anything:
-   each one is sitting in the prompt whether it is called or not. */
-.mcp-picker-count {
-  position: absolute;
-  top: 0;
-  right: 0;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border-radius: var(--radius-full);
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  line-height: 15px;
-  text-align: center;
-}
-
 /* Opens upward and from the left edge — the trigger is the leftmost control in
    the composer, and the same pane of glass as the reasoning popover. */
 .mcp-picker-popover {
@@ -53,6 +35,14 @@
   padding: var(--space-7);
 }
 
+/* 빈 대화에서는 입력창이 창 높이의 절반쯤(위 가장자리 49%)에 있어, 키가 작은 창에서는
+   위로 연 메뉴가 창 밖으로 잘렸다(1280×700 에서 41px). 그 위 공간만큼만 쓰고 넘치면
+   메뉴 안에서 스크롤한다. 폰의 바텀시트는 body 로 포털되어 이 규칙을 받지 않는다. */
+.chat-view:not(.has-messages) .mcp-picker-popover {
+  max-height: calc(48dvh - var(--space-8));
+  overflow-y: auto;
+}
+
 .mcp-picker-head {
   display: flex;
   align-items: baseline;
@@ -64,33 +54,6 @@
   margin: 0;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--on-surface-variant);
-}
-
-.mcp-picker-status {
-  font-size: var(--text-2xs);
-  color: var(--on-surface-variant);
-}
-
-.mcp-picker-status.saved {
-  color: var(--success);
-}
-
-.mcp-picker-status.error {
-  color: var(--danger);
-}
-
-/* Outside .mcp-picker-list on purpose: the field has to stay put while the
-   results under it scroll. Shaped like the rows it filters. */
-.mcp-picker-search {
-  width: 100%;
-  padding: var(--space-3) var(--space-6);
-  border-radius: var(--radius-full);
-  color: var(--on-surface);
-  font-size: var(--text-sm);
-}
-
-.mcp-picker-search::placeholder {
   color: var(--on-surface-variant);
 }
 
@@ -121,127 +84,35 @@
   padding: 0;
 }
 
-.mcp-picker-server {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+.mcp-picker-hint {
+  margin: 0;
+  padding: 0 var(--space-6);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--on-surface-variant);
 }
 
-/* The same shape as .reasoning-option: a full-width pill row per choice. */
-.mcp-picker-row {
+/* 켜 둔 커넥터는 이름표로 늘어놓는다. 고르는 곳이 아니라 보여 주는 곳이라(켜고 끄기는
+   커넥터에서) 한 줄씩 설명을 달면 메뉴가 580px 로 길어져 빈 대화의 입력창 위에서
+   창 밖으로 잘렸다. 설명은 마우스를 올리면(title) 보인다. */
+.mcp-picker-connectors {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-6);
+  list-style: none;
+}
+
+.mcp-picker-connector {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-5);
-  width: 100%;
-  padding: var(--space-3) var(--space-6);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--outline-variant);
   border-radius: var(--radius-full);
   color: var(--on-surface);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.mcp-picker-row:hover {
-  background: var(--surface-container-highest);
-}
-
-/* Drawn by hand rather than left native: a native box is a white square on the
-   dark sheet, and it matched nothing else in the menu. Outline in the muted ink
-   (3:1+ on both grounds), filled with primary when on; the mark takes
-   --on-primary, which is white on the light theme's blue and dark ink on the
-   dark theme's pale blue, so it never drops below the fill's contrast. */
-.mcp-picker-check {
-  appearance: none;
-  -webkit-appearance: none;
-  position: relative;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  border: 1.5px solid var(--on-surface-variant);
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.mcp-picker-check:checked,
-.mcp-picker-check:indeterminate {
-  border-color: var(--primary);
-  background: var(--primary);
-}
-
-/* The mark: a tick when on, a bar when some of the server's tools are on. */
-.mcp-picker-check::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--on-primary);
-  -webkit-mask: var(--check-mark) center / 12px 12px no-repeat;
-  mask: var(--check-mark) center / 12px 12px no-repeat;
-  opacity: 0;
-}
-
-.mcp-picker-check:checked::before {
-  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  opacity: 1;
-}
-
-.mcp-picker-check:indeterminate::before {
-  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 6h6' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
-  opacity: 1;
-}
-
-.mcp-picker-check:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* The ring follows the 6px corner, and stays outside the box: the row's own
-   padding leaves room for it, so the list's inward ring is not needed here. */
-.mcp-picker-list .mcp-picker-check:focus-visible {
-  border-radius: 6px;
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--surface) 85%, transparent);
-}
-
-/* Fingers: every row is a 44px target. A tool row is a label, so the whole row
-   already ticks its box; the server row's box sits beside the disclosure, so
-   its target is widened into the row's padding and gap (not past them, or it
-   would take taps meant for the neighbouring control). */
-@media (pointer: coarse) {
-  .mcp-picker-row {
-    min-height: 44px;
-  }
-
-  .mcp-picker-row > .mcp-picker-check::after {
-    content: "";
-    position: absolute;
-    inset: -13px -10px -13px -12px;
-  }
-}
-
-/* The name, the count and the chevron are one control, and it is a sibling of
-   the checkbox rather than its label: a button inside a label would fire both. */
-.mcp-picker-disclosure {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font-size: inherit;
-  text-align: left;
-}
-
-.mcp-picker-server-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+  font-size: var(--text-xs);
 }
 
 .mcp-picker-server-name {
@@ -249,64 +120,15 @@
   overflow-wrap: anywhere;
 }
 
-/* 서버가 무엇을 하는지 한 줄. 이름만으로는 "DeepWiki" 와 "Context7" 이 무엇이 다른지 모른다. */
-.mcp-picker-server-desc {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
-/* Timed off the press tokens, which the app blanks under reduced motion. */
-.mcp-picker-chevron {
-  display: inline-flex;
-  width: 14px;
-  height: 14px;
-  color: var(--on-surface-variant);
-  transition: transform var(--press-out) var(--press-ease);
-}
-
-.mcp-picker-chevron svg {
-  width: 14px;
-  height: 14px;
-}
-
-.mcp-picker-chevron.open {
-  transform: rotate(90deg);
-}
-
 .mcp-picker-server-count {
-  margin-left: auto;
   font-size: var(--text-2xs);
   color: var(--on-surface-variant);
-}
-
-.mcp-picker-tool {
-  padding-left: var(--space-10);
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
-}
-
-.mcp-picker-tool span {
-  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .mcp-picker-note {
-  margin: 0;
-  padding: 0 var(--space-6) 0 var(--space-10);
   font-size: var(--text-2xs);
   color: var(--warning);
-}
-
-.mcp-picker-foot {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: 0 var(--space-6);
-  font-size: var(--text-xs);
-  color: var(--on-surface-variant);
 }
 
 /* Bare text like .mcp-picker-link, so it dims on press instead of scaling. */

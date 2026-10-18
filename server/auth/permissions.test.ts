@@ -28,7 +28,7 @@ process.env.GITLAB_TOKEN = "shared-gitlab-token";
 process.env.ALPHAVANTAGE_API_KEY = "shared-av-key";
 delete process.env.PRIVILEGED_GROUPS;
 
-const { isPrivilegedUser, privilegedGroupNames } = await import("./privilege.js");
+const { isPrivilegedUser, privilegedGroupNames, shareBaseUrlFor } = await import("./privilege.js");
 const { createUser, setUserGroup, getUser } = await import("../storage/userStore.js");
 const { createGroup } = await import("../storage/groupStore.js");
 const { getPersonalKey, setPersonalKey } = await import("../storage/personalKeys.js");
@@ -92,6 +92,19 @@ process.env.PRIVILEGED_GROUPS = "S&P, AI Platform";
 check("PRIVILEGED_GROUPS 로 바꿀 수 있다", await isPrivilegedUser(await getUser("bob")));
 check("…그러면 AI Product 는 빠진다", !(await isPrivilegedUser(await getUser("aip1"))));
 delete process.env.PRIVILEGED_GROUPS;
+
+/* ---------------------------------------------------------------- 1-1. 공유 링크 주소 */
+
+delete process.env.SHARE_BASE_URL;
+check("SHARE_BASE_URL 이 없으면 누구도 바꾸지 않는다", (await shareBaseUrlFor(await getUser("bob"))) === undefined);
+process.env.SHARE_BASE_URL = "http://server.example:9000/";
+check("AI Product 구성원이 아니면 서버 주소로 공유한다", (await shareBaseUrlFor(await getUser("bob"))) === "http://server.example:9000");
+check("그룹 없는 계정도 서버 주소", (await shareBaseUrlFor(await getUser("nogroup"))) === "http://server.example:9000");
+check("관리자라도 AI Product 구성원이 아니면 서버 주소", (await shareBaseUrlFor(await getUser("admin1"))) === "http://server.example:9000");
+check("AI Product 구성원은 지금 주소 그대로", (await shareBaseUrlFor(await getUser("aip1"))) === undefined);
+process.env.SHARE_BASE_URL = "server.example:9000";
+check("http(s) 주소가 아니면 쓰지 않는다", (await shareBaseUrlFor(await getUser("bob"))) === undefined);
+delete process.env.SHARE_BASE_URL;
 
 /* ---------------------------------------------------------------- 준비: 앱 */
 

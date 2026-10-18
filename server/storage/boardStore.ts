@@ -37,6 +37,17 @@ function cleanText(raw: unknown, max: number): string {
 }
 
 /**
+ * 고칠 때 받은 글. 새 글과 달리 길이를 넘으면 자르지 않고 거절한다(null) —
+ * 이미 올라가 있던 글의 끝이 저장 한 번에 말없이 잘려 나가면 안 된다.
+ * 문자열이 아닌 것도 null 이다. 빈 글("")이 괜찮은지는 부르는 쪽이 정한다.
+ */
+export function cleanEditText(raw: unknown, max: number): string | null {
+  if (typeof raw !== "string") return null;
+  const text = cleanText(raw, Number.POSITIVE_INFINITY);
+  return text.length > max ? null : text;
+}
+
+/**
  * 태그를 다듬는다. 사용자가 자유롭게 적으므로 여기가 유일한 관문이다.
  *
  * 소문자로 모으는 이유: "검색" 과 "검색 " 과 "Search" 와 "search" 가 네 개의
@@ -168,6 +179,51 @@ export async function addReply(postId: string, authorId: string, body: unknown):
       ...post,
       replies: [...post.replies, reply],
       updatedAt: reply.createdAt,
+    };
+    await writeJsonFileAtomic(boardPostFile(postId), updated);
+    return updated;
+  });
+}
+
+/**
+ * 제목·본문·라벨을 고친다. 준 칸만 바꾸고, 값은 이미 다듬어서(cleanEditText·
+ * normalizeTags) 받는다. 누가 할 수 있는지는 라우트가 정한다.
+ *
+ * 아무것도 달라지지 않았으면 그대로 돌려준다 — 저장만 눌렀는데 "(수정됨)" 이
+ * 붙으면, 고친 것이 없는데 고친 흔적이 남는다.
+ */
+export async function editPost(
+  postId: string,
+  changes: { title?: string; body?: string; tags?: string[] },
+): Promise<BoardPost | null> {
+  return withLock(lockFor(postId), async () => {
+    const post = await getPost(postId);
+    if (!post) return null;
+    const next = {
+      title: changes.title ?? post.title,
+      body: changes.body ?? post.body,
+      tags: changes.tags ?? post.tags,
+    };
+    if (next.title === post.title && next.body === post.body && next.tags.join("\n") === post.tags.join("\n")) return post;
+    const now = new Date().toISOString();
+    const updated: BoardPost = { ...post, ...next, editedAt: now, updatedAt: now };
+    await writeJsonFileAtomic(boardPostFile(postId), updated);
+    return updated;
+  });
+}
+
+/** 답변 하나의 본문을 고친다. 글이나 답변이 없으면 null. 같은 내용이면 그대로 돌려준다. */
+export async function editReply(postId: string, replyId: string, body: string): Promise<BoardPost | null> {
+  return withLock(lockFor(postId), async () => {
+    const post = await getPost(postId);
+    const target = post?.replies.find((r) => r.id === replyId);
+    if (!post || !target) return null;
+    if (target.body === body) return post;
+    const now = new Date().toISOString();
+    const updated: BoardPost = {
+      ...post,
+      replies: post.replies.map((r) => (r.id === replyId ? { ...r, body, editedAt: now } : r)),
+      updatedAt: now,
     };
     await writeJsonFileAtomic(boardPostFile(postId), updated);
     return updated;

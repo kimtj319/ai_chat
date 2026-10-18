@@ -13,7 +13,7 @@ import {
 import { clearSessionUser, signInOnFreshSession, signOutOtherSessions } from "../storage/sessionStore.js";
 import { setSessionCookie } from "../middleware/session.js";
 import { toPublicUser } from "../types.js";
-import { isPrivilegedUser } from "../auth/privilege.js";
+import { isPrivilegedUser, shareBaseUrlFor } from "../auth/privilege.js";
 import type { AuthErrorCode } from "../types.js";
 import { clientAddress, createTokenBucket } from "./rateLimit.js";
 import { sendError } from "./respond.js";
@@ -41,6 +41,16 @@ const takeToken = createTokenBucket(60_000);
  * POST /api/auth/signup — register. The account starts `pending` and cannot
  * sign in until an admin approves it.
  */
+/**
+ * 로그인한 계정을 화면에 알리는 모양. privileged: 공용 키·모든 모델을 쓸 수 있다.
+ * shareBaseUrl: 대화 공유 링크를 이 주소로 만든다(없으면 지금 연 주소). 둘 다
+ * auth/privilege.ts 가 정한다.
+ */
+async function signedInUser(user: Parameters<typeof toPublicUser>[0]) {
+  const shareBaseUrl = await shareBaseUrlFor(user);
+  return { ...toPublicUser(user), privileged: await isPrivilegedUser(user), ...(shareBaseUrl ? { shareBaseUrl } : {}) };
+}
+
 authRouter.post("/auth/signup", async (req, res, next) => {
   try {
     // Signup is reachable without a session, so without this one caller can
@@ -124,7 +134,7 @@ authRouter.post("/auth/login", async (req, res, next) => {
     req.sessionId = session.sessionId;
     setSessionCookie(res, session.sessionId);
     console.log(`[auth] login ${user.id} from ${ip}`);
-    res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
+    res.json({ user: await signedInUser(user) });
   } catch (err) {
     next(err);
   }
@@ -222,8 +232,7 @@ authRouter.get("/auth/me", async (req, res, next) => {
     if (!user) return fail(res, 401, "unauthorized", "로그인이 필요합니다.");
     if (user.status === "blocked") return fail(res, 403, "blocked", "차단된 계정입니다. 관리자에게 문의해 주세요.");
     if (user.status !== "active") return fail(res, 403, "pending_approval", "관리자 승인 대기 중인 계정입니다.");
-    // privileged: may use shared keys and every model (auth/privilege.ts).
-    res.json({ user: { ...toPublicUser(user), privileged: await isPrivilegedUser(user) } });
+    res.json({ user: await signedInUser(user) });
   } catch (err) {
     next(err);
   }

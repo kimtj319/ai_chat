@@ -45,7 +45,7 @@ $("save").addEventListener("click", async () => {
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("protocol");
     origin = url.origin;
   } catch {
-    setStatus("http:// 또는 https:// 로 시작하는 주소를 넣어 주세요.", "error");
+    setStatus("http:// 또는 https:// 로 시작하는 AI Console 웹 서버 주소를 넣어 주세요. 예: http://웹 서버 주소:9000", "error");
     return;
   }
   await chrome.storage.local.set({ appOrigin: origin });

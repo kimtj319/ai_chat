@@ -31,6 +31,8 @@ export interface LiveToolResult {
  */
 export interface ClientChatMessage extends ChatMessage {
   streaming?: boolean;
+  /** 모델 차례를 기다리는 중이면 앞에 선 요청 수. 첫 생각·글자·도구 호출이 오면 지운다. */
+  queuedAhead?: number;
   liveToolResults?: LiveToolResult[];
   /** 진행 중인 컨텍스트 압축(진행률 막대). 끝나면 지운다. */
   compaction?: { kind: import("../api/types").CompactionKind; progress: number };

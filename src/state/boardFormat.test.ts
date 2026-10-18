@@ -41,8 +41,8 @@ const post: BoardPostView = {
   authorId: "alice",
   authorName: "앨리스",
   replies: [
-    { id: "r1", authorId: "bob", authorName: "밥", body: "a", createdAt: "2026-10-17T01:00:00Z" },
-    { id: "r2", authorId: "alice", authorName: "앨리스", body: "b", createdAt: "2026-10-17T03:00:00Z" },
+    { id: "r1", authorId: "bob", authorName: "밥", body: "a", createdAt: "2026-10-17T01:00:00Z", canEdit: false },
+    { id: "r2", authorId: "alice", authorName: "앨리스", body: "b", createdAt: "2026-10-17T03:00:00Z", canEdit: true },
   ],
   createdAt: "2026-10-17T00:00:00Z",
   updatedAt: "2026-10-17T03:00:00Z",

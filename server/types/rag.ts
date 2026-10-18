@@ -26,6 +26,11 @@ export interface RagDocument {
   /** "ready" once the engine has it; "failed" if it does not, with the reason. */
   status: "ready" | "failed";
   error?: string;
+  /**
+   * 올린 원본 글({originalId}.original.txt)의 id. 한 파일에서 나온 조각들은 모두 같은
+   * 값을 가리킨다 — 원본은 한 벌이다. PDF(원본은 {id}.pdf)와 이 기능 전에 올린 문서에는 없다.
+   */
+  originalId?: string;
   createdAt: string;
   updatedAt: string;
 }

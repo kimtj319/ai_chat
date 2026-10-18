@@ -11,8 +11,26 @@
  * 돌려주는 범위는 **원문 글자 위치**다. 줄인 문자열의 위치는 원문 위치 표로 되돌린다.
  */
 
-/** 원문에서 이 글자들은 비교할 때 없는 것으로 친다. */
-const DROP = /[\s​-‍﻿#*`|>_~]/u;
+/**
+ * 원문에서 이 글자들은 비교할 때 없는 것으로 친다. 제어문자(Cc)·서식문자(Cf — 폭
+ * 없는 공백, 소프트 하이픈, 방향 표시, BOM)는 색인 전처리(server/rag/preprocess.ts)가
+ * 지우는 것들이라, 올린 원본과 청크를 맞대려면 여기서도 없는 것이어야 한다.
+ */
+const DROP = /[\s\p{Cc}\p{Cf}#*`|>_~]/u;
+
+/**
+ * 앞 글자에 붙어 한 글자를 이루는 것들 — 결합 부호와 한글 중성·종성 자모. 맥에서 만든
+ * 파일은 한글이 자모로 풀린(NFD) 채 오기도 하는데, 청크는 NFC 로 모은 글이다. 글자
+ * 하나씩 정규화하면 풀린 자모는 다시 모이지 않으므로 이것들은 앞 글자와 묶어서 한다.
+ */
+const JOINS = /[\p{M}\u1160-\u11ff\ud7b0-\ud7ff]/u;
+
+/**
+ * 줄 끝에서 잘린 영어 낱말의 하이픈("configu-⏎ration"). 전처리가 이것을 지우고 붙이므로
+ * 원본 쪽에서도 없는 것으로 친다. preprocess 와 같은 조건: 앞은 라틴 문자, 뒤는 줄바꿈과
+ * 영어 소문자(줄 끝·줄 머리 공백은 preprocess 가 먼저 다듬는다).
+ */
+const BROKEN_WORD = /^-[ \t]*\r?\n[ \t]*[a-z]/;
 
 const FOLD: Record<string, string> = {
   "‘": "'",
@@ -29,22 +47,33 @@ export interface Normalized {
   text: string;
   /** text[i] 가 원문의 몇 번째 글자에서 왔는가. */
   origin: number[];
+  /** text[i] 를 만든 원문 글자(묶음)가 끝나는 위치. 풀린 자모를 반쯤 칠하지 않으려고 둔다. */
+  originEnd: number[];
 }
 
 export function normalizeForMatch(input: string): Normalized {
   let text = "";
   const origin: number[] = [];
-  for (let i = 0; i < input.length; i++) {
+  const originEnd: number[] = [];
+  for (let i = 0; i < input.length; ) {
     const ch = input[i]!;
-    if (DROP.test(ch)) continue;
-    const folded = (FOLD[ch] ?? ch).normalize("NFKC").toLowerCase();
+    if (ch === "-" && /[A-Za-z]/.test(input[i - 1] ?? "") && BROKEN_WORD.test(input.slice(i, i + 16))) {
+      i++;
+      continue;
+    }
+    let j = i + ((input.codePointAt(i) ?? 0) > 0xffff ? 2 : 1);
+    while (j < input.length && JOINS.test(input[j]!)) j++;
+    const cluster = input.slice(i, j);
+    const folded = (FOLD[cluster] ?? cluster).normalize("NFKC").toLowerCase();
     for (const c of folded) {
       if (DROP.test(c)) continue;
       text += c;
       origin.push(i);
+      originEnd.push(j);
     }
+    i = j;
   }
-  return { text, origin };
+  return { text, origin, originEnd };
 }
 
 /** 이보다 짧은 조각은 원문 여기저기서 우연히 걸리므로 찾지 않는다. */
@@ -130,7 +159,7 @@ export function findPassage(haystack: string, passage: string): Range[] {
     const at = inWindow.find((x) => x >= from) ?? inWindow[0];
     if (at === undefined) return;
     from = at + needle.length;
-    ranges.push({ start: hay.origin[at]!, end: hay.origin[at + needle.length - 1]! + 1 });
+    ranges.push({ start: hay.origin[at]!, end: hay.originEnd[at + needle.length - 1]! });
   });
   ranges.sort((a, b) => a.start - b.start);
   const merged: Range[] = [];

@@ -623,6 +623,33 @@
   padding: var(--space-6) var(--space-8) var(--space-7);
 }
 
+/* 답변 머리줄 끝의 "수정". 작성자 표시가 있으면 그 옆에 붙는다. */
+.board-note-edit {
+  margin-left: auto;
+  padding: 0 var(--space-3);
+  border: none;
+  background: none;
+  color: var(--on-surface-variant);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.board-note-role + .board-note-edit {
+  margin-left: 0;
+}
+
+.board-note-edit:hover {
+  color: var(--primary);
+}
+
+/* 답변을 그 자리에서 고칠 때: 답변 카드가 이미 테두리를 가지므로 안쪽 상자는 선만 남긴다. */
+.board-reply-form.board-note-editor {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
 .board-note-body .markdown-body {
   font-size: var(--text-sm);
   line-height: 1.75;
@@ -906,6 +933,66 @@
 .board-textarea {
   resize: vertical;
   line-height: 1.7;
+}
+
+/* 마크다운 입력과 바로 보이는 결과. 화면 폭이 아니라 이 상자의 폭으로 가른다 —
+   같은 칸이 넓은 글쓰기 창에도, 정보 패널 옆의 좁은 본문 칸에도 놓인다. */
+.board-md {
+  container-type: inline-size;
+}
+
+.board-md-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.board-md-preview {
+  min-width: 0;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  border: 1px dashed var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+}
+
+.board-md-preview-label {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.board-md-preview-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--on-surface-variant);
+}
+
+@container (min-width: 600px) {
+  .board-md-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* 답변 상자 안에서는 상자가 테두리를 맡는다. 입력과 결과 사이에 선 하나만. */
+.board-reply-form .board-md-split {
+  gap: 0;
+}
+
+.board-reply-form .board-md-preview {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+  border-radius: 0;
+  background: transparent;
+}
+
+@container (min-width: 600px) {
+  .board-reply-form .board-md-preview {
+    border-top: none;
+    border-left: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+  }
 }
 
 .board-compose-actions {
