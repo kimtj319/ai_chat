@@ -68,6 +68,7 @@
     .sidebar-settings-popover,
     .chat-download-menu,
     .notice-popover,
+    .source-picker-menu,
     .chat-jump-bottom,
     .chat-drop-card,
     .source-panel-inner,
@@ -82,11 +83,11 @@
     inset 0 1px 0 var(--glass-inner-highlight);
 }
 
-/* On a phone these two open as bottom sheets (App.css) and stop being glass:
+/* On a phone these open as bottom sheets (App.css) and stop being glass:
    an opaque sheet with only its top edge drawn, like the composer's sheets.
    This file loads last, so the sheet rule alone would lose to the pop tier. */
 @media (max-width: 640px) {
-  :is(.chat-download-menu, .notice-popover) {
+  :is(.chat-download-menu, .notice-popover, .source-picker-menu) {
     background: var(--surface);
     backdrop-filter: none;
     border: none;
@@ -100,9 +101,16 @@
   backdrop-filter: blur(6px) saturate(120%);
 }
 
-/* The chat's top-right actions float as one capsule, like a toolbar on glass. */
+/* The chat's top-right actions float as one capsule, like a toolbar on glass.
+   The cited-documents pill beside it is the same glass — on the button itself,
+   not its wrapper: a backdrop-filter on the wrapper would become the menu's
+   backdrop root, and the menu could then no longer blur the transcript behind it. */
 .chat-header-right {
   padding: 3px;
+}
+
+.chat-header-right,
+.source-picker-trigger {
   border-radius: var(--radius-full);
   background: var(--glass-control);
   backdrop-filter: blur(16px) saturate(170%);

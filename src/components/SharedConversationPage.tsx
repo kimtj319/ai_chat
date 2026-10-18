@@ -6,6 +6,7 @@ import { BrandMark } from "./BrandMark";
 import { MessageItem } from "./MessageItem";
 import { SourcePanel } from "./SourcePanel";
 import { errorMessage } from "../state/friendlyError";
+import { useScrollKeys } from "../hooks/useScrollKeys";
 import "./ChatView.css";
 import "./SharedConversationPage.css";
 
@@ -22,6 +23,8 @@ import "./SharedConversationPage.css";
 export function SharedConversationPage({ token }: { token: string }) {
   const [share, setShare] = useState<SharedConversation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // PageUp·PageDown·Home·End — 대화 화면과 같이 본문과 출처 창을 넘긴다.
+  useScrollKeys();
 
   useEffect(() => {
     let cancelled = false;

@@ -16,7 +16,8 @@ interface MdNode {
   children?: MdNode[];
 }
 
-const CITE = /\[(\d{1,3}(?:\s*[,，]\s*\d{1,3})*)\]/g;
+/** 답변 본문의 출처 표시. state/citations.ts 의 citedDocuments 도 같은 규칙으로 센다. */
+export const CITE = /\[(\d{1,3}(?:\s*[,，]\s*\d{1,3})*)\]/g;
 
 export function remarkCitations(valid: ReadonlySet<number>) {
   return () => (tree: MdNode) => {

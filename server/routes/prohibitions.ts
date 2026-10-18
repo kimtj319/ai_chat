@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { consolidateProhibitions } from "../chat/prohibitionDetect.js";
-import { modelAccessForOwner } from "../vllm/access.js";
+import { modelAccessForOwner, ModelKeyRequiredError } from "../vllm/access.js";
 import {
   activeText,
   listItems,
@@ -74,13 +74,17 @@ prohibitionsRouter.post("/prohibitions/consolidate", async (req, res, next) => {
     res.on("close", () => {
       if (!res.writableEnded) controller.abort();
     });
-    const proposal = await consolidateProhibitions(items, controller.signal, (await modelAccessForOwner(req.ownerId)).allows);
+    const proposal = await consolidateProhibitions(items, controller.signal, (await modelAccessForOwner(req.ownerId)).allows, req.ownerId);
     if (!proposal) {
       res.status(502).json({ error: "정리안을 만들지 못했습니다. 잠시 뒤 다시 시도하세요." });
       return;
     }
     res.json({ proposal, before: items.length, after: proposal.split("\n").length });
   } catch (err) {
+    if (err instanceof ModelKeyRequiredError) {
+      res.status(400).json({ error: err.message, code: "model_key_required" });
+      return;
+    }
     next(err);
   }
 });

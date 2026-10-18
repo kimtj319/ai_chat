@@ -1,0 +1,147 @@
+/* ---- 대화 머리의 "출처 문서" 단추 ----
+   아이콘 묶음(.chat-header-right) 바로 왼쪽에 떨어진 알약 하나. 유리 막은 glass.css 가
+   묶음과 같은 규칙으로 단추에 입힌다(높이도 묶음과 같은 44px). 머리 줄의 간격(16px)보다 묶음에 바짝 붙여, 한 무리의
+   단추로 읽히되 "이 대화의 문서" 라는 다른 갈래임은 보이게 한다. */
+
+.source-picker {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: calc(var(--space-4) - var(--space-8));
+}
+
+.source-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 44px;
+  padding: 0 var(--space-6) 0 var(--space-5);
+  border-radius: var(--radius-full);
+  color: var(--on-surface-variant);
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.source-picker-trigger:hover {
+  color: var(--on-surface);
+  background: var(--glass-control-hover);
+}
+
+.source-picker-trigger:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.source-picker-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.source-picker-trigger svg {
+  width: 18px;
+  height: 18px;
+}
+
+.source-picker-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
+}
+
+.source-picker-menu {
+  position: absolute;
+  top: calc(100% + var(--space-3));
+  right: 0;
+  z-index: 30;
+  width: min(340px, calc(100vw - var(--space-8) * 2));
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+.source-picker-title {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface-variant);
+}
+
+.source-picker-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-surface);
+  text-align: left;
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.source-picker-item:hover,
+.source-picker-item:focus-visible {
+  background: var(--surface-container-highest);
+  outline: none;
+}
+
+.source-picker-item:active {
+  scale: var(--press-scale-row);
+  transition-duration: var(--press-in);
+}
+
+.source-picker-item svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--on-surface-variant);
+}
+
+/* 지금 출처 창에 열려 있는 문서. */
+.source-picker-item.current {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.source-picker-item.current svg {
+  color: var(--primary);
+}
+
+.source-picker-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-picker-meta {
+  flex-shrink: 0;
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .source-picker-trigger {
+    height: 52px;
+  }
+
+  .source-picker-item {
+    min-height: 48px;
+  }
+}

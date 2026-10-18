@@ -103,7 +103,15 @@
   background: var(--surface-container-high);
 }
 
-.source-pdf.empty {
+/* PDF 스크롤 칸이 붙는 자리. 칸은 문서마다 캐시에 남아 있다가 여기로 옮겨 붙는다(sourcePdf.ts). */
+.source-pdf-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-pdf-slot.empty {
   display: none;
 }
 

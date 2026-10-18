@@ -1,4 +1,6 @@
-import { isPrivilegedUser } from "../auth/privilege.js";
+import { isPrivilegedOwner, isPrivilegedUser } from "../auth/privilege.js";
+import type { VllmEndpoint } from "../config.js";
+import { getPersonalKey } from "../storage/personalKeys.js";
 import { ownerKey, readModelOwners } from "../storage/modelOwners.js";
 import { getUser } from "../storage/userStore.js";
 import type { UserRecord } from "../types.js";
@@ -32,6 +34,29 @@ export async function modelAccessFor(user: Pick<UserRecord, "id" | "role" | "gro
 
 export async function modelAccessForOwner(ownerId: string): Promise<ModelAccess> {
   return modelAccessFor(await getUser(ownerId).catch(() => null));
+}
+
+/** 본인 키가 있어야 하는데 없을 때. 문구는 그대로 화면에 나간다. */
+export class ModelKeyRequiredError extends Error {
+  constructor() {
+    super("wise 모델을 쓰려면 설정 › 개인 키에서 'wise 모델 키'를 등록해 주세요.");
+    this.name = "ModelKeyRequiredError";
+  }
+}
+
+/**
+ * 이 계정의 요청을 보낼 엔드포인트. 기본 모델(VLLM_ENDPOINTS — 운영에서는 wise 게이트웨이)은
+ * 공용 키로 묶여 있어, 공용 자원 계정(관리자·AI Product, auth/privilege.ts)이 아니면
+ * 본인이 등록한 wise 키로 보낸다 — 없으면 ModelKeyRequiredError. 다른 개인 키와 같이
+ * 공용 자원 계정이라도 본인 키가 있으면 본인 키가 먼저다. 본인이 화면에서 등록한
+ * 엔드포인트나 공용 키가 없는 엔드포인트는 그대로 둔다. 원래 객체는 바꾸지 않는다.
+ */
+export async function endpointForOwner(endpoint: VllmEndpoint, ownerId: string | undefined): Promise<VllmEndpoint> {
+  if (!endpoint.apiKey || !isEnvEndpoint(endpoint.baseUrl)) return endpoint;
+  const own = await getPersonalKey(ownerId, "wise");
+  if (own) return { ...endpoint, apiKey: own };
+  if (await isPrivilegedOwner(ownerId)) return endpoint;
+  throw new ModelKeyRequiredError();
 }
 
 /**

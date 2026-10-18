@@ -3,13 +3,14 @@ import { withLock } from "./mutex.js";
 import { ownerKeysFile } from "./paths.js";
 
 /**
- * 계정마다 본인이 등록한 외부 서비스 키(웹 검색·GitLab·Alpha Vantage). `{DATA_DIR}/owners/<id>/keys.json`.
+ * 계정마다 본인이 등록한 외부 서비스 키(wise 모델·웹 검색·GitLab·Alpha Vantage). `{DATA_DIR}/owners/<id>/keys.json`.
  *
  * 공용 키를 쓸 수 있는 계정(auth/privilege.ts)이 아니면 이 키가 있어야 그 기능을 쓴다.
  * 공용 키를 쓸 수 있는 계정이라도 본인 키를 등록하면 본인 키가 먼저 쓰인다.
  * 키는 API 로 되돌려 주지 않는다 — 등록 여부와 끝 네 자리만 보인다.
  */
 export const PERSONAL_KEYS = {
+  wise: { label: "wise 모델 키" },
   tavily: { label: "웹 검색(Tavily) API 키" },
   gitlab: { label: "GitLab 토큰(wisenut 이슈)" },
   alphavantage: { label: "Alpha Vantage API 키" },

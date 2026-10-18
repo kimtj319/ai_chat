@@ -1,4 +1,4 @@
-import { modelAccessForOwner } from "../vllm/access.js";
+import { modelAccessForOwner, endpointForOwner } from "../vllm/access.js";
 import { citationSources } from "./citations.js";
 import {
   resolveModel,
@@ -170,7 +170,11 @@ export async function* runConversationTurn(
   // an unknown/blank selection falls back to the first available model.
   // Only among the models this account may use (vllm/access.ts) — the same
   // rule for a turn sent from the page and one a schedule runs.
-  const { model, endpoint, maxModelLen } = await resolveModel(conversation.model, (await modelAccessForOwner(ownerId)).allows);
+  const resolved = await resolveModel(conversation.model, (await modelAccessForOwner(ownerId)).allows);
+  const { model, maxModelLen } = resolved;
+  // 기본(wise) 모델은 AI Product 가 아니면 그 사람의 키로(vllm/access.ts). 화면에서 보낸 턴은
+  // conversationTurn 이 미리 거른다 — 여기서 걸리는 것은 키를 지운 뒤에 돈 예약 작업이다.
+  const endpoint = await endpointForOwner(resolved.endpoint, ownerId);
   // Asking for a model that is not in the catalogue used to be answered by a
   // different model without a word — the conversation still displayed the name
   // it was pinned to, and a single typo in a model id was enough. The fallback

@@ -65,6 +65,7 @@ for (const must of [
   "reasoning-popover",
   "chat-download-menu",
   "notice-popover",
+  "source-picker-menu",
   "model-switcher-popover",
   "sidebar-settings-popover",
 ]) {

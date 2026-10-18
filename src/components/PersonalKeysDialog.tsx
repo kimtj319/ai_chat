@@ -7,7 +7,7 @@ import { errorMessage } from "../state/friendlyError";
 import "./PersonalKeysDialog.css";
 
 /**
- * 개인 키: 웹 검색(Tavily)·wisenut 이슈(GitLab)·Alpha Vantage 를 본인 키로 쓰기 위한 화면.
+ * 개인 키: wise 모델·웹 검색(Tavily)·wisenut 이슈(GitLab)·Alpha Vantage 를 본인 키로 쓰기 위한 화면.
  *
  * 공용 키를 쓸 수 있는 계정(auth/privilege.ts)은 등록하지 않아도 되고, 등록하면
  * 본인 키가 먼저 쓰인다. 그 밖의 계정은 여기서 등록해야 그 기능이 동작한다.
@@ -15,6 +15,12 @@ import "./PersonalKeysDialog.css";
  * 서버는 키 값을 돌려주지 않는다 — 등록 여부와 끝 네 자리만 보인다.
  */
 const KEYS: Array<{ name: PersonalKeyName; title: string; what: string; how: string; multi?: boolean }> = [
+  {
+    name: "wise",
+    title: "wise 모델 키",
+    what: "기본 제공 wise 모델(wise-lloa 등)로 대화할 때 이 키로 보냅니다. 저장할 때 모델 서버에 맞는 키인지 확인합니다.",
+    how: "관리자에게 발급받은 wise 모델 API 키(sk-…)를 넣어 주세요.",
+  },
   {
     name: "tavily",
     title: "웹 검색 API 키 (Tavily)",
@@ -57,11 +63,11 @@ export function PersonalKeysDialog({ onClose }: { onClose: () => void }) {
     <Modal title="개인 키" onClose={onClose} width={680}>
       {access && (
         <p className="keys-scope" role="note">
-          등록한 키는 이 계정의 웹 검색·wisenut 이슈·Alpha Vantage 호출에만 쓰이며, 저장한 뒤에는 다시 보여 주지 않습니다.
+          등록한 키는 이 계정의 wise 모델·웹 검색·wisenut 이슈·Alpha Vantage 호출에만 쓰이며, 저장한 뒤에는 다시 보여 주지 않습니다.
         </p>
       )}
       {loadFailed && <LoadFailed message="개인 키 목록을 불러오지 못했습니다." onRetry={() => void load()} />}
-      {!access && !loadFailed && <ListSkeleton rows={3} />}
+      {!access && !loadFailed && <ListSkeleton rows={4} />}
       {access &&
         KEYS.map((key) => (
           <KeyRow

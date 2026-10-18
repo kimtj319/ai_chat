@@ -733,7 +733,7 @@ export interface BoardListResponse {
 }
 
 /** `GET /api/me/access` — 내 권한과 개인 키 등록 상태(키 값은 오지 않는다). */
-export type PersonalKeyName = "tavily" | "gitlab" | "alphavantage";
+export type PersonalKeyName = "wise" | "tavily" | "gitlab" | "alphavantage";
 export interface PersonalKeyState {
   set: boolean;
   /** 끝 네 자리, 예: "…a1b2". */

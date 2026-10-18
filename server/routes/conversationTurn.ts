@@ -14,7 +14,7 @@ import {
 } from "../storage/attachmentStore.js";
 import { attachmentBudget, describeCost } from "../attachments/budget.js";
 import { resolveModel } from "../vllm/client.js";
-import { modelAccessFor } from "../vllm/access.js";
+import { modelAccessFor, endpointForOwner, ModelKeyRequiredError } from "../vllm/access.js";
 import { CANCELLED_BY_CLIENT, runConversationTurn } from "../chat/toolLoop.js";
 import { assistantMessageFromTurn } from "../chat/turnMessage.js";
 import { compactionSettled } from "../chat/compactionProgress.js";
@@ -181,6 +181,15 @@ async function prepareTurn(req: Request<{ id: string }>): Promise<Refusal | Turn
       error: `${resolved.model} 은(는) 재순위(rerank) 전용 모델이라 대화에 사용할 수 없습니다. 질의와 문서 목록이 함께 필요합니다. 다른 모델을 선택해 주세요.`,
       code: "rerank_unsupported",
     });
+  }
+  // 기본(wise) 모델은 AI Product 가 아니면 본인 키로 보낸다(vllm/access.ts). 키가 없으면
+  // 질문을 저장하기 전에 무엇을 하면 되는지와 함께 돌려보낸다. 이 턴이 쓰는 엔드포인트는
+  // 그 사람의 키가 실린 것이다(임베딩 턴이 그대로 쓴다).
+  try {
+    resolved = { ...resolved, endpoint: await endpointForOwner(resolved.endpoint, req.ownerId) };
+  } catch (err) {
+    if (err instanceof ModelKeyRequiredError) return refusal(400, { error: err.message, code: "model_key_required" });
+    throw err;
   }
   const turnKind: ConversationKind = resolved.capability === "embedding" ? "embedding" : "chat";
   // A conversation takes its kind from its first message and keeps it: an
@@ -404,7 +413,7 @@ function renameFromSummary(
   signal: AbortSignal,
   send: (payload: unknown) => void,
 ): void {
-  void summariseConversationTitle(content, model, signal)
+  void summariseConversationTitle(content, model, signal, ownerId)
     .then(async (title) => {
       if (!title) return;
       let applied = false;
@@ -436,6 +445,7 @@ function recordProhibitionInBackground(ownerId: string, afterUser: Conversation,
     assistant: previous.content,
     user: content,
     model,
+    ownerId,
     signal: AbortSignal.timeout(PROHIBITION_DETECT_TIMEOUT_MS),
   })
     .then((rule) => (rule ? appendPending(ownerId, rule, content, new Date()) : false))

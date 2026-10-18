@@ -12,6 +12,7 @@ import { ToolsPage } from "./components/ToolsPage";
 import { DocumentsPage } from "./components/DocumentsPage";
 import { SharedConversationPage } from "./components/SharedConversationPage";
 import { SourcePanel } from "./components/SourcePanel";
+import { clearSourceCache } from "./state/sourceCache";
 import { closeSource, useOpenSource } from "./state/sourcePanel";
 import { Sidebar } from "./components/Sidebar";
 import { ToastHost } from "./components/Toast";
@@ -74,6 +75,12 @@ export default function App() {
   useEffect(() => {
     if (view === "admin" && status === "authenticated" && !isAdmin) navigate("chat");
   }, [view, status, isAdmin]);
+
+  // 출처 창이 붙잡아 둔 문서는 계정의 것이다. 로그아웃(세션 만료 포함)하면 놓는다 —
+  // 같은 탭에서 다른 계정으로 들어와 앞 사람의 문서를 보는 일이 없게.
+  useEffect(() => {
+    if (status === "anonymous") clearSourceCache();
+  }, [status]);
 
   // 테마는 모든 화면 위에서, 어떤 조기 반환보다 먼저 건다.
   //

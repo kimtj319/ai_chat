@@ -11,6 +11,7 @@
  * server/chat/citations.ts 와 규칙이 같아야 한다(server/chat/citations.test.ts 가
  * 둘을 대조한다). 브라우저와 Node 가 코드를 나눠 쓸 수 없어 두 벌이다.
  */
+import { CITE } from "../components/citationMarkdown";
 
 export interface CitationSource {
   n: number;
@@ -78,4 +79,82 @@ export function citationSources(toolResults: readonly ToolResultLike[] | undefin
     }
   }
   return sources;
+}
+
+/** 대화 머리의 "출처 문서" 목록 한 줄. */
+export interface CitedDocument {
+  documentId: string;
+  title: string;
+  /** 이 대화의 답변들이 이 문서에서 인용한 단락 수(같은 단락은 한 번). */
+  count: number;
+  /** 고르면 열 단락 — 이 문서를 인용한 가장 최근 답변에서 처음 나온 것. */
+  source: CitationSource;
+}
+
+interface MessageLike {
+  role: string;
+  content: string;
+  toolResults?: readonly ToolResultLike[];
+}
+
+/** 본문에 실제로 링크가 된 번호들, 나온 순서대로. 규칙은 citationMarkdown 과 같다 — 묶음의 번호가 하나라도 없으면 글자로 남는다. */
+function linkedNumbers(content: string, valid: ReadonlySet<number>): number[] {
+  const out: number[] = [];
+  for (const m of content.matchAll(CITE)) {
+    const numbers = m[1]!.split(/[,，]/).map((s) => Number(s.trim()));
+    if (numbers.every((n) => valid.has(n))) out.push(...numbers);
+  }
+  return out;
+}
+
+/** 답이 흐르는 동안 대화 머리가 토큰마다 다시 센다. 바뀌지 않은 메시지의 도구 결과는 다시 풀지 않는다. */
+const sourcesByResults = new WeakMap<readonly ToolResultLike[], CitationSource[]>();
+
+function cachedSources(toolResults: readonly ToolResultLike[] | undefined): CitationSource[] {
+  if (!toolResults) return [];
+  let sources = sourcesByResults.get(toolResults);
+  if (!sources) {
+    sources = citationSources(toolResults);
+    sourcesByResults.set(toolResults, sources);
+  }
+  return sources;
+}
+
+/**
+ * 대화가 인용한 문서들, 가장 최근에 인용한 것부터. 검색은 되었어도 답변 본문에 링크로
+ * 나오지 않은 단락은 세지 않는다 — 화면에서 누를 수 있는 "[n]" 과 같은 것만 센다.
+ */
+export function citedDocuments(messages: readonly MessageLike[]): CitedDocument[] {
+  const byDocument = new Map<string, { doc: CitedDocument; chunks: Set<string>; lastAt: number; order: number }>();
+  messages.forEach((message, at) => {
+    if (message.role !== "assistant") return;
+    const sources = cachedSources(message.toolResults);
+    if (sources.length === 0) return;
+    const byNumber = new Map(sources.map((s) => [s.n, s]));
+    const seenHere = new Set<string>();
+    let order = 0;
+    for (const n of linkedNumbers(message.content, new Set(byNumber.keys()))) {
+      const source = byNumber.get(n)!;
+      const entry = byDocument.get(source.documentId);
+      if (!entry) {
+        byDocument.set(source.documentId, {
+          doc: { documentId: source.documentId, title: source.title, count: 0, source },
+          chunks: new Set(),
+          lastAt: at,
+          order: order++,
+        });
+      } else if (!seenHere.has(source.documentId) && at > entry.lastAt) {
+        // 더 최근 답변에서 다시 인용됐다: 그 답변의 첫 단락으로 열고 순서를 올린다.
+        entry.doc.source = source;
+        if (source.title) entry.doc.title = source.title;
+        entry.lastAt = at;
+        entry.order = order++;
+      }
+      seenHere.add(source.documentId);
+      byDocument.get(source.documentId)!.chunks.add(source.chunkId);
+    }
+  });
+  return [...byDocument.values()]
+    .sort((a, b) => b.lastAt - a.lastAt || a.order - b.order)
+    .map(({ doc, chunks }) => ({ ...doc, count: chunks.size }));
 }

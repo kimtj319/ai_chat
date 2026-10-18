@@ -1,5 +1,5 @@
 import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
-import type { ModelAccess } from "../vllm/access.js";
+import { endpointForOwner, type ModelAccess } from "../vllm/access.js";
 import { RULE_MAX_CHARS, RULE_MIN_CHARS } from "../storage/prohibitionsStore.js";
 
 /**
@@ -41,6 +41,8 @@ export interface DetectInput {
   assistant: string;
   user: string;
   model: string;
+  /** 질문한 사람. 기본(wise) 모델을 그 사람의 키로 부른다(vllm/access.ts). */
+  ownerId?: string;
   signal: AbortSignal;
 }
 
@@ -76,8 +78,11 @@ async function complete(
   maxTokens: number,
   signal: AbortSignal,
   allows?: ModelAccess["allows"],
+  ownerId?: string,
 ): Promise<string | null> {
-  const { model, endpoint } = await resolveModel(requestedModel, allows);
+  const resolved = await resolveModel(requestedModel, allows);
+  const model = resolved.model;
+  const endpoint = await endpointForOwner(resolved.endpoint, ownerId);
   const attempt = (budget: number) =>
     completeWithoutThinking({ model, endpoint, prompt, maxTokens: budget, temperature: 0.1, signal });
   const first = await attempt(maxTokens);
@@ -97,7 +102,7 @@ export async function detectProhibition(input: DetectInput): Promise<string | nu
   if (!NEGATIVE_CUE.test(user)) return null;
   try {
     const prompt = `${INSTRUCTION}\n\n[직전 답변]\n${assistant.slice(0, MAX_ASSISTANT_CHARS)}\n\n[사용자의 말]\n${user.slice(0, MAX_USER_CHARS)}`;
-    const raw = await complete(prompt, input.model, MAX_TOKENS, input.signal);
+    const raw = await complete(prompt, input.model, MAX_TOKENS, input.signal, undefined, input.ownerId);
     return raw ? parseDetection(raw) : null;
   } catch (err) {
     console.warn("[prohibitions] detection failed:", err instanceof Error ? err.message : err);
@@ -150,9 +155,10 @@ export async function consolidateProhibitions(
   items: string[],
   signal: AbortSignal,
   allows?: ModelAccess["allows"],
+  ownerId?: string,
 ): Promise<string | null> {
   if (items.length < 2) return null;
   const original = items.map((item) => `- ${item}`).join("\n");
-  const raw = await complete(`${CONSOLIDATE_INSTRUCTION}\n${original}`, "", 2_000, signal, allows);
+  const raw = await complete(`${CONSOLIDATE_INSTRUCTION}\n${original}`, "", 2_000, signal, allows, ownerId);
   return raw ? parseConsolidation(raw, original.length) : null;
 }

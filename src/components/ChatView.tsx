@@ -25,6 +25,8 @@ import { ChevronDownIcon, PaperclipIcon } from "./icons";
 import "./ChatView.css";
 import { prefetchBoardList } from "../state/boardCache";
 import { NoticeButton } from "./NoticeButton";
+import { SourcePicker } from "./SourcePicker";
+import { useScrollKeys } from "../hooks/useScrollKeys";
 
 interface ChatViewProps {
   chatStream: ReturnType<typeof useChatStream>;
@@ -126,6 +128,8 @@ export function ChatView({
   const { isDragging, dropHandlers } = useFileDrop(handleDroppedFiles);
 
   const { showJumpToBottom, scrollToBottom } = useFollowBottom(listRef, conversationId, activeConversation?.messages);
+  // PageUp·PageDown·Home·End — 본문과 출처 창(PDF 포함)을 넘긴다.
+  useScrollKeys();
 
   // 화면 읽기 프로그램용. 흐르는 동안 목록은 aria-busy 라 조각마다 읽지 않고, 끝나면
   // 아래 status 가 한 번만 말한다. 멈추기는 여기서 누른 것만 안다(단축키로 멈추면 "완료").
@@ -252,6 +256,8 @@ export function ChatView({
           {/* 대화 합계 토큰은 머리에 늘 띄우지 않는다 — 답변마다 아래에 같은 숫자가 있어
               화면 위쪽에 떠 있는 알약 하나가 둘째 사본이었다. 합계는 저장 메뉴 아래에 둔다. */}
           <div className="chat-header-left" />
+          {/* 답변이 문서를 인용했을 때만 나타난다. 아이콘 묶음 바로 왼쪽. */}
+          <SourcePicker messages={activeConversation.messages} />
           <div className="chat-header-right">
             {/* 빈 대화에는 저장·공유할 것이 없다. 꺼 둔 단추를 두면 머리가 왜 안 눌리는지
                 모를 아이콘으로 붐빈다(폰에서는 서랍 토글 옆까지 밀려왔다) — 아예 그리지 않는다. */}

@@ -1,3 +1,4 @@
+import { endpointForOwner } from "../vllm/access.js";
 import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
 
 /**
@@ -71,12 +72,16 @@ export async function summariseConversationTitle(
   request: string,
   requestedModel: string,
   signal: AbortSignal,
+  ownerId?: string,
 ): Promise<string | null> {
   const trimmed = request.trim();
   if (trimmed.length === 0) return null;
 
   try {
-    const { model, endpoint } = await resolveModel(requestedModel);
+    const resolved = await resolveModel(requestedModel);
+    const model = resolved.model;
+    // 질문한 사람의 키로(vllm/access.ts). 키가 없으면 아래 catch 가 잘라 둔 제목을 남긴다.
+    const endpoint = await endpointForOwner(resolved.endpoint, ownerId);
     const prompt = `${INSTRUCTION}\n${trimmed.slice(0, MAX_REQUEST_CHARS)}`;
 
     // Naming something is not a reasoning task, so thinking is switched off.

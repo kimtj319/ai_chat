@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiPath } from "../api/base";
 import type { CitationSource } from "../state/citations";
 import { findPassage, type Range } from "../state/highlightMatch";
+import { pdfCache, textCache, type TextLoad } from "../state/sourceCache";
 import { closeSource, useOpenSource } from "../state/sourcePanel";
 import { pushOverlay } from "../ui/overlayStack";
 import { CloseIcon } from "./icons";
@@ -97,28 +98,61 @@ async function errorCode(res: Response): Promise<string> {
   }
 }
 
-function SourceBody({ source }: { source: CitationSource }) {
-  const [view, setView] = useState<View>({ kind: "loading" });
-  const pdfHost = useRef<HTMLDivElement>(null);
+/** 붙잡아 둔 글 응답을 이 단락의 화면으로. 다시 엮은 글은 순번으로 자리를 안다. */
+function textView(load: TextLoad, source: CitationSource): View {
+  if (load.kind === "text") return { kind: "text", text: load.text, note: load.note };
+  const cited = load.chunks.find((c) => c.ord === source.ord);
+  return { kind: "text", text: load.text, note: load.note, ...(cited ? { ranges: [{ start: cited.start, end: cited.end }] } : {}) };
+}
 
-  useEffect(() => {
+/** 이미 불러온 문서면 기다릴 것 없이 그릴 화면. PDF 의 쪽 번호는 붙인 뒤(show)에 정해진다. */
+function cachedView(source: CitationSource): View | null {
+  const pdf = pdfCache.peek(source.documentId);
+  if (pdf) return { kind: "pdf", found: false, page: 0, pages: pdf.pages };
+  const load = textCache.peek(source.documentId);
+  return load ? textView(load, source) : null;
+}
+
+function SourceBody({ source }: { source: CitationSource }) {
+  const [view, setView] = useState<View>(() => cachedView(source) ?? { kind: "loading" });
+  const pdfSlot = useRef<HTMLDivElement>(null);
+
+  // 레이아웃 effect: 붙잡아 둔 PDF 는 화면에 그려지기 전에 제자리에 붙고 강조까지 끝낸다 —
+  // 빈 칸이나 "불러오는 중" 이 한 번도 비치지 않는다.
+  useLayoutEffect(() => {
+    const documentId = source.documentId;
+    const cachedPdf = pdfCache.get(documentId);
+    if (cachedPdf) {
+      cachedPdf.attach(pdfSlot.current!);
+      setView({ kind: "pdf", ...cachedPdf.show(source.text) });
+      return;
+    }
+    if (textCache.get(documentId)) return;
+
     const controller = new AbortController();
     const { signal } = controller;
-    const base = apiPath(`/documents/${encodeURIComponent(source.documentId)}`);
+    const base = apiPath(`/documents/${encodeURIComponent(documentId)}`);
     const get = (url: string) => fetch(url, { credentials: "include", signal });
     const show = (next: View) => {
       if (!signal.aborted) setView(next);
+    };
+    const keep = (load: TextLoad) => {
+      textCache.set(documentId, load);
+      show(textView(load, source));
     };
     (async () => {
       const file = await get(`${base}/file`);
       if (file.ok) {
         const data = await file.arrayBuffer();
-        const host = pdfHost.current;
-        if (!host || signal.aborted) return;
+        const slot = pdfSlot.current;
+        if (!slot || signal.aborted) return;
         setView({ kind: "pdf", found: false, page: 0, pages: 0 });
-        const { renderPdf } = await import("./sourcePdf");
-        const result = await renderPdf(host, data, source.text, signal);
-        show({ kind: "pdf", ...result });
+        const { loadPdf } = await import("./sourcePdf");
+        const pdf = await loadPdf(slot, data, signal);
+        if (!pdf) return;
+        // 다 불러온 뒤에 다른 출처로 넘어갔어도 남겨 둔다 — 돌아오면 바로 열린다.
+        pdfCache.set(documentId, pdf);
+        if (!signal.aborted) show({ kind: "pdf", ...pdf.show(source.text) });
         return;
       }
       // 이 앱의 문서 저장소에 있는 문서(내 것이거나 공개된 것)만 아래 두 길을 탄다.
@@ -126,7 +160,7 @@ function SourceBody({ source }: { source: CitationSource }) {
       if ((await errorCode(file)) !== "not_found") {
         const original = await get(`${base}/original`);
         // 줄 끝만 맞춘다: pre-wrap 은 CRLF 의 \r 도 줄바꿈으로 그려 윈도에서 만든 파일이 두 줄씩 벌어진다.
-        if (original.ok) return show({ kind: "text", text: (await original.text()).replace(/\r\n?/g, "\n") });
+        if (original.ok) return keep({ kind: "text", text: (await original.text()).replace(/\r\n?/g, "\n") });
         const reason = await errorCode(original);
         const text = await get(`${base}/text`);
         if (text.ok) {
@@ -134,19 +168,19 @@ function SourceBody({ source }: { source: CitationSource }) {
             reason === "source_restricted"
               ? "원본 파일의 다른 부분이 공개되어 있지 않아, 이 부분을 색인용으로 정리한 본문을 보여 드립니다."
               : "원본 파일을 보관하기 전에 올린 문서라, 색인용으로 정리한 본문을 보여 드립니다.";
-          return show({ kind: "text", text: await text.text(), note });
+          return keep({ kind: "text", text: await text.text(), note });
         }
       }
       // 이 앱에 원문이 없는 문서: 검색 색인에서 다시 엮는다. 권한은 서버가 내 계정으로 건다.
-      const rebuilt = await get(apiPath(`/sources/${encodeURIComponent(source.documentId)}`));
+      const rebuilt = await get(apiPath(`/sources/${encodeURIComponent(documentId)}`));
       if (rebuilt.ok) {
         const body = (await rebuilt.json()) as RebuiltSource;
-        const cited = body.chunks.find((c) => c.ord === source.ord);
         const note = body.truncated
           ? "검색 색인에서 단락을 이어 다시 엮은 문서입니다. 길어서 앞부분만 가져왔습니다."
           : "검색 색인에서 단락을 이어 다시 엮은 문서입니다. 줄바꿈은 원본과 다를 수 있습니다.";
-        return show({ kind: "text", text: body.text, note, ...(cited ? { ranges: [{ start: cited.start, end: cited.end }] } : {}) });
+        return keep({ kind: "rebuilt", text: body.text, note, chunks: body.chunks });
       }
+      // 못 연 것은 남기지 않는다 — 잠깐의 오류일 수 있어 다음에 다시 물어본다.
       show({ kind: "missing" });
     })().catch((err: unknown) => {
       if (signal.aborted) return;
@@ -165,8 +199,9 @@ function SourceBody({ source }: { source: CitationSource }) {
         </p>
       )}
       {view.kind === "pdf" && view.pages === 0 && <p className="source-panel-note">PDF 를 그리는 중…</p>}
-      {/* PDF 는 이 칸에 그려진다. 다른 모양일 때는 비어 있어 공간을 차지하지 않는다. */}
-      <div ref={pdfHost} className={`source-pdf${view.kind === "pdf" ? "" : " empty"}`} />
+      {/* PDF 의 스크롤 칸(sourcePdf.ts)이 이 자리에 붙는다. 한 번 그린 칸은 캐시에 남아 다음에 그대로 옮겨 붙는다.
+          다른 모양일 때는 비어 있어 공간을 차지하지 않는다. */}
+      <div ref={pdfSlot} className={`source-pdf-slot${view.kind === "pdf" ? "" : " empty"}`} />
       {view.kind === "text" && view.note && <p className="source-panel-note">{view.note}</p>}
       {view.kind === "text" && <SourceText text={view.text} passage={source.text} known={view.ranges} />}
       {view.kind === "missing" && (
