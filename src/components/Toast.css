@@ -45,6 +45,36 @@
   white-space: pre-wrap;
 }
 
+/* 단추가 붙은 알림만 클릭을 받는다. 단추 없는 알림은 위 규칙대로 아래 화면에 클릭을 넘긴다. */
+.toast[data-has-action] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding-right: var(--space-4);
+  pointer-events: auto;
+}
+
+.toast-action {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface) 18%, transparent);
+  color: inherit;
+  font-weight: var(--weight-semibold);
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, var(--surface) 28%, transparent);
+}
+
+@media (pointer: coarse) {
+  .toast-action {
+    min-height: 40px;
+  }
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

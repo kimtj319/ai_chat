@@ -64,11 +64,19 @@ export interface SettingsPatchProblem {
   message: string;
 }
 
+/**
+ * The Max Tokens range. The conversation settings page (src/state/defaults.ts)
+ * imports this very object for its hint and its inline check, so the two
+ * cannot drift apart again: the page used to say 1,024–65,536 while this file
+ * accepted anything from 1, and a typed "99" was stored without a word.
+ */
+export const MAX_TOKENS_RANGE = { min: 1024, max: 65536 } as const;
+
 const SETTINGS_BOUNDS = {
   thinkingTokenBudget: { min: 0, max: 65536, integer: true },
   temperature: { min: 0, max: 2, integer: false },
   topP: { min: 0, max: 1, integer: false, exclusiveMin: true },
-  maxTokens: { min: 1, max: 65536, integer: true },
+  maxTokens: { min: MAX_TOKENS_RANGE.min, max: MAX_TOKENS_RANGE.max, integer: true },
   presencePenalty: { min: -2, max: 2, integer: false },
   frequencyPenalty: { min: -2, max: 2, integer: false },
 } as const;

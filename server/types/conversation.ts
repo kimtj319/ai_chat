@@ -119,7 +119,22 @@ export interface StoredMessage {
    */
   notice?: string;
   contentPromotedFromReasoning?: boolean;
+  /**
+   * The person stopped this answer. Not an error: `content` is what arrived
+   * before the stop. Messages stored before this field existed carry
+   * `error: "Cancelled by client."` instead, and the client reads both the same.
+   */
+  stopped?: boolean;
+  /** The person's 👍/👎 on this answer (assistant messages only). */
+  feedback?: MessageFeedback;
   createdAt: string;
+}
+
+/** One answer's rating. Every change is also appended to the owner's feedback log (storage/feedbackStore.ts). */
+export interface MessageFeedback {
+  rating: "up" | "down";
+  /** Optional short reason, given with a 👎. */
+  reason?: string;
 }
 
 /**
@@ -169,6 +184,8 @@ export interface Conversation {
    * that happens, which for most conversations is never.
    */
   historySummary?: HistorySummary;
+  /** 사이드바 맨 위 "고정됨" 묶음에 둔다. 고정한 적이 없으면 없다. */
+  pinned?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -181,4 +198,6 @@ export interface ConversationSummary {
   messageCount: number;
   /** So the sidebar can mark embedding conversations without loading them. */
   kind?: ConversationKind;
+  /** Only present (true) on a pinned conversation. */
+  pinned?: boolean;
 }

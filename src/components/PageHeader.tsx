@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { NoticeButton } from "./NoticeButton";
 import "./PageHeader.css";
 
 function BackIcon() {
@@ -44,7 +45,11 @@ export function PageHeader({ title, subtitle, onBack, actions }: PageHeaderProps
         <h1 className="page-header-title">{title}</h1>
         {subtitle && <p className="page-header-subtitle">{subtitle}</p>}
       </div>
-      {actions && <div className="page-header-actions">{actions}</div>}
+      {/* 공지 종은 모든 페이지에 — 공지를 읽으려고 대화 화면으로 돌아가지 않게. 주 동작 오른쪽 끝. */}
+      <div className="page-header-actions">
+        {actions}
+        <NoticeButton />
+      </div>
     </header>
   );
 }

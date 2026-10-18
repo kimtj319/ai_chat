@@ -354,3 +354,47 @@
 .message-actions .btn-icon:hover {
   opacity: 1;
 }
+
+/* 👍/👎 — 복사·다시 생성과 같은 크기와 흐림으로 조용히 둔다. 누른 쪽만 진하게. */
+.message-actions .message-feedback[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.message-actions .message-feedback[aria-pressed="true"] svg {
+  fill: currentColor;
+  fill-opacity: 0.18;
+}
+
+/* 👎 뒤에 열리는 이유 칸. 바닥줄 아래, 단추들이 있는 오른쪽에 붙는다. 마지막 칸을
+   음수로 집는다 — 폰은 본문이 1 / -1 로 두 칸을 다 쓰는데(App.css), 2 로 집으면
+   보이지 않는 셋째 칸이 생겨 줄 전체가 화면 밖으로 밀렸다. */
+.message-feedback-reason {
+  grid-column: -2 / -1;
+  justify-self: end;
+  /* min-width 0: 칸 폭을 이 줄이 정하지 않는다 — 없으면 폰에서 본문 칸이 넓어져 화면 밖으로 나갔다. */
+  min-width: 0;
+  width: min(100%, 440px);
+  /* 마지막 답 아래에서 열리면 입력창 묶음(dock) 밑에 깔린다. 그만큼 띄워 보이게 한다. */
+  scroll-margin-bottom: calc(var(--dock-h, 0px) + var(--space-6));
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.message-feedback-reason input {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--glass-field);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-5);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.message-feedback-reason input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}

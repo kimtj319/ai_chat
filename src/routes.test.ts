@@ -11,6 +11,8 @@ import {
   HASHES,
   boardPostHash,
   boardPostIdFromHash,
+  conversationHash,
+  conversationIdFromHash,
   viewFromHash,
 } from "./routes.js";
 
@@ -77,6 +79,29 @@ console.log("src/routes.ts");
   }
   check("깨진 % 이스케이프에도 터지지 않는다", !threw, "예외가 나갔다");
   check("  그리고 뭔가를 돌려준다 — 없는 글로 안내하면 된다", recovered === "%", String(recovered));
+}
+
+/* ------------------------------------------------------- 대화 주소 */
+
+{
+  // 대화를 연 채 새로고침하거나 링크를 새 탭으로 열면 그 대화로 와야 한다.
+  check("대화 주소는 채팅 화면", viewFromHash("#/c/abc-123") === "chat", viewFromHash("#/c/abc-123"));
+  check("대화 id 를 읽는다", conversationIdFromHash("#/c/abc-123") === "abc-123", String(conversationIdFromHash("#/c/abc-123")));
+  check("#/ 에는 대화가 없다", conversationIdFromHash("#/") === null);
+  check("빈 해시에도 대화가 없다", conversationIdFromHash("") === null);
+  check("#/c/ 만 있으면 대화가 아니다", conversationIdFromHash("#/c/") === null);
+  check("게시판 글 주소는 대화가 아니다", conversationIdFromHash("#/board/post_1") === null);
+  check("접두만 같은 주소는 대화가 아니다", conversationIdFromHash("#/cx/abc") === null);
+  for (const id of ["0b6f6c1e-2d0a-4f43-9b8e-3a1f5c2d7e90", "a/b", "100%", "한글"]) {
+    check(`넣은 대화 id 가 그대로 나온다: ${id}`, conversationIdFromHash(conversationHash(id)) === id, conversationHash(id));
+  }
+  let threw = false;
+  try {
+    conversationIdFromHash("#/c/%");
+  } catch {
+    threw = true;
+  }
+  check("깨진 % 이스케이프에도 터지지 않는다(대화)", !threw);
 }
 
 console.log("");

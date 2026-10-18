@@ -64,9 +64,11 @@ interface StoreValue {
   updateModel: (model: string) => Promise<void>;
   importConversation: (shell: ImportedConversationShell) => Promise<void>;
 
-  appendMessage: (conversationId: string, message: ClientChatMessage) => void;
-  patchMessage: (conversationId: string, messageId: string, patch: Partial<ClientChatMessage>) => void;
-  replaceMessage: (conversationId: string, tempId: string, message: ClientChatMessage) => void;
+  /**
+   * 열린 대화에서 id 가 `matchIds` 중 하나인 메시지를 `message` 로 바꾸고, 없으면 덧붙인다.
+   * 흐르는 답이 쓴다: 답하는 동안 다른 대화에 갔다 오면 다시 불러온 대화에는 그 자리가 없다.
+   */
+  upsertMessage: (conversationId: string, matchIds: string[], message: ClientChatMessage) => void;
   /**
    * 다시 생성·편집 재전송용: 열린 대화에서 마지막 사용자 메시지 뒤를 지우고,
    * `content` 가 있으면 그 메시지의 내용을 바꾼다. 그 메시지의 id 와, 지우기
@@ -91,25 +93,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeout);
   }, [state.ui]);
 
-  // On load: establish/confirm the session, then fetch the conversation list.
+  // On load: confirm the session and fetch the conversation list.
   useEffect(() => {
     let cancelled = false;
     async function bootstrap() {
-      try {
-        const session = await api.getSession();
-        if (cancelled) return;
-        dispatch({ type: "SET_SESSION", session });
-      } catch {
-        // Session failure surfaces via the health banner instead.
-      }
+      // 둘은 서로 기다릴 까닭이 없다(/api/session 은 읽기만 한다) — 나란히 보내 첫 화면까지
+      // 왕복 한 번을 줄인다. 하나가 실패해도 다른 하나는 그대로 쓴다.
       dispatch({ type: "SET_CONVERSATIONS_LOADING" });
-      try {
-        const conversations = await api.listConversations();
-        if (cancelled) return;
-        dispatch({ type: "SET_CONVERSATIONS", conversations });
-      } catch (error) {
-        if (cancelled) return;
-        dispatch({ type: "SET_CONVERSATIONS_ERROR", error: errorMessage(error) });
+      const [session, conversations] = await Promise.allSettled([api.getSession(), api.listConversations()]);
+      if (cancelled) return;
+      // Session failure surfaces via the health banner instead.
+      if (session.status === "fulfilled") dispatch({ type: "SET_SESSION", session: session.value });
+      if (conversations.status === "fulfilled") {
+        dispatch({ type: "SET_CONVERSATIONS", conversations: conversations.value });
+      } else {
+        dispatch({ type: "SET_CONVERSATIONS_ERROR", error: errorMessage(conversations.reason) });
       }
     }
     void bootstrap();
@@ -279,18 +277,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [refreshConversations],
   );
 
-  const appendMessage = useCallback(
-    (conversationId: string, message: ClientChatMessage) => dispatch({ type: "APPEND_ACTIVE_MESSAGE", conversationId, message }),
-    [],
-  );
-  const patchMessage = useCallback(
-    (conversationId: string, messageId: string, patch: Partial<ClientChatMessage>) =>
-      dispatch({ type: "PATCH_ACTIVE_MESSAGE", conversationId, messageId, patch }),
-    [],
-  );
-  const replaceMessage = useCallback(
-    (conversationId: string, tempId: string, message: ClientChatMessage) =>
-      dispatch({ type: "REPLACE_ACTIVE_MESSAGE", conversationId, tempId, message }),
+  const upsertMessage = useCallback(
+    (conversationId: string, matchIds: string[], message: ClientChatMessage) =>
+      dispatch({ type: "UPSERT_ACTIVE_MESSAGE", conversationId, matchIds, message }),
     [],
   );
 
@@ -345,9 +334,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateEnabledTools,
     updateModel,
     importConversation,
-    appendMessage,
-    patchMessage,
-    replaceMessage,
+    upsertMessage,
     rewindToLastUserMessage,
     }),
     // 동작들은 전부 useCallback([]) 이라 처음 만들어진 뒤 바뀌지 않는다.

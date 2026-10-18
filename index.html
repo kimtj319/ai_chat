@@ -2,7 +2,9 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content: 안드로이드 크롬에서 키보드가 올라오면 화면(dvh)을
+         줄여 입력창이 키보드 위에 남게 한다. 기본값은 겉보기 창만 줄여 입력창이 가려진다. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <!-- 홈 화면에 추가해 열면 사파리 막대 없이 앱처럼 화면 전체로 뜬다(iOS·Android).
          경로는 모두 상대 경로 — 앱이 다른 도메인의 하위 경로에 놓여도 찾아간다.
          상태 표시줄은 default: 앱이 그 밑으로 들어가지 않고, 색은 theme-color 를
@@ -21,9 +23,16 @@
          two are kept in step by hand, the same arrangement favicon.svg has
          with the mark itself. -->
     <title>AI Console</title>
+    <!-- 로그인 확인(AuthContext 의 첫 요청)을 묶음을 받는 동안 미리 보낸다 — 첫 화면까지
+         왕복 한 번이 준다. 경로·자격 증명 방식이 그 fetch 와 같아야 이 응답을 그대로 쓴다. -->
+    <link rel="preload" href="./api/auth/me" as="fetch" crossorigin="use-credentials" />
   </head>
   <body>
-    <div id="root"></div>
+    <!-- 첫 그림. 스크립트를 다 받기 전에 App.tsx 의 AuthSplash 와 같은 모양을 먼저 그린다 —
+         그 전에는 묶음(수백 KB)이 다 올 때까지 빈 화면이었다. 색은 CSS(테마 토큰)가 정하고,
+         React 가 #root 를 처음 그리면 이 내용은 그대로 갈아 치워진다. 로고는
+         src/components/BrandMark.tsx 와 같은 그림이다. -->
+    <div id="root"><div class="auth-splash" role="status"><svg viewBox="0 0 24 24" style="width:32px;height:32px;flex-shrink:0" fill="none" aria-hidden="true" focusable="false"><defs><linearGradient id="splash-brand" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0%" style="stop-color:var(--gradient-start)" /><stop offset="50%" style="stop-color:var(--gradient-mid)" /><stop offset="100%" style="stop-color:var(--gradient-end)" /></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6.4" fill="url(#splash-brand)" /><path d="M8.6 9.1 11.6 12 8.6 14.9" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /><path d="M13.5 15.1h3" stroke="#fff" stroke-width="1.9" stroke-linecap="round" /></svg><span>불러오는 중…</span></div></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

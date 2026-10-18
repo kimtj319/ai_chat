@@ -23,9 +23,22 @@ const VISIBLE_MS: Record<Tone, number> = {
   error: 5000,
 };
 
+/**
+ * 알림 끝에 붙는 단추 하나(예: "되돌리기"). 단추가 있으면 누를 틈을 주려고 더 오래 머물고,
+ * 그동안은 알림이 클릭을 받는다. 누르면 알림은 곧바로 내려간다.
+ */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+/** 단추가 붙은 알림이 머무는 시간. 읽고 → 마음을 정하고 → 누를 만큼. */
+const ACTION_VISIBLE_MS = 6000;
+
 interface ToastState {
   message: string;
   tone: Tone;
+  action?: ToastAction;
 }
 
 type Listener = (toast: ToastState | null) => void;
@@ -33,10 +46,15 @@ type Listener = (toast: ToastState | null) => void;
 let listener: Listener | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-export function showToast(message: string, tone: Tone = "info"): void {
+export function showToast(message: string, tone: Tone = "info", action?: ToastAction): void {
   clearTimeout(timer);
-  listener?.({ message, tone });
-  timer = setTimeout(() => listener?.(null), VISIBLE_MS[tone]);
+  listener?.({ message, tone, ...(action ? { action } : {}) });
+  timer = setTimeout(() => listener?.(null), action ? Math.max(ACTION_VISIBLE_MS, VISIBLE_MS[tone]) : VISIBLE_MS[tone]);
+}
+
+function dismissToast(): void {
+  clearTimeout(timer);
+  listener?.(null);
 }
 
 /** 실패를 말한다. 무엇이 실패했는지는 부르는 쪽이 문장으로 준다. */
@@ -67,8 +85,22 @@ export function ToastHost() {
       data-tone={toast.tone}
       role={isError ? "alert" : "status"}
       aria-live={isError ? "assertive" : "polite"}
+      data-has-action={toast.action ? true : undefined}
     >
       {toast.message}
+      {toast.action && (
+        <button
+          type="button"
+          className="toast-action"
+          onClick={() => {
+            const action = toast.action!;
+            dismissToast();
+            action.onClick();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
     </div>
   );
 }

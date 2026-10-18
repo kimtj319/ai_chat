@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getProhibitions } from "../api/client";
 import type { ConversationSettings } from "../api/types";
-import { MAX_MAX_TOKENS, MIN_MAX_TOKENS } from "../state/defaults";
+import { DEFAULT_MAX_TOKENS, MAX_MAX_TOKENS, MIN_MAX_TOKENS } from "../state/defaults";
+import { setLeaveGuard } from "../state/leaveGuard";
+import { parseMaxTokens } from "../state/settingsInput";
 import type { ActiveConversation } from "../state/StoreContext";
 import { useActiveConversation, useStore } from "../state/StoreContext";
+import { Modal } from "./Modal";
 import { PageHeader } from "./PageHeader";
 import { ProhibitionsDialog } from "./ProhibitionsDialog";
 import { showErrorToast, showToast } from "./Toast";
@@ -60,11 +63,18 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
   const { updateSystemPrompt, updateSettings } = useStore();
   const [systemPrompt, setSystemPrompt] = useState(conversation.systemPrompt);
   const [sampling, setSampling] = useState<Sampling>(() => samplingOf(conversation.settings));
+  // Max Tokens 는 칸에 적힌 글자 그대로 둔다. 숫자로 바로 바꾸면 칸을 비우는 순간 0 이 들어가고,
+  // 범위를 벗어난 값을 칸에 둔 채로 알려 줄 수도 없다.
+  const [maxTokensText, setMaxTokensText] = useState(() => String(conversation.settings.maxTokens));
   const [applying, setApplying] = useState(false);
 
+  const maxTokens = parseMaxTokens(maxTokensText);
+  // 잘못 적힌 Max Tokens 는 저장된 값과 다르다고 친다 — 고친 것이 있다고 알려야 한다.
+  const edited: Sampling = { ...sampling, maxTokens: maxTokens.ok ? maxTokens.value : Number.NaN };
   const promptChanged = systemPrompt !== conversation.systemPrompt;
-  const samplingChanged = !sameSampling(sampling, samplingOf(conversation.settings));
+  const samplingChanged = !sameSampling(edited, samplingOf(conversation.settings));
   const dirty = promptChanged || samplingChanged;
+  const canApply = dirty && maxTokens.ok && !applying;
 
   function patch(next: Partial<Sampling>) {
     setSampling((current) => ({ ...current, ...next }));
@@ -73,22 +83,63 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
   function revert() {
     setSystemPrompt(conversation.systemPrompt);
     setSampling(samplingOf(conversation.settings));
+    setMaxTokensText(String(conversation.settings.maxTokens));
   }
 
-  async function apply() {
+  /** 적용했으면 true. 떠나기 전 확인의 "적용하고 이동" 이 결과를 보고 움직인다. */
+  async function apply(): Promise<boolean> {
+    if (!maxTokens.ok) return false;
     setApplying(true);
     try {
       if (promptChanged) await updateSystemPrompt(systemPrompt);
       // Merged onto what is stored now, so a reasoning level changed elsewhere
       // since this page opened is not written back over.
-      if (samplingChanged) await updateSettings({ ...conversation.settings, ...sampling });
+      if (samplingChanged) await updateSettings({ ...conversation.settings, ...edited });
       showToast("대화 설정을 적용했습니다.");
+      return true;
     } catch (err) {
       showErrorToast(err);
+      return false;
     } finally {
       setApplying(false);
     }
   }
+
+  // 적용하지 않은 변경을 들고 다른 화면으로 가려 하면 먼저 묻는다. 이 화면은 "적용" 을
+  // 눌러야 들어가는 방식이라, 묻지 않으면 고친 것이 말없이 사라진다.
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const leavingRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!dirty) return;
+    return setLeaveGuard((proceed) => {
+      leavingRef.current = proceed;
+      setLeaving(() => proceed);
+    });
+  }, [dirty]);
+  // 묻는 사이에 이 화면이 내려가면(사이드바에서 다른 대화를 골라 대화가 바뀐 경우) 하려던
+  // 이동은 그대로 한다 — 예전과 같은 결과다. 고친 값은 대화와 함께 이미 사라졌다.
+  useEffect(
+    () => () => {
+      leavingRef.current?.();
+    },
+    [],
+  );
+  function settleLeaving(go: boolean) {
+    const proceed = leavingRef.current;
+    leavingRef.current = null;
+    setLeaving(null);
+    if (go) proceed?.();
+  }
+
+  // 탭을 닫거나 새로 고칠 때. 문구는 브라우저가 정한다.
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   // 하지 말 것 목록은 계정 하나에 하나(모든 대화에 적용)지만, 답변이 마음에 들지 않을 때
   // 찾는 곳이 대화 설정이라 여기서 연다. 검토 대기는 대화 도중 서버가 보태므로 열 때마다 센다.
@@ -194,12 +245,17 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
                 min={MIN_MAX_TOKENS}
                 max={MAX_MAX_TOKENS}
                 step={256}
-                value={sampling.maxTokens}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (!Number.isNaN(value)) patch({ maxTokens: value });
-                }}
+                placeholder={`비워 두면 기본값 ${DEFAULT_MAX_TOKENS.toLocaleString()}`}
+                value={maxTokensText}
+                onChange={(event) => setMaxTokensText(event.target.value)}
+                aria-invalid={maxTokens.ok ? undefined : true}
+                aria-describedby={maxTokens.ok ? undefined : "param-max-tokens-error"}
               />
+              {!maxTokens.ok && (
+                <span id="param-max-tokens-error" className="field-error">
+                  {maxTokens.message}
+                </span>
+              )}
             </div>
 
             <div className="field">
@@ -242,16 +298,47 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
       <footer className="conv-settings-actions">
         <div className="conv-settings-actions-row">
           <span className="conv-settings-state" role="status">
-            {applying ? "적용하는 중…" : dirty ? "적용하지 않은 변경이 있습니다" : "저장된 설정과 같습니다"}
+            {applying
+              ? "적용하는 중…"
+              : !maxTokens.ok
+                ? "Max Tokens 값을 고쳐야 적용할 수 있습니다"
+                : dirty
+                  ? "적용하지 않은 변경이 있습니다"
+                  : "저장된 설정과 같습니다"}
           </span>
           <button type="button" className="btn btn-secondary" disabled={!dirty || applying} onClick={revert}>
             되돌리기
           </button>
-          <button type="button" className="btn btn-primary" disabled={!dirty || applying} onClick={() => void apply()}>
+          <button type="button" className="btn btn-primary" disabled={!canApply} onClick={() => void apply()}>
             적용
           </button>
         </div>
       </footer>
+
+      {leaving && (
+        <Modal title="적용하지 않은 변경이 있습니다" onClose={() => settleLeaving(false)} width={420}>
+          <p className="confirm-message">
+            이 화면을 떠나면 바꾼 설정이 사라집니다.
+            {!maxTokens.ok && " Max Tokens 값이 범위를 벗어나 지금은 적용할 수 없습니다."}
+          </p>
+          <div className="confirm-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => settleLeaving(false)}>
+              취소
+            </button>
+            <button type="button" className="btn btn-secondary" disabled={applying} onClick={() => settleLeaving(true)}>
+              버리고 이동
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!canApply}
+              onClick={() => void apply().then((ok) => ok && settleLeaving(true))}
+            >
+              적용하고 이동
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {prohibitionsOpen && <ProhibitionsDialog onClose={() => setProhibitionsOpen(false)} />}
     </>

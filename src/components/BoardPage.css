@@ -418,6 +418,27 @@
   .board-label-filter {
     padding-block: 4px;
   }
+
+  /* 40px 아래였던 누르는 자리(390px 실측): 상태 탭 33, 라벨 거르기 29, 작은 단추 31,
+     빵부스러기 31. 줄 높이를 늘려 맞춘다 — 서로 붙어 있어 보이지 않는 자리를 넓히면 겹친다. */
+  .board-tab,
+  .board-label-filter,
+  .board-tag-clear,
+  .board-crumb,
+  .board-page .btn-sm {
+    min-height: 40px;
+  }
+
+  /* 답변 머리줄의 "수정"(35×20). 줄 높이를 바꾸지 않게 보이지 않는 자리만 넓힌다. */
+  .board-note-edit {
+    position: relative;
+  }
+
+  .board-note-edit::after {
+    content: "";
+    position: absolute;
+    inset: -10px -4px;
+  }
 }
 
 .board-row[data-status="closed"] .board-row-title {

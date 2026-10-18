@@ -3,9 +3,11 @@ import { getSharedConversation, sharedAttachmentUrl, type SharedConversation } f
 import { CHAT_HASH } from "../routes";
 import { AppBackdrop } from "./AppBackdrop";
 import { BrandMark } from "./BrandMark";
+import { EmptyState } from "./ListSkeleton";
 import { MessageItem } from "./MessageItem";
+import { SourceLinks } from "./SourceLinks";
 import { SourcePanel } from "./SourcePanel";
-import { errorMessage } from "../state/friendlyError";
+import { errorMessage, isNotFoundError } from "../state/friendlyError";
 import { useScrollKeys } from "../hooks/useScrollKeys";
 import "./ChatView.css";
 import "./SharedConversationPage.css";
@@ -23,6 +25,8 @@ import "./SharedConversationPage.css";
 export function SharedConversationPage({ token }: { token: string }) {
   const [share, setShare] = useState<SharedConversation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 없는 링크(지워졌거나 잘못 받은 것)는 고장이 아니라 있을 수 있는 상태다 — 빨간 오류로 보이지 않는다.
+  const [notFound, setNotFound] = useState(false);
   // PageUp·PageDown·Home·End — 대화 화면과 같이 본문과 출처 창을 넘긴다.
   useScrollKeys();
 
@@ -30,12 +34,15 @@ export function SharedConversationPage({ token }: { token: string }) {
     let cancelled = false;
     setShare(null);
     setError(null);
+    setNotFound(false);
     getSharedConversation(token)
       .then((result) => {
         if (!cancelled) setShare(result);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(errorMessage(err));
+        if (cancelled) return;
+        if (isNotFoundError(err)) setNotFound(true);
+        else setError(errorMessage(err));
       });
     return () => {
       cancelled = true;
@@ -63,18 +70,31 @@ export function SharedConversationPage({ token }: { token: string }) {
                 {share && <span className="shared-subtitle">읽기 전용 · {sharedOn} 공유</span>}
               </div>
             </div>
-            <div className="chat-header-right">
-              {/* 앱 첫 화면으로. 계정이 없으면 거기서 로그인 화면을 만난다. */}
-              <a className="btn btn-secondary shared-open-app" href={CHAT_HASH}>
-                AI Console 열기
-              </a>
+            {/* 대화 화면과 같은 "출처 링크". 링크는 밖의 웹 페이지라 받는 사람도 그대로 열 수 있다.
+                오른쪽 단추와 한 덩이로 묶는다 — 따로 두면 제목 칸의 가운데 맞춤이 남는 폭을
+                알약 양옆에 나눠 줘, 알약이 단추에서 떨어져 떠 있었다. */}
+            <div className="shared-header-actions">
+              {share && <SourceLinks messages={share.messages} />}
+              <div className="chat-header-right">
+                {/* 앱 첫 화면으로. 계정이 없으면 거기서 로그인 화면을 만난다. */}
+                <a className="btn btn-secondary shared-open-app" href={CHAT_HASH}>
+                  AI Console 열기
+                </a>
+              </div>
             </div>
           </div>
         </header>
 
         <div className="chat-message-list">
           <div className="chat-message-list-inner">
-            {error ? (
+            {notFound ? (
+              <div className="chat-empty-state">
+                <EmptyState
+                  title="공유된 대화를 찾을 수 없습니다"
+                  reason="링크가 잘못되었거나, 공유한 사람이 공유를 거두었을 수 있습니다. 보낸 사람에게 새 링크를 받아 주세요."
+                />
+              </div>
+            ) : error ? (
               <div className="chat-empty-state">
                 <p className="message-error">{error}</p>
                 <p className="shared-note">링크가 잘못되었거나 공유가 지워졌을 수 있습니다.</p>

@@ -217,6 +217,32 @@
     background: linear-gradient(to top, transparent 50%, color-mix(in srgb, var(--app-canvas) 60%, transparent));
   }
 
+  /* 머리의 "출처 링크"·"출처 문서" 알약. 둘이 함께 서면 390px 에서 아이콘 묶음이 화면
+     밖으로 밀려 게시판 단추가 잘렸다. 폰에서는 숫자를 아이콘 귀퉁이로 올려 알약을 아이콘
+     하나 폭으로 줄이고, 대화 화면의 빈 왼쪽 칸이 쥐고 있던 여백(안쪽 여백과 칸 사이 간격)도
+     내놓는다. */
+  .chat-header-left:empty {
+    padding-left: 0;
+    margin-right: calc(-1 * var(--space-8));
+  }
+
+  .source-picker-trigger {
+    position: relative;
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+
+  .source-picker-count {
+    position: absolute;
+    top: 4px;
+    right: 0;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 var(--space-1);
+    line-height: 16px;
+  }
+
   /* 문서·라이브러리·게시판 머리는 제목+설명 두 줄(46px)이라 위 여백 16px 이면 가운데가
      39px 에 온다. 서랍 토글(16px 위, 36px 높이)의 가운데 34px 와 맞도록 위 여백을 줄인다. */
   .app-shell[data-narrow] .page-header {

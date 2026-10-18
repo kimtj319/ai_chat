@@ -1,7 +1,8 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { showToast } from "./Toast";
 import { useDismiss } from "../hooks/useDismiss";
 import { useModels } from "../hooks/useModels";
+import { usePopoverFocus } from "../hooks/usePopoverFocus";
 import { resolveSelectedModelId, shortModelName } from "../state/modelCatalog";
 import {
   capabilityOf,
@@ -42,7 +43,16 @@ export function ModelSelector() {
   const [open, setOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  useDismiss(open, containerRef, () => setOpen(false), { escape: true });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // 열면 포커스가 목록으로 들어가고 Esc 는 단추로 돌려준다(다른 팝오버와 같은 약속). 바깥 누르기는 useDismiss.
+  usePopoverFocus(open, popoverRef, triggerRef, () => setOpen(false));
+  useDismiss(open, containerRef, () => setOpen(false));
+  // 첫 항목이 아니라 지금 고른 모델에서 시작한다 — 화살표 한 번이 옆 모델이다.
+  useEffect(() => {
+    if (!open) return;
+    popoverRef.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]:not(:disabled)')?.focus({ preventScroll: true });
+  }, [open]);
 
   if (loading) {
     return (
@@ -77,6 +87,32 @@ export function ModelSelector() {
     }
   }
 
+  function handlePopoverKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      // 생성 중단(Esc)도 window 에서 같은 키를 듣는다.
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const items = [...(popoverRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]:not(:disabled)') ?? [])];
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (at + 1) % items.length
+        : event.key === "ArrowUp"
+          ? (at - 1 + items.length) % items.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? items.length - 1
+              : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    items[next]?.focus();
+  }
+
   async function handleSelect(id: string) {
     setOpen(false);
     if (id === selectedId) return;
@@ -105,6 +141,7 @@ export function ModelSelector() {
   return (
     <div className="model-switcher" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="model-switcher-trigger"
         aria-haspopup="listbox"
@@ -118,7 +155,14 @@ export function ModelSelector() {
       </button>
 
       {open && (
-        <div className="model-switcher-popover" role="listbox" aria-label="모델 선택">
+        <div
+          ref={popoverRef}
+          className="model-switcher-popover"
+          role="listbox"
+          aria-label="모델 선택"
+          tabIndex={-1}
+          onKeyDown={handlePopoverKeyDown}
+        >
           {options.map((entry) => {
             const availability = modelAvailability(entry, lockedKind);
             return (

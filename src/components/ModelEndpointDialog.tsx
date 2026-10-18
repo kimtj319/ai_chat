@@ -184,10 +184,12 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
     }
   }
 
-  async function handleDelete(baseUrl: string) {
+  async function handleDelete(baseUrl: string, host: string) {
     setPendingDelete(null);
     try {
       await api.deleteModelEndpoint(baseUrl, adminToken);
+      // 줄이 말없이 사라지면 눌린 것인지 알 수 없다.
+      setStatus({ kind: "ok", text: `${host} 서버를 삭제했습니다.` });
       await load();
       refreshModels();
     } catch (error) {
@@ -202,6 +204,8 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const pending = status.kind === "pending";
   const deleteTarget = pendingDelete ? entries.find((entry) => entry.baseUrl === pendingDelete) : undefined;
   const deleteHost = deleteTarget ? endpointRow(deleteTarget).host : pendingDelete;
+  // 주소·키를 적었거나 모델을 고르던 중이면 바깥 클릭으로는 닫지 않는다(Esc·닫기는 그대로).
+  const dirty = address !== "" || label !== "" || apiKey !== "" || adminToken !== "" || probed !== null || editing !== null;
 
   return (
     <Modal
@@ -210,6 +214,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
       // dialog underneath — both handlers then agree on the same outcome.
       onClose={pendingDelete ? () => setPendingDelete(null) : onClose}
       width={760}
+      dismissOnBackdrop={!dirty}
     >
       {data?.unprotected && (
         <p className="endpoint-warning" role="status">
@@ -387,7 +392,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
           message="목록에서 빠지고, 이 모델 서버의 모델은 더 이상 고를 수 없습니다. 되돌릴 수 없습니다."
           confirmLabel="삭제"
           danger
-          onConfirm={() => void handleDelete(pendingDelete)}
+          onConfirm={() => void handleDelete(pendingDelete, deleteHost ?? pendingDelete)}
           onCancel={() => setPendingDelete(null)}
         />
       )}

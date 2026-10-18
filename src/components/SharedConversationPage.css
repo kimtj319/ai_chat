@@ -35,6 +35,16 @@
   text-overflow: ellipsis;
 }
 
+/* 출처 링크 알약과 앱 열기 단추. 머리 줄의 다른 칸처럼 오른쪽 끝에 서고, 알약의 음수 여백
+   (SourcePicker.css)이 이 간격에서 빠져 둘 사이는 대화 화면과 같은 8px 이 된다. */
+.shared-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .shared-open-app {
   text-decoration: none;
   white-space: nowrap;

@@ -86,5 +86,29 @@ console.log("src/state/storeReducer.ts");
   check("자기 대화의 메타 변경은 반영된다", own.activeConversation?.model === "model-c");
 }
 
+// 흐르는 답을 다른 대화에 갔다가 다시 열었다. 서버에서 다시 불러온 대화에는 아직 답이
+// 없으니, 다음 조각은 자리를 새로 만들어야 한다 — 예전에는 조각도 done 도 버려져
+// 새로 고칠 때까지 답이 안 보였다.
+{
+  const msg = (id: string, content: string) => ({ id, role: "assistant" as const, content, createdAt: "2026-01-01T00:00:00.000Z" });
+  const reopened = run(base(), { type: "SET_ACTIVE_ID", id: "A" }, { type: "SET_ACTIVE_CONVERSATION", conversation: conversation("A", "m") });
+  const first = reducer(reopened, { type: "UPSERT_ACTIVE_MESSAGE", conversationId: "A", matchIds: ["tmp"], message: msg("tmp", "부분") });
+  check("없는 자리는 덧붙인다", first.activeConversation?.messages.map((m) => m.content).join() === "부분");
+  const second = reducer(first, { type: "UPSERT_ACTIVE_MESSAGE", conversationId: "A", matchIds: ["tmp"], message: msg("tmp", "부분 더") });
+  check("있는 자리는 바꾼다", second.activeConversation?.messages.map((m) => m.content).join() === "부분 더");
+  const done = reducer(second, { type: "UPSERT_ACTIVE_MESSAGE", conversationId: "A", matchIds: ["tmp", "final"], message: msg("final", "끝") });
+  check("done 은 임시 자리를 대신한다", done.activeConversation?.messages.map((m) => m.id).join() === "final");
+  // 다시 불러온 대화가 이미 저장된 답을 들고 있다(done 보다 GET 이 먼저 끝났다).
+  const loadedFinal = run(
+    base(),
+    { type: "SET_ACTIVE_ID", id: "A" },
+    { type: "SET_ACTIVE_CONVERSATION", conversation: { ...conversation("A", "m"), messages: [msg("final", "끝")] } as never },
+    { type: "UPSERT_ACTIVE_MESSAGE", conversationId: "A", matchIds: ["tmp", "final"], message: msg("final", "끝") },
+  );
+  check("이미 있는 답은 두 번 붙지 않는다", loadedFinal.activeConversation?.messages.length === 1, String(loadedFinal.activeConversation?.messages.length));
+  const other = reducer(reopened, { type: "UPSERT_ACTIVE_MESSAGE", conversationId: "B", matchIds: ["x"], message: msg("x", "남의 것") });
+  check("다른 대화의 조각은 지금 대화에 붙지 않는다", other.activeConversation?.messages.length === 0);
+}
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length > 0) throw new Error(`${failures.length} check(s) failed`);

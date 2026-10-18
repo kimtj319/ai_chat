@@ -19,7 +19,8 @@ async function checkOnce(): Promise<HealthStatus> {
 }
 
 /**
- * 15초마다 서버와 모델 서버를 확인한다. 주기 확인 중에는 마지막 결과를 그대로 둔다 —
+ * 15초마다 서버와 모델 서버를 확인한다. 탭이 가려져 있는 동안은 쉬고(볼 사람이 없다),
+ * 다시 보이면 곧바로 한 번 확인한 뒤 주기를 잇는다. 주기 확인 중에는 마지막 결과를 그대로 둔다 —
  * 확인할 때마다 "checking" 으로 돌리면 배너가 15초마다 사라졌다 다시 뜬다.
  * `retrying` 은 [지금 다시 시도] 로 시작한 확인이 도는 동안만 참이다.
  */
@@ -47,11 +48,30 @@ export function useHealthCheck() {
       apply(next);
     }
 
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const pause = () => {
+      clearInterval(interval);
+      interval = undefined;
+    };
+    const resume = () => {
+      if (interval === undefined) interval = setInterval(run, POLL_INTERVAL_MS);
+    };
+    function handleVisibility() {
+      if (document.hidden) {
+        pause();
+      } else {
+        void run();
+        resume();
+      }
+    }
+
     void run();
-    const interval = setInterval(run, POLL_INTERVAL_MS);
+    if (!document.hidden) resume();
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      pause();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [apply]);
 

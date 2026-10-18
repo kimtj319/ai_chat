@@ -270,6 +270,20 @@
   outline-offset: -1px;
 }
 
+/* 손가락: 탭(계정·모델은 28px 폭)과 그룹 이름 칸(32px)을 40px 이상으로. */
+@media (pointer: coarse) {
+  .admin-tab {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .admin-group-add input,
+  .admin-group-rename input {
+    min-height: 40px;
+  }
+}
+
 .admin-groups-empty {
   margin: 0;
   font-size: var(--text-xs);

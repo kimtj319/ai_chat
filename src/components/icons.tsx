@@ -92,6 +92,29 @@ export function TrashIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+/* 압정. 대화를 목록 맨 위에 꽂아 둔다(고정). */
+export function PinIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M9 4h6" />
+      <path d="M10 4v5.5L7 13h10l-3-3.5V4" />
+      <path d="M12 13v7" />
+    </LineIcon>
+  );
+}
+
+/* 말풍선 안에 줄 두 개 — 게시판은 결국 오가는 말이다. 연필(새 대화)과 실루엣이
+   겹치지 않아 나란히 놓여도 구분된다. 대화 머리와 사이드바가 함께 쓴다. */
+export function BoardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+      <path d="M8.5 10h7" />
+      <path d="M8.5 13.5h4.5" />
+    </LineIcon>
+  );
+}
+
 export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <LineIcon {...props}>
@@ -132,6 +155,16 @@ export function DocumentIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M14 3v5h5" />
       <path d="M9 13h6" />
       <path d="M9 17h4" />
+    </LineIcon>
+  );
+}
+
+/** 사슬 고리 — 웹 주소. 대화 머리의 "출처 링크". */
+export function LinkIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <LineIcon {...props}>
+      <path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2" />
+      <path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2" />
     </LineIcon>
   );
 }

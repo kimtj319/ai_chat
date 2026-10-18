@@ -1,10 +1,12 @@
-import { Fragment, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { patchConversation } from "../api/client";
 import { useDismiss } from "../hooks/useDismiss";
 import { useModels } from "../hooks/useModels";
 import type { View } from "../routes";
 import { endpointLabel, resolveSelectedModelId } from "../state/modelCatalog";
 import { parseImportedConversations } from "../state/exportImport";
 import { filterByTitle, groupConversationsByDate } from "../state/conversationGroups";
+import { useGeneratingConversationIds } from "../state/generatingConversations";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import { BRAND_WORDMARK, BrandMark } from "./BrandMark";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -14,6 +16,7 @@ import { ModelSelector } from "./ModelSelector";
 import { SidebarSettings } from "./SidebarSettings";
 import {
   BackIcon,
+  BoardIcon,
   CloseIcon,
   DocumentIcon,
   EditIcon,
@@ -34,6 +37,7 @@ interface SidebarProps {
   onOpenToolsPanel: () => void;
   onOpenLibrary: () => void;
   onOpenDocuments: () => void;
+  onOpenBoard: () => void;
   /** Brings the chat back into the body: the library page takes it over, so
    *  anything here that changes which conversation is shown has to. */
   onShowChat: () => void;
@@ -52,6 +56,7 @@ export function Sidebar({
   onOpenToolsPanel,
   onOpenLibrary,
   onOpenDocuments,
+  onOpenBoard,
   onShowChat,
   onOpenAdmin,
   onCloseDrawer,
@@ -68,6 +73,7 @@ export function Sidebar({
     selectConversation,
     importConversation,
     setSidebarCollapsed,
+    refreshConversations,
   } = useStore();
   // 모델 이름·버튼 활성 여부에만 쓴다. 흐르는 값이지만 이 셋만 따라 움직이면 된다.
   const { activeConversation } = useActiveConversation();
@@ -75,6 +81,9 @@ export function Sidebar({
   const documentsOpen = view === "documents";
   const conversationSettingsOpen = view === "settings";
   const toolsPanelOpen = view === "tools";
+  const boardOpen = view === "board";
+  // 답을 만들고 있는 대화들. 집합이 바뀔 때만 다시 그려진다(토큰마다가 아니다).
+  const generatingIds = useGeneratingConversationIds();
 
   // The subtitle under the model name says where that model actually runs, so
   // it has to follow the *selected* model, not the first catalog entry.
@@ -151,6 +160,47 @@ export function Sidebar({
     } catch (error) {
       reportError(error);
     }
+  }
+
+  async function togglePin(id: string, pinned: boolean) {
+    try {
+      await patchConversation(id, { pinned });
+      await refreshConversations();
+    } catch (error) {
+      reportError(error);
+    }
+  }
+
+  function openConversation(id: string) {
+    onShowChat();
+    void selectConversation(id);
+  }
+
+  // 목록 안에서 ↑↓·Home·End 로 줄을 옮겨 다닌다. 제목 단추만 센다 — 줄마다 Tab 이
+  // 고정·이름·삭제 단추까지 세 번 더 멈추므로, 목록을 훑는 길은 화살표가 맡는다.
+  function handleRecentsKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (!target.classList.contains("sidebar-item-main")) return;
+    const rows = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(".sidebar-item-main")];
+    const at = rows.indexOf(target as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? at + 1
+        : event.key === "ArrowUp"
+          ? at - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? rows.length - 1
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    if (next < 0) {
+      // 첫 줄에서 ↑ 는 검색 칸으로 돌아간다 — ↓ 로 내려온 길을 되짚는다.
+      searchRef.current?.focus();
+      return;
+    }
+    rows[Math.min(next, rows.length - 1)]?.focus();
   }
 
   function handleImportClick() {
@@ -233,6 +283,16 @@ export function Sidebar({
           >
             <DocumentIcon />
           </button>
+          <button
+            type="button"
+            className={`btn-icon sidebar-rail-item${boardOpen ? " selected" : ""}`}
+            data-tooltip="문의 게시판"
+            aria-label="문의 게시판"
+            aria-current={boardOpen ? "true" : undefined}
+            onClick={onOpenBoard}
+          >
+            <BoardIcon />
+          </button>
           <div className="sidebar-rail-divider" role="presentation" />
           <button
             type="button"
@@ -292,6 +352,7 @@ export function Sidebar({
   // lights up "새 대화" while the user is plainly looking at something else,
   // and the only clue that the row lies is the screen itself.
   const visibleConversations = filterByTitle(conversations, query);
+  const groups = groupConversationsByDate(visibleConversations);
 
   const isFreshView = (!activeConversation || activeConversation.messages.length === 0) && view === "chat";
 
@@ -364,6 +425,15 @@ export function Sidebar({
           <DocumentIcon />
           <span>문서</span>
         </button>
+        <button
+          type="button"
+          className={`sidebar-nav-item${boardOpen ? " selected" : ""}`}
+          aria-current={boardOpen ? "true" : undefined}
+          onClick={onOpenBoard}
+        >
+          <BoardIcon />
+          <span>문의 게시판</span>
+        </button>
         {/* 아래 둘은 갈 곳이 아니라 지금 대화의 속성이다. 같은 무게로 여섯 줄을 늘어놓으면
             목적지와 속성이 섞여 메뉴가 꽉 차 보였다. 선 하나 아래 작게 둔다. 가져오기는 설정 화면으로. */}
         <div className="sidebar-nav-divider" role="presentation" />
@@ -408,6 +478,23 @@ export function Sidebar({
               event.preventDefault();
               event.nativeEvent.stopPropagation();
               setQuery("");
+              return;
+            }
+            // ↓ 는 목록 첫 줄로(거기서부터는 ↑↓), Enter 는 맨 위에 보이는 대화를 바로 연다.
+            if (event.key === "ArrowDown") {
+              const first = document.querySelector<HTMLButtonElement>(".sidebar-recents .sidebar-item-main");
+              if (first) {
+                event.preventDefault();
+                first.focus();
+              }
+              return;
+            }
+            if (event.key === "Enter" && !event.nativeEvent.isComposing && query.trim()) {
+              const top = groups[0]?.items[0];
+              if (top) {
+                event.preventDefault();
+                openConversation(top.id);
+              }
             }
           }}
         />
@@ -427,7 +514,7 @@ export function Sidebar({
         )}
       </div>
 
-      <div className="sidebar-recents">
+      <div className="sidebar-recents" onKeyDown={handleRecentsKeyDown}>
         {conversationsLoading && <p className="sidebar-empty">불러오는 중…</p>}
         {conversationsError && <p className="sidebar-empty">{conversationsError}</p>}
         {!conversationsLoading && !conversationsError && conversations.length === 0 && (
@@ -439,7 +526,7 @@ export function Sidebar({
         {conversations.length > 0 && visibleConversations.length === 0 && (
           <p className="sidebar-empty">일치하는 대화가 없습니다</p>
         )}
-        {groupConversationsByDate(visibleConversations).map((group) => (
+        {groups.map((group) => (
           <Fragment key={group.key}>
             <p className="sidebar-section-label">{group.label}</p>
             {group.items.map((conversation) => (
@@ -448,14 +535,13 @@ export function Sidebar({
                 conversation={conversation}
                 query={query}
                 active={conversation.id === activeConversationId}
+                generating={generatingIds.has(conversation.id)}
                 editing={editingId === conversation.id}
-                onSelect={() => {
-                  onShowChat();
-                  void selectConversation(conversation.id);
-                }}
+                onSelect={() => openConversation(conversation.id)}
                 onStartEdit={() => setEditingId(conversation.id)}
                 onCancelEdit={() => setEditingId(null)}
                 onRename={commitRename}
+                onTogglePin={() => void togglePin(conversation.id, conversation.pinned !== true)}
                 onDelete={() => setPendingDelete({ id: conversation.id, title: conversation.title })}
               />
             ))}

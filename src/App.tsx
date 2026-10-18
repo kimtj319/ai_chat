@@ -1,15 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { setMcpServerStatus } from "./api/client";
-import { AdminPage } from "./components/AdminPage";
+// 페이지들은 따로 받는다(lazyPages.tsx). 스타일만은 예전에 그 페이지를 부르던 자리에서
+// 그대로 미리 싣는다 — 늦게 붙으면 glass.css(맨 마지막이어야 한다)보다 뒤에 놓여 그 규칙을
+// 덮는다. 순서까지 같아 만들어지는 CSS 는 예전과 한 글자도 다르지 않다.
+import "./components/ListSkeleton.css";
+import "./components/Modal.css";
+import "./components/ConfirmDialog.css";
+import "./components/ModelEndpointDialog.css";
+import "./components/Toast.css";
+import "./components/PageHeader.css";
+import "./components/AdminPage.css";
 import { AuthScreen } from "./components/AuthScreen";
 import { AppBackdrop } from "./components/AppBackdrop";
 import { BrandMark } from "./components/BrandMark";
-import { BoardPage } from "./components/BoardPage";
-import { ConversationSettingsPage } from "./components/ConversationSettingsPage";
+import "./components/MarkdownRenderer.css";
+import "./components/BoardPage.css";
+import "./components/ProhibitionsDialog.css";
+import "./components/ConversationSettingsPage.css";
 import { ChatView } from "./components/ChatView";
-import { LibraryPage } from "./components/LibraryPage";
-import { ToolsPage } from "./components/ToolsPage";
-import { DocumentsPage } from "./components/DocumentsPage";
+import "./components/Accordion.css";
+import "./components/LibraryPage.css";
+import "./components/MasterDetail.css";
+import "./components/ToolsPage.css";
+import "./components/DocumentViewer.css";
+import "./components/DocumentsPage.css";
+import { ListSkeleton } from "./components/ListSkeleton";
+import { AdminPage, BoardPage, ConversationSettingsPage, DocumentsPage, LibraryPage, ToolsPage } from "./lazyPages";
 import { SharedConversationPage } from "./components/SharedConversationPage";
 import { SourcePanel } from "./components/SourcePanel";
 import { clearSourceCache } from "./state/sourceCache";
@@ -25,10 +41,12 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useDrawer } from "./hooks/useDrawer";
 import { useScrollbarFade } from "./hooks/useScrollbarFade";
 import { useTheme } from "./hooks/useTheme";
-import { HASHES, shareTokenFromHash, viewFromHash } from "./routes";
+import { CHAT_HASH, HASHES, conversationHash, conversationIdFromHash, shareTokenFromHash, viewFromHash } from "./routes";
 import type { View } from "./routes";
+import { leaveVia } from "./state/leaveGuard";
 import { loadUiPreferences } from "./state/storage";
 import { StoreProvider, useStore } from "./state/StoreContext";
+import { showToast } from "./components/Toast";
 import "./App.css";
 
 /**
@@ -37,10 +55,33 @@ import "./App.css";
  * 같은 사건이다. 그래서 듣는 곳은 하나면 된다.
  */
 function navigate(view: View): void {
+  // 이미 그 화면이면 떠나는 것이 아니다 — 아래 확인을 묻지 않는다.
+  if (window.location.hash === HASHES[view]) return;
   // Assigning the hash fires `hashchange`, which is also what the browser's
-  // back/forward buttons fire — one listener covers both.
-  window.location.hash = HASHES[view];
+  // back/forward buttons fire — one listener covers both. 지금 화면에 떠나기 전
+  // 확인이 걸려 있으면(적용하지 않은 대화 설정) 그것을 먼저 지난다.
+  leaveVia(() => {
+    window.location.hash = HASHES[view];
+  });
 }
+
+/** 기록을 늘리지 않고 주소만 고친다. hashchange 가 나지 않고, 서랍이 남긴 history.state 도 그대로 둔다. */
+function replaceHash(hash: string): void {
+  window.history.replaceState(window.history.state, "", hash);
+}
+
+/** 탭 제목에 붙는 화면 이름. 대화 화면은 대화 제목을 쓴다. */
+const VIEW_TITLES: Record<Exclude<View, "chat">, string> = {
+  admin: "관리자",
+  library: "커넥터",
+  documents: "문서",
+  board: "문의 게시판",
+  tools: "도구 설정",
+  settings: "대화 설정",
+};
+
+/** 이보다 좁은 창에서 출처 창을 열면 사이드바를 접는다 — 1280px 에서 대화 칸이 381px 까지 줄었다. */
+const SOURCE_PANEL_ROOMY_WIDTH = 1500;
 
 /** First paint, while `GET /api/auth/me` is still in flight. Deliberately not
  *  the chat shell: showing it and taking it away again is worse than waiting. */
@@ -149,7 +190,17 @@ interface ChatShellProps {
 }
 
 function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
-  const { ui, createConversation, session, conversationsLoading, activeConversationId, selectConversation } = useStore();
+  const {
+    ui,
+    createConversation,
+    session,
+    conversations,
+    conversationsLoading,
+    conversationsError,
+    activeConversationId,
+    selectConversation,
+    setSidebarCollapsed,
+  } = useStore();
   const chatStream = useChatStream();
   // 예약 작업: 시각이 되면 그 대화를 열고 지시를 보낸다(browser/scheduler.ts).
   useScheduleRunner({ isStreaming: chatStream.isStreaming, sendMessage: chatStream.sendMessage, selectConversation });
@@ -163,18 +214,92 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   // immediately opens a fresh one instead of falling back to the
   // "선택된 대화가 없습니다" placeholder.
   const creatingRef = useRef(false);
+
+  // 주소의 대화(#/c/<id>). 처음 열 때와 주소가 바뀔 때(뒤로·앞으로·붙여 넣은 링크)마다
+  // "열어 달라" 는 요청으로 남겨 두고, 목록이 온 뒤에 한 번 처리한다. 목록이 바뀔 때마다
+  // 주소를 다시 읽지 않는 것이 요점이다 — 열린 대화를 지운 순간 주소에는 아직 그 id 가
+  // 남아 있는데, 그것을 "없는 대화로 들어왔다" 로 읽으면 엉뚱한 안내가 뜬다.
+  const pendingLinkRef = useRef<string | null>(conversationIdFromHash(window.location.hash));
+  /** 열어 달라고 이미 부른 대화(selectConversation). */
+  const requestedLinkRef = useRef<string | null>(null);
+  const [linkRequest, setLinkRequest] = useState(0);
+  useEffect(() => {
+    function onHashChange() {
+      pendingLinkRef.current = conversationIdFromHash(window.location.hash);
+      setLinkRequest((n) => n + 1);
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+
   useEffect(() => {
     if (creatingRef.current) return;
-    if (!session || conversationsLoading || activeConversationId) return;
-    creatingRef.current = true;
-    void createConversation()
-      .catch(() => {
-        // Leave the empty state visible; the health banner explains the outage.
-      })
-      .finally(() => {
-        creatingRef.current = false;
-      });
-  }, [session, conversationsLoading, activeConversationId, createConversation]);
+    if (!session || conversationsLoading) return;
+    const openNew = () => {
+      creatingRef.current = true;
+      void createConversation()
+        .catch(() => {
+          // Leave the empty state visible; the health banner explains the outage.
+        })
+        .finally(() => {
+          creatingRef.current = false;
+        });
+    };
+    const linked = pendingLinkRef.current;
+    if (linked !== null && linked === activeConversationId) {
+      pendingLinkRef.current = null;
+      requestedLinkRef.current = null;
+      return;
+    }
+    if (linked !== null && requestedLinkRef.current === linked) {
+      // 부른 사이 다른 대화가 열렸다 — 그쪽이 이긴다. 요청은 버리고 평소처럼 처리한다.
+      pendingLinkRef.current = null;
+      requestedLinkRef.current = null;
+    } else if (linked !== null) {
+      // 목록을 못 받았으면 있는지 없는지 모른다. 그냥 열어 보고, 못 열면 대화 화면이 그 오류를 말한다.
+      if (conversationsError || conversationsRef.current.some((c) => c.id === linked)) {
+        // 요청(pendingLinkRef)은 그 대화가 실제로 열릴 때(다음 그림)까지 쥐고 있는다. 아래
+        // "주소 맞추기" 가 그동안 옛 대화를 보고 주소를 되돌리지 않게 — 뒤로 가기가 먹지 않던 원인.
+        requestedLinkRef.current = linked;
+        void selectConversation(linked);
+        return;
+      }
+      // 지워졌거나 남의 것이거나 잘못 옮겨 적은 주소. 빈 화면 대신 새 대화로 받고 그렇다고 말한다.
+      pendingLinkRef.current = null;
+      showToast("대화를 찾을 수 없어 새 대화를 열었습니다.");
+      replaceHash(CHAT_HASH);
+      const activeIsListed = conversationsRef.current.some((c) => c.id === activeConversationId);
+      if (!activeConversationId || activeIsListed) openNew();
+      return;
+    }
+    if (activeConversationId) return;
+    openNew();
+  }, [session, conversationsLoading, conversationsError, activeConversationId, createConversation, selectConversation, linkRequest]);
+
+  // 열린 대화를 주소에 싣는다. 목록에 있는 대화(메시지가 있는 것)만 — 빈 새 대화는 #/ 다.
+  // 다른 대화에서 옮겨 온 것이면 기록을 하나 늘려 뒤로 가기가 그 대화로 돌아가게 하고,
+  // 그 밖(첫 화면·지운 대화·첫 메시지로 목록에 막 오른 대화)은 지금 기록을 고친다.
+  const activeListed = activeConversationId !== null && conversations.some((c) => c.id === activeConversationId);
+  useEffect(() => {
+    if (view !== "chat" || pendingLinkRef.current !== null || !activeConversationId) return;
+    const want = activeListed ? conversationHash(activeConversationId) : CHAT_HASH;
+    const hash = window.location.hash;
+    if (hash === want || (want === CHAT_HASH && hash === "")) return;
+    const fromId = conversationIdFromHash(hash);
+    if (fromId !== null && conversationsRef.current.some((c) => c.id === fromId)) window.location.hash = want;
+    else replaceHash(want);
+    // linkRequest: 열린 대화의 줄을 다시 누르면 navigate("chat") 이 주소를 #/ 로 바꾸는데,
+    // 열린 대화는 그대로라 위 셋만으로는 다시 돌지 않는다.
+  }, [view, activeConversationId, activeListed, linkRequest]);
+
+  // 탭·방문 기록 목록에서 화면을 가려 볼 수 있게. 대화 화면은 그 대화의 제목.
+  const activeTitle = conversations.find((c) => c.id === activeConversationId)?.title;
+  useEffect(() => {
+    const name = view === "chat" ? activeTitle || "새 대화" : VIEW_TITLES[view];
+    document.title = `${name} · AI Console`;
+  }, [view, activeTitle]);
 
   const { narrow, drawerOpen, setDrawerOpen, drawerModal, drawerToggleRef, shellRef, navigateFromDrawer } = useDrawer({
     view,
@@ -195,6 +320,26 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
   useEffect(() => {
     if (view !== "chat") closeSource();
   }, [view]);
+
+  // 좁은 창에서 출처 창이 열리면 사이드바를 접어 대화 칸을 돌려주고, 닫으면 되살린다.
+  // 열려 있는 동안 사람이 직접 펼쳤다면 그 선택이 이긴다 — 닫을 때 건드리지 않는다.
+  const autoCollapsedRef = useRef(false);
+  useEffect(() => {
+    if (sourceOpen) {
+      if (!narrow && !ui.sidebarCollapsed && window.innerWidth < SOURCE_PANEL_ROOMY_WIDTH) {
+        autoCollapsedRef.current = true;
+        setSidebarCollapsed(true);
+      }
+    } else if (autoCollapsedRef.current) {
+      autoCollapsedRef.current = false;
+      setSidebarCollapsed(false);
+    }
+    // 여는·닫는 순간에만 판단한다. 접힘 상태가 바뀔 때 다시 돌면 사람이 펼친 것을 도로 접는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceOpen]);
+  useEffect(() => {
+    if (!ui.sidebarCollapsed) autoCollapsedRef.current = false;
+  }, [ui.sidebarCollapsed]);
 
   useTheme(ui.theme);
   // 새 대화는 어느 화면에서 눌러도 채팅으로 돌아와 연다 — 라이브러리를 보던 중에 대화만
@@ -259,11 +404,13 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
         onOpenToolsPanel={() => navigateFromDrawer("tools")}
         onOpenLibrary={() => navigateFromDrawer("library")}
         onOpenDocuments={() => navigateFromDrawer("documents")}
+        onOpenBoard={() => navigateFromDrawer("board")}
         onShowChat={() => navigate("chat")}
         onOpenAdmin={onOpenAdmin && (() => navigateFromDrawer("admin"))}
         onCloseDrawer={narrow ? () => setDrawerOpen(false) : undefined}
       />
       <main id="main" ref={mainRef} className="app-main" tabIndex={-1} inert={drawerModal}>
+        <Suspense fallback={<ListSkeleton />}>
         {showAdmin ? (
           <AdminPage onBack={() => navigate("chat")} />
         ) : showTools ? (
@@ -284,6 +431,7 @@ function ChatShell({ view, onOpenAdmin, onAdminSetMcpStatus }: ChatShellProps) {
             onOpenBoard={() => navigate("board")}
           />
         )}
+        </Suspense>
         {/* 대화 화면에서만. 다른 화면으로 가면 열려 있던 출처도 닫는다(아래 effect). */}
         {view === "chat" && <SourcePanel />}
       </main>

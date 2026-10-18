@@ -39,6 +39,7 @@ export function viewFromHash(hash: string): View {
   // 게시판만 아래에 주소가 더 달린다 — #/board/<글 id>. 글을 읽다 새로고침해도
   // 그 글이 그대로 있어야 하고, 링크로 건네줄 수도 있어야 하기 때문이다.
   if (hash === BOARD_HASH || hash.startsWith(`${BOARD_HASH}/`)) return "board";
+  // #/c/<대화 id> 도 채팅이다 — 아래 conversationIdFromHash 가 어느 대화인지 읽는다.
   return "chat";
 }
 
@@ -56,6 +57,28 @@ export function boardPostIdFromHash(hash: string): string | null {
   } catch {
     // 반쪽짜리 % 이스케이프. 주소를 손으로 고치다 이렇게 되는데, 여기서
     // 예외가 나가면 게시판이 통째로 안 열린다.
+    return raw || null;
+  }
+}
+
+/**
+ * 열려 있는 대화 하나의 주소 — #/c/<대화 id>. 새로고침·뒤로·새 탭에서도 같은 대화가
+ * 열리게 하려는 것이다. 메시지가 하나도 없는 새 대화는 주소에 싣지 않는다(#/):
+ * 서버가 목록에 내놓지 않는 대화라 링크로 건넬 것이 없고, 몇 시간 뒤 치워진다.
+ */
+export const CONVERSATION_HASH_PREFIX = "#/c/";
+
+export function conversationHash(conversationId: string): string {
+  return `${CONVERSATION_HASH_PREFIX}${encodeURIComponent(conversationId)}`;
+}
+
+/** 대화 주소가 아니면 null. */
+export function conversationIdFromHash(hash: string): string | null {
+  if (!hash.startsWith(CONVERSATION_HASH_PREFIX)) return null;
+  const raw = hash.slice(CONVERSATION_HASH_PREFIX.length);
+  try {
+    return decodeURIComponent(raw) || null;
+  } catch {
     return raw || null;
   }
 }

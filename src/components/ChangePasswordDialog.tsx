@@ -33,6 +33,11 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /** 고친 칸의 오류 문구는 그 자리에서 걷는다. 제출 때만 다시 재면 다 채운 칸 밑에 "입력해주세요"가 남는다. */
+  function clearFieldError(field: keyof typeof fieldErrors) {
+    setFieldErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -97,7 +102,10 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             autoComplete="current-password"
             autoFocus
             value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
+            onChange={(event) => {
+              setCurrentPassword(event.target.value);
+              clearFieldError("currentPassword");
+            }}
             aria-invalid={fieldErrors.currentPassword ? true : undefined}
             aria-describedby={fieldErrors.currentPassword ? "pw-current-error" : undefined}
           />
@@ -115,7 +123,10 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             type="password"
             autoComplete="new-password"
             value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
+            onChange={(event) => {
+              setNewPassword(event.target.value);
+              clearFieldError("newPassword");
+            }}
             aria-invalid={fieldErrors.newPassword ? true : undefined}
             aria-describedby={fieldErrors.newPassword ? "pw-new-error" : undefined}
           />
@@ -135,7 +146,10 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             type="password"
             autoComplete="new-password"
             value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
+            onChange={(event) => {
+              setConfirm(event.target.value);
+              clearFieldError("confirm");
+            }}
             aria-invalid={fieldErrors.confirm ? true : undefined}
             aria-describedby={fieldErrors.confirm ? "pw-confirm-error" : undefined}
           />

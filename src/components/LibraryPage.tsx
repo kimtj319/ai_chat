@@ -14,6 +14,7 @@ import { PageHeader } from "./PageHeader";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { errorMessage } from "../state/friendlyError";
 import { RefreshIcon } from "./icons";
+import { probeErrorSummary } from "../mcp/probeError";
 import { LibraryCard, SharedCard } from "./LibraryCards";
 import "./LibraryPage.css";
 
@@ -196,6 +197,12 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                               키 필요
                             </span>
                           )}
+                          {/* 접힌 줄에서도 보이게. 스위치가 켜져 있으면 멀쩡해 보이는데 펼쳐야만 실패가 보였다. */}
+                          {server.status !== "disabled" && healthIsBad(server.health.state) && (
+                            <span className="md-badge" data-tone="warning">
+                              {healthLabel(server.health.state)}
+                            </span>
+                          )}
                         </span>
                         <span className="md-row-desc">{server.description}</span>
                       </>
@@ -232,7 +239,9 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                           void run(server.id, `${server.name} 연결을 확인했습니다.`, async () => {
                             const { health } = await api.probeMcpServer(server.id);
                             if (healthIsBad(health.state)) {
-                              throw new Error(health.error ?? `${server.name} 연결 상태: ${healthLabel(health.state)}`);
+                              throw new Error(
+                                probeErrorSummary(health.error) ?? health.error ?? `${server.name} 연결 상태: ${healthLabel(health.state)}`,
+                              );
                             }
                           })
                         }
@@ -290,6 +299,11 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                         {server.status === "disabled" && (
                           <span className="library-badge" data-tone="danger">
                             관리자 비활성화
+                          </span>
+                        )}
+                        {server.status !== "disabled" && healthIsBad(server.health.state) && (
+                          <span className="md-badge" data-tone="warning">
+                            {healthLabel(server.health.state)}
                           </span>
                         )}
                       </span>

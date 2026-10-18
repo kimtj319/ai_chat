@@ -51,6 +51,7 @@ async function summaryOf(file: string): Promise<ConversationSummary | null> {
           messageCount: conv.messages.length,
           // So the sidebar can mark an embedding conversation without loading it.
           ...(conv.kind ? { kind: conv.kind } : {}),
+          ...(conv.pinned ? { pinned: true } : {}),
         }
       : null;
   summaryCache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
@@ -128,20 +129,26 @@ export async function updateConversation(
     model?: string;
     settings?: Partial<ConversationSettings>;
     enabledTools?: string[];
+    pinned?: boolean;
   },
 ): Promise<Conversation | null> {
   if (!isValidId(conversationId)) return null;
   return withLock(lockKey(ownerId, conversationId), async () => {
     const existing = await getConversation(ownerId, conversationId);
     if (!existing) return null;
+    // 고정·해제만 하는 것은 대화를 바꾼 것이 아니다. updatedAt 을 올리면 고정을 푼 대화가
+    // "오늘" 묶음 맨 위로 튀어 올라, 몇 주 전 대화가 어디 있었는지 잃는다.
+    const onlyPin = Object.keys(patch).every((key) => key === "pinned" || patch[key as keyof typeof patch] === undefined);
+    const { pinned: _wasPinned, ...rest } = existing;
     const updated: Conversation = {
-      ...existing,
+      ...(patch.pinned === undefined ? existing : rest),
+      ...(patch.pinned ? { pinned: true } : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
       ...(patch.systemPrompt !== undefined ? { systemPrompt: patch.systemPrompt } : {}),
       ...(patch.model !== undefined ? { model: patch.model } : {}),
       ...(patch.settings !== undefined ? { settings: { ...existing.settings, ...patch.settings } } : {}),
       ...(patch.enabledTools !== undefined ? { enabledTools: patch.enabledTools } : {}),
-      updatedAt: new Date().toISOString(),
+      updatedAt: onlyPin ? existing.updatedAt : new Date().toISOString(),
     };
     await writeJsonFileAtomic(conversationFile(ownerId, conversationId), updated);
     return updated;
@@ -209,18 +216,22 @@ export async function deleteConversation(ownerId: string, conversationId: string
  * it in place (or return a replacement), bump `updatedAt`, and persist
  * atomically. Returns null if the conversation doesn't exist (e.g. wrong
  * owner, or deleted concurrently).
+ *
+ * `touch: false` keeps `updatedAt`: a change that is not conversation activity
+ * (a 👍 on an old answer) must not move the conversation to the top of the list.
  */
 export async function mutateConversation(
   ownerId: string,
   conversationId: string,
   mutator: (conv: Conversation) => Conversation | void,
+  options: { touch?: boolean } = {},
 ): Promise<Conversation | null> {
   if (!isValidId(conversationId)) return null;
   return withLock(lockKey(ownerId, conversationId), async () => {
     const existing = await getConversation(ownerId, conversationId);
     if (!existing) return null;
     const result = mutator(existing) ?? existing;
-    result.updatedAt = new Date().toISOString();
+    if (options.touch !== false) result.updatedAt = new Date().toISOString();
     await writeJsonFileAtomic(conversationFile(ownerId, conversationId), result);
     return result;
   });

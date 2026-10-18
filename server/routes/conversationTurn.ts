@@ -26,6 +26,7 @@ import { config } from "../config.js";
 import type {
   Conversation,
   ConversationSettings,
+  HistorySummary,
   StoredMessage,
   ConversationKind,
   MessageAttachment,
@@ -285,6 +286,17 @@ async function prepareTurn(req: Request<{ id: string }>): Promise<Refusal | Turn
 }
 
 /**
+ * What a regenerate cut from the transcript: the question as it was and
+ * everything after it, plus the summary the cut discarded. Kept until the new
+ * answer has produced something, so a regenerate that is stopped or fails
+ * before its first word can put the previous answer back (restoreRewound).
+ */
+interface Rewound {
+  messages: StoredMessage[];
+  historySummary?: HistorySummary;
+}
+
+/**
  * Write the user's message (and, for a regenerate, cut what followed it) under
  * the conversation's lock. `clippedTitle` is the title written now when this is
  * the conversation's first message, or null.
@@ -293,9 +305,10 @@ async function appendUserMessage(
   ownerId: string,
   id: string,
   plan: TurnPlan,
-): Promise<Refusal | { ok: true; afterUser: Conversation; clippedTitle: string | null }> {
+): Promise<Refusal | { ok: true; afterUser: Conversation; clippedTitle: string | null; rewound: Rewound | null }> {
   const { regenerateTarget, turnKind, settingsPatch, enabledToolsPatch, content, attachments, userMessage } = plan;
   let clippedTitle: string | null = null;
+  let rewound: Rewound | null = null;
   // Set when the transcript changed between the read above and the lock below.
   let regenerateConflict = false;
   const afterUser = await mutateConversation(ownerId, id, (conv) => {
@@ -313,9 +326,13 @@ async function appendUserMessage(
       // 같은 요약을 또 만드느라 기다린다. 덮는 범위가 이 질문 이후까지 닿거나
       // (편집한 글이 요약 속 옛 글에 가려진다) 끊는 지점이 더는 없는 요약만 버린다.
       const summary = conv.historySummary;
+      rewound = { messages: conv.messages.slice(index) };
       if (summary) {
         const through = conv.messages.findIndex((m) => m.id === summary.throughMessageId);
-        if (through < 0 || through >= index) delete conv.historySummary;
+        if (through < 0 || through >= index) {
+          rewound.historySummary = summary;
+          delete conv.historySummary;
+        }
       }
       conv.messages = conv.messages.slice(0, index);
     }
@@ -343,7 +360,29 @@ async function appendUserMessage(
   if (regenerateConflict) {
     return refusal(409, { error: "대화가 그사이 바뀌었습니다. 새로 고친 뒤 다시 시도해 주세요.", code: "conversation_changed" });
   }
-  return { ok: true, afterUser, clippedTitle };
+  return { ok: true, afterUser, clippedTitle, rewound };
+}
+
+/**
+ * Undo a regenerate that produced nothing: put back the question and answer it
+ * cut, in place of the question it re-ran. Only while that question is still
+ * the transcript's last message — anything written after it (another tab's
+ * turn) is newer than what this would restore. True when it was put back.
+ *
+ * A summary the cut discarded comes back only if the turn did not write a new
+ * one; a new one still ends before this question, so it stays valid either way.
+ */
+async function restoreRewound(ownerId: string, id: string, userMessageId: string, rewound: Rewound): Promise<boolean> {
+  let restored = false;
+  await mutateConversation(ownerId, id, (conv) => {
+    const last = conv.messages.length - 1;
+    if (conv.messages[last]?.id !== userMessageId) return conv;
+    conv.messages = [...conv.messages.slice(0, last), ...rewound.messages];
+    if (rewound.historySummary && !conv.historySummary) conv.historySummary = rewound.historySummary;
+    restored = true;
+    return conv;
+  });
+  return restored;
 }
 
 /**
@@ -474,6 +513,7 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
   let plan: TurnPlan;
   let afterUser: Conversation;
   let clippedTitle: string | null;
+  let rewound: Rewound | null;
   try {
     const prepared = await prepareTurn(req);
     if (!prepared.ok) {
@@ -486,7 +526,7 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
       res.status(appended.status).json(appended.body);
       return;
     }
-    ({ afterUser, clippedTitle } = appended);
+    ({ afterUser, clippedTitle, rewound } = appended);
   } catch (err) {
     next(err);
     return;
@@ -598,14 +638,27 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
         send(step.value);
       }
 
+      // 다시 생성·편집 재전송을 첫 글자가 오기 전에 멈췄다: 새로 남길 것이 없으니
+      // 지웠던 이전 답을 되돌린다. 생각만 하다 멈춘 답(생각이 본문으로 올라온 것)도
+      // 답이 아니다.
+      const producedNothing = result.content.trim().length === 0 || result.contentPromotedFromReasoning === true;
+      if (rewound && result.error === CANCELLED_BY_CLIENT && producedNothing) {
+        if (await restoreRewound(req.ownerId, id, userMessage.id, rewound)) {
+          send({ type: "restored" });
+          return;
+        }
+      }
+
       const finished = assistantMessageFromTurn(result, startedAt);
-      assistantMessage =
-        leftDuringCompaction && result.error === CANCELLED_BY_CLIENT
-          ? {
-              ...finished,
-              error: "답변 도중 페이지를 떠나 이 답변은 중단되었습니다. 컨텍스트 압축은 끝까지 진행되어 저장되었으니 다시 질문해 주세요.",
-            }
-          : finished;
+      if (leftDuringCompaction && result.error === CANCELLED_BY_CLIENT) {
+        const { stopped: _stopped, ...rest } = finished;
+        assistantMessage = {
+          ...rest,
+          error: "답변 도중 페이지를 떠나 이 답변은 중단되었습니다. 컨텍스트 압축은 끝까지 진행되어 저장되었으니 다시 질문해 주세요.",
+        };
+      } else {
+        assistantMessage = finished;
+      }
     }
 
     await mutateConversation(req.ownerId, id, (conv) => {
@@ -617,6 +670,15 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[conversations] stream error for ${id}:`, err);
+    // 실패한 턴은 답을 저장하지 않는다. 다시 생성이었다면 질문만 덩그러니 남기는 대신
+    // 지웠던 이전 답을 되돌린다 — 화면에서 오류를 본 사람은 그 답을 잃지 않는다.
+    if (rewound) {
+      try {
+        if (await restoreRewound(req.ownerId, id, userMessage.id, rewound)) send({ type: "restored" });
+      } catch (restoreErr) {
+        console.error(`[conversations] could not restore the previous answer for ${id}:`, restoreErr);
+      }
+    }
     send({ type: "error", message: readableTurnError(message) });
   } finally {
     stopHeartbeat();

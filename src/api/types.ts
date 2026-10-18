@@ -162,7 +162,17 @@ export interface ChatMessage {
   /** Informational note about how the turn ran (not an error), e.g. a context-limit stop. */
   notice?: string;
   contentPromotedFromReasoning?: boolean;
+  /** 사용자가 멈춘 답. 오류가 아니다 — content 는 멈추기 전까지 받은 글이다. */
+  stopped?: boolean;
+  /** 이 답에 남긴 👍/👎. */
+  feedback?: MessageFeedback;
   createdAt: string;
+}
+
+export interface MessageFeedback {
+  rating: "up" | "down";
+  /** 👎 와 함께 남기는 짧은 이유(선택). */
+  reason?: string;
 }
 
 /**
@@ -181,6 +191,8 @@ export interface ConversationSummary {
   messageCount: number;
   /** Absent on records written before kinds existed — read as "chat". */
   kind?: ConversationKind;
+  /** 사이드바 맨 위 "고정됨" 묶음. 고정하지 않은 대화에는 없다. */
+  pinned?: boolean;
 }
 
 export interface Conversation {
@@ -212,6 +224,7 @@ export interface PatchConversationRequest {
   settings?: ConversationSettings;
   enabledTools?: string[];
   model?: string;
+  pinned?: boolean;
 }
 
 export interface SendMessageRequest {
@@ -413,6 +426,12 @@ export type ServerEvent =
   /** 모델이 동시 요청 상한에 차서 줄을 섰다. ahead = 앞에 선 요청 수. 첫 글자가 오면 풀린다. */
   | { type: "queued"; ahead: number }
   | { type: "done"; message: ChatMessage }
+  /**
+   * 다시 생성·편집 재전송이 답을 하나도 만들지 못하고 끝났다(멈춤·실패). 서버가 이 턴이
+   * 지웠던 이전 질문·답을 그대로 되돌려 놓았다 — 화면도 되감기 전으로 돌린다. 이 뒤에는
+   * done 이 오지 않는다(실패면 error 가 따라온다).
+   */
+  | { type: "restored" }
   | { type: "error"; message: string };
 
 // ---- Authentication & accounts ----

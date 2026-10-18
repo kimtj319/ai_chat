@@ -1,11 +1,13 @@
-import { memo, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { setMessageFeedback } from "../api/client";
+import type { MessageFeedback } from "../api/types";
 import { embeddingJson } from "../state/embedding";
 import type { ClientChatMessage } from "../state/types";
 import { CopyButton } from "./CopyButton";
 import { EmbeddingResult } from "./EmbeddingResult";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { citationSources } from "../state/citations";
-import { friendlyError } from "../state/friendlyError";
+import { errorMessage, friendlyError, isUserStop } from "../state/friendlyError";
 import { partitionNotice, visibleNotice } from "../state/visibleNotice";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { MessageAttachments } from "./MessageAttachments";
@@ -15,6 +17,7 @@ import { DocumentDownloads } from "./DocumentDownload";
 import { BrowserActivity } from "./BrowserActivity";
 import "./MessageItem.css";
 import { CompactionProgress } from "./CompactionProgress";
+import { showToast } from "./Toast";
 
 interface MessageItemProps {
   /** Needed to address the message's attachments on the server. */
@@ -68,23 +71,101 @@ function PencilIcon() {
   );
 }
 
+function ThumbUpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3Zm0 0 4-7a2.5 2.5 0 0 1 2.5 2.5V9h5.2a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 17.4 21H7" />
+    </svg>
+  );
+}
+
+function ThumbDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3Zm0 0-4 7a2.5 2.5 0 0 1-2.5-2.5V15H5.3a2 2 0 0 1-2-2.3l1.3-8A2 2 0 0 1 6.6 3H17" />
+    </svg>
+  );
+}
+
+/** 👎 뒤에 열리는 짧은 이유 칸. 비워 두고 닫아도 👎 는 그대로 남는다. */
+function FeedbackReason({ onSubmit, onClose }: { onSubmit: (reason: string) => Promise<boolean>; onClose: () => void }) {
+  const [reason, setReason] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.closest("form")?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const text = reason.trim();
+    if (!text) {
+      onClose();
+      return;
+    }
+    if (await onSubmit(text)) {
+      showToast("의견을 보냈습니다. 고맙습니다.");
+      onClose();
+    }
+  }
+
+  return (
+    <form className="message-feedback-reason" onSubmit={submit}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={reason}
+        maxLength={500}
+        onChange={(event) => setReason(event.target.value)}
+        onKeyDown={(event) => {
+          // Esc 는 이 칸만 닫는다 — 전역 Esc(답변 멈춤)까지 가지 않게.
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }
+        }}
+        placeholder="무엇이 아쉬웠나요? (선택)"
+        aria-label="아쉬운 점 (선택)"
+      />
+      <button type="submit" className="btn btn-secondary btn-sm">
+        보내기
+      </button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
+        닫기
+      </button>
+    </form>
+  );
+}
+
 /** 마지막 사용자 메시지를 그 자리에서 고친다. 보내기는 고친 글로 다시 실행. */
 function MessageEditor({
   initial,
-  allowEmpty,
   onCancel,
   onSubmit,
 }: {
   initial: string;
-  /** 첨부만 있는 메시지는 글 없이도 보낼 수 있다. */
-  allowEmpty: boolean;
   onCancel: () => void;
   onSubmit: (content: string) => void;
 }) {
   const [draft, setDraft] = useState(initial);
   // 폰·태블릿에는 Shift 가 없으니 Enter 는 줄바꿈, 보내기는 단추로 한다(Composer 와 같다).
   const touch = useMediaQuery("(pointer: coarse)");
-  const canSend = allowEmpty || draft.trim().length > 0;
+  // 빈 글은 보내지 않는다 — 고쳐 보내기(editLastAndResend)도 빈 글은 받지 않는다. 첨부만
+  // 있는 질문을 글 없이 다시 돌리려면 '다시 생성' 을 쓴다.
+  const canSend = draft.trim().length > 0;
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // 커서는 글 끝에 — 고치는 것은 대개 덧붙이거나 끝을 바꾸는 것이다.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.scrollTop = el.scrollHeight;
+  }, []);
 
   function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -106,6 +187,7 @@ function MessageEditor({
   return (
     <form className="message-edit" onSubmit={submit}>
       <textarea
+        ref={inputRef}
         className="message-edit-input"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -139,9 +221,17 @@ function MessageItemView({
 }: MessageItemProps) {
   const isUser = message.role === "user";
   const [editing, setEditing] = useState(false);
+  // 👍/👎: 화면을 먼저 바꾸고, 저장이 실패하면 되돌린다. 서버가 메시지에 저장하므로 다시
+  // 열어도 그대로 보인다(같은 단추를 다시 누르면 지운다).
+  const [rating, setRating] = useState<MessageFeedback["rating"] | null>(message.feedback?.rating ?? null);
+  const [askingReason, setAskingReason] = useState(false);
+  const downRef = useRef<HTMLButtonElement>(null);
   const notice = partitionNotice(visibleNotice(message.notice));
   // 사용자가 멈춘 답은 null — 오류 카드를 그리지 않는다.
   const errorText = message.error ? friendlyError(message.error) : null;
+  // 멈춘 답은 실패가 아니라 "중지됨" 이다. 예전에 저장된 답은 stopped 대신 멈춤 문구를
+  // error 로 들고 있다 — 둘 다 같은 모양으로 보인다.
+  const stopped = !isUser && !message.streaming && (message.stopped === true || isUserStop(message.error));
   // An embedding turn has no prose to render, and no completion tokens to
   // report — the result panel below carries both the numbers and the usage.
   const embedding = !isUser ? message.embedding : undefined;
@@ -151,21 +241,51 @@ function MessageItemView({
   const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
 
   // 바닥줄은 짧게("4.6초 · 276 토큰"), 자세한 값은 툴팁과 화면 읽기 프로그램에.
-  const usage = message.usage;
-  const hasMeta = !embedding && (usage !== undefined || message.durationMs !== undefined);
+  // 멈춘 답은 모델이 사용량을 끝에만 알려 주어 대개 0 이다 — "0 토큰" 은 틀린 말이라 뺀다.
+  const usage = stopped && message.usage?.completionTokens === 0 ? undefined : message.usage;
+  const hasMeta = !embedding && (usage !== undefined || message.durationMs !== undefined || stopped);
   const shortMeta = [
     message.durationMs !== undefined ? formatDuration(message.durationMs) : null,
     usage ? `${usage.completionTokens.toLocaleString()} 토큰` : null,
+    stopped ? "중지됨" : null,
   ]
     .filter(Boolean)
     .join(" · ");
   const fullMeta = [
+    stopped ? "사용자가 중지한 답변" : null,
     usage ? `프롬프트 ${usage.promptTokens.toLocaleString()}` : null,
     usage ? `완성 ${usage.completionTokens.toLocaleString()}` : null,
     message.durationMs !== undefined ? `처리 시간 ${formatDuration(message.durationMs)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  // 공유 링크로 연 대화(conversationId 가 비어 있음)는 평가할 수 없다.
+  const canRate = !isUser && !embedding && !message.streaming && !errorText && conversationId !== "";
+
+  async function saveFeedback(next: MessageFeedback["rating"] | null, reason?: string): Promise<boolean> {
+    const previous = rating;
+    setRating(next);
+    try {
+      await setMessageFeedback(conversationId, message.id, next, reason);
+      return true;
+    } catch (error) {
+      setRating(previous);
+      showToast(`평가를 저장하지 못했습니다. ${errorMessage(error)}`, "error");
+      return false;
+    }
+  }
+
+  function chooseFeedback(next: MessageFeedback["rating"]) {
+    const value = rating === next ? null : next;
+    setAskingReason(value === "down");
+    void saveFeedback(value);
+  }
+
+  function closeReason() {
+    setAskingReason(false);
+    downRef.current?.focus();
+  }
 
   return (
     <div className={`message-row ${isUser ? "user" : "assistant"}`}>
@@ -221,6 +341,11 @@ function MessageItemView({
           {/* 모델이 create_document 로 정리한 문서 — 누르면 그 문서만 받는다. */}
           {!isUser && <DocumentDownloads toolCalls={message.toolCalls} toolResults={message.toolResults} />}
 
+          {/* 아무 글도 오기 전에 멈춘 답: 빈 말풍선 대신 한 줄. */}
+          {stopped && message.content.length === 0 && !message.reasoning && !message.toolCalls?.length && (
+            <p className="message-note">답변을 시작하기 전에 중지했습니다.</p>
+          )}
+
           {message.contentPromotedFromReasoning && (
             <p className="message-note">이 응답은 reasoning 필드에서 복원되었습니다.</p>
           )}
@@ -258,7 +383,6 @@ function MessageItemView({
       {editing && onEdit && (
         <MessageEditor
           initial={message.content}
-          allowEmpty={hasAttachments}
           onCancel={() => setEditing(false)}
           onSubmit={(content) => {
             setEditing(false);
@@ -293,6 +417,31 @@ function MessageItemView({
                 <PencilIcon />
               </button>
             )}
+            {canRate && (
+              <>
+                <button
+                  type="button"
+                  className="btn-icon message-feedback"
+                  onClick={() => chooseFeedback("up")}
+                  aria-pressed={rating === "up"}
+                  aria-label="좋은 답변"
+                  data-tooltip={rating === "up" ? "좋은 답변 (다시 누르면 취소)" : "좋은 답변"}
+                >
+                  <ThumbUpIcon />
+                </button>
+                <button
+                  ref={downRef}
+                  type="button"
+                  className="btn-icon message-feedback"
+                  onClick={() => chooseFeedback("down")}
+                  aria-pressed={rating === "down"}
+                  aria-label="아쉬운 답변"
+                  data-tooltip={rating === "down" ? "아쉬운 답변 (다시 누르면 취소)" : "아쉬운 답변"}
+                >
+                  <ThumbDownIcon />
+                </button>
+              </>
+            )}
             {!isUser && onRegenerate && !message.streaming && (
               <button
                 type="button"
@@ -307,6 +456,8 @@ function MessageItemView({
           </div>
         </div>
       )}
+
+      {canRate && askingReason && <FeedbackReason onSubmit={(reason) => saveFeedback("down", reason)} onClose={closeReason} />}
     </div>
   );
 }

@@ -71,6 +71,31 @@ check(
   shuffled.map((g) => `${g.label}:${g.items.map((x) => x.id).join("")}`).join(" | ") === "오늘:a | 지난 7일:cd",
 );
 
+// 고정한 대화: 날짜와 상관없이 맨 위 "고정됨" 한 묶음에, 날짜 묶음에서는 빠진다.
+const withPins = groupConversationsByDate(
+  [
+    { ...items[0]!, pinned: false },
+    { ...items[6]!, pinned: true },
+    items[1]!,
+    { ...items[2]!, pinned: true },
+  ],
+  NOW,
+);
+const pinShape = withPins.map((g) => `${g.key}/${g.label}:${g.items.map((x) => x.id).join("")}`).join(" | ");
+check(
+  "고정됨이 맨 위, 고정한 것은 날짜 묶음에 다시 나오지 않는다",
+  pinShape === "pinned/고정됨:gc | today/오늘:a | yesterday/어제:b",
+  pinShape,
+);
+check(
+  "고정한 것이 없으면 고정됨 묶음도 없다",
+  !groupConversationsByDate(items, NOW).some((g) => g.key === "pinned"),
+);
+check(
+  "고정한 것만 있어도 된다",
+  groupConversationsByDate([{ ...items[7]!, pinned: true }], NOW).map((g) => g.label).join() === "고정됨",
+);
+
 // 제목 검색
 const titled = [{ title: "Qwen 설정 질문" }, { title: "회의록 정리" }, { title: "qwen 벤치마크" }];
 check("대소문자 무시", filterByTitle(titled, "QWEN").length === 2);

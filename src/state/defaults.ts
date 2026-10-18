@@ -1,9 +1,13 @@
 import type { UiPreferences } from "./types";
+import { DEFAULT_SETTINGS, MAX_TOKENS_RANGE } from "../../server/settings";
 
 export const MIN_THINKING_TOKEN_BUDGET = 512;
 export const MAX_THINKING_TOKEN_BUDGET = 32768;
-export const MIN_MAX_TOKENS = 1024;
-export const MAX_MAX_TOKENS = 65536;
+// 서버가 검사하는 바로 그 범위를 가져다 쓴다. 따로 적어 두면 화면 안내와 서버 검사가
+// 갈라진다(실제로 갈라져 있었다: 화면 1,024–65,536, 서버 1–65,536).
+export const MIN_MAX_TOKENS = MAX_TOKENS_RANGE.min;
+export const MAX_MAX_TOKENS = MAX_TOKENS_RANGE.max;
+export const DEFAULT_MAX_TOKENS = DEFAULT_SETTINGS.maxTokens;
 
 // Mirrors the server's own conversation defaults (see API contract) so the
 // composer's reasoning control has sane bounds before a conversation loads.

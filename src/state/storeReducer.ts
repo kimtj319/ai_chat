@@ -31,10 +31,9 @@ export type Action =
   | { type: "SET_ACTIVE_CONVERSATION"; conversation: Conversation }
   | { type: "SET_ACTIVE_ERROR"; id: string; error: string }
   | { type: "PATCH_ACTIVE_META"; conversationId: string; patch: Partial<Conversation> }
-  | { type: "APPEND_ACTIVE_MESSAGE"; conversationId: string; message: ClientChatMessage }
-  | { type: "PATCH_ACTIVE_MESSAGE"; conversationId: string; messageId: string; patch: Partial<ClientChatMessage> }
-  | { type: "REPLACE_ACTIVE_MESSAGE"; conversationId: string; tempId: string; message: ClientChatMessage }
-  | { type: "SET_ACTIVE_MESSAGES"; conversationId: string; messages: ClientChatMessage[] };
+  | { type: "SET_ACTIVE_MESSAGES"; conversationId: string; messages: ClientChatMessage[] }
+  /** id 가 matchIds 중 하나인 메시지를 바꾸고, 없으면 덧붙인다. */
+  | { type: "UPSERT_ACTIVE_MESSAGE"; conversationId: string; matchIds: string[]; message: ClientChatMessage };
 
 export function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -105,44 +104,29 @@ export function reducer(state: State, action: Action): State {
       return { ...state, activeConversation: { ...state.activeConversation, ...action.patch } };
     }
 
-    case "APPEND_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: [...state.activeConversation.messages, action.message],
-        },
-      };
-    }
-
-    case "PATCH_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: state.activeConversation.messages.map((m) =>
-            m.id === action.messageId ? { ...m, ...action.patch } : m,
-          ),
-        },
-      };
-    }
-
-    case "REPLACE_ACTIVE_MESSAGE": {
-      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
-      return {
-        ...state,
-        activeConversation: {
-          ...state.activeConversation,
-          messages: state.activeConversation.messages.map((m) => (m.id === action.tempId ? action.message : m)),
-        },
-      };
-    }
-
     case "SET_ACTIVE_MESSAGES": {
       if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
       return { ...state, activeConversation: { ...state.activeConversation, messages: action.messages } };
+    }
+
+    case "UPSERT_ACTIVE_MESSAGE": {
+      // 흐르는 답의 자리. 답이 흐르는 동안 다른 대화에 갔다 오면 서버에서 다시 불러온
+      // 대화에는 그 자리가 없다 — 그때는 새로 붙여야 조각과 done 이 버려지지 않는다.
+      // done 의 진짜 id 도 함께 찾는다: 다시 불러온 대화가 이미 저장된 답을 들고 있으면
+      // 그것을 바꿔 같은 답이 두 번 붙지 않는다.
+      if (!state.activeConversation || state.activeConversation.id !== action.conversationId) return state;
+      const messages = state.activeConversation.messages;
+      const index = messages.findIndex((m) => action.matchIds.includes(m.id));
+      return {
+        ...state,
+        activeConversation: {
+          ...state.activeConversation,
+          messages:
+            index < 0
+              ? [...messages, action.message]
+              : messages.map((m, i) => (i === index ? action.message : m)).filter((m, i) => i === index || !action.matchIds.includes(m.id)),
+        },
+      };
     }
 
     default:

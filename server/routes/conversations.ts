@@ -5,11 +5,14 @@ import {
   createConversation,
   updateConversation,
   deleteConversation,
+  mutateConversation,
 } from "../storage/conversationStore.js";
+import { appendFeedback } from "../storage/feedbackStore.js";
 import { isValidId } from "../storage/paths.js";
 import { modelAccessFor, modelIsForbidden } from "../vllm/access.js";
+import { resolveModel } from "../vllm/client.js";
 import { compactionStatus } from "../chat/compactionProgress.js";
-import type { Conversation, ConversationSettings, ConversationKind } from "../types.js";
+import type { Conversation, ConversationSettings, ConversationKind, MessageFeedback } from "../types.js";
 import { checkEnabledTools, checkSettings, checkTextField } from "./conversationFields.js";
 import { postMessage } from "./conversationTurn.js";
 import { activeAnswerNowSignals, activeStreams } from "./turnSignals.js";
@@ -105,6 +108,7 @@ conversationsRouter.patch("/conversations/:id", async (req, res, next) => {
       model?: string;
       settings?: Partial<ConversationSettings>;
       enabledTools?: string[];
+      pinned?: boolean;
     } = {};
     for (const field of ["title", "systemPrompt"] as const) {
       if (typeof body[field] !== "string") continue;
@@ -124,6 +128,12 @@ conversationsRouter.patch("/conversations/:id", async (req, res, next) => {
     const enabledTools = checkEnabledTools(body.enabledTools);
     if (!enabledTools.ok) return res.status(400).json(enabledTools.problem);
     if (enabledTools.value) patch.enabledTools = enabledTools.value;
+    if (body.pinned !== undefined) {
+      if (typeof body.pinned !== "boolean") {
+        return res.status(400).json({ error: "pinned 는 true 나 false 여야 합니다.", field: "pinned" });
+      }
+      patch.pinned = body.pinned;
+    }
 
     const updated = await updateConversation(req.ownerId, req.params.id, patch);
     if (!updated) return res.status(404).json({ error: "Not found" });
@@ -184,6 +194,73 @@ conversationsRouter.post("/conversations/:id/answer-now", async (req, res, next)
       return res.status(404).json({ error: "No active turn for this conversation" });
     }
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** 👎 와 함께 받는 이유의 길이 한계. 한두 문장이면 충분하다. */
+const FEEDBACK_REASON_MAX_CHARS = 500;
+
+/**
+ * PUT /conversations/:id/messages/:messageId/feedback — 답변 하나의 👍/👎.
+ * body `{ rating: "up" | "down" | null, reason?: string }`. null 은 지우기다(같은 단추를
+ * 다시 누르면 꺼진다). 메시지에 저장하고, 바뀐 것을 소유자의 feedback.jsonl 에 한 줄 덧붙인다.
+ */
+conversationsRouter.put("/conversations/:id/messages/:messageId/feedback", async (req, res, next) => {
+  try {
+    if (!isValidId(req.params.id) || !isValidId(req.params.messageId)) return res.status(404).json({ error: "Not found" });
+    const body = req.body ?? {};
+    const rating = body.rating;
+    if (rating !== "up" && rating !== "down" && rating !== null) {
+      return res.status(400).json({ error: "rating 은 \"up\", \"down\", null 중 하나여야 합니다.", code: "invalid_rating" });
+    }
+    if (body.reason !== undefined && typeof body.reason !== "string") {
+      return res.status(400).json({ error: "reason 은 문자열이어야 합니다.", code: "invalid_reason" });
+    }
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (reason.length > FEEDBACK_REASON_MAX_CHARS) {
+      return res.status(400).json({ error: `이유는 ${FEEDBACK_REASON_MAX_CHARS}자까지 쓸 수 있습니다.`, code: "invalid_reason" });
+    }
+    const feedback: MessageFeedback | null = rating ? { rating, ...(reason ? { reason } : {}) } : null;
+
+    const conversation = await ownConversationOr404(req, res);
+    if (!conversation) return;
+    const target = conversation.messages.find((m) => m.id === req.params.messageId);
+    if (!target) return res.status(404).json({ error: "Not found" });
+    if (target.role !== "assistant") {
+      return res.status(400).json({ error: "답변에만 평가를 남길 수 있습니다.", code: "not_assistant" });
+    }
+
+    let applied = false;
+    // updatedAt 은 그대로 둔다: 지난 답에 👍 하나 눌렀다고 대화가 목록 맨 위로 오면 안 된다.
+    const updated = await mutateConversation(
+      req.ownerId,
+      req.params.id,
+      (conv) => {
+        const message = conv.messages.find((m) => m.id === req.params.messageId);
+        if (!message) return conv;
+        if (feedback) message.feedback = feedback;
+        else delete message.feedback;
+        applied = true;
+        return conv;
+      },
+      { touch: false },
+    );
+    // 읽은 뒤 잠그기 전에 그 답이 지워졌다(다시 생성).
+    if (!updated || !applied) return res.status(404).json({ error: "Not found" });
+    // 모델을 비워 둔 대화는 서버 기본 모델이 답했다. 평가 기록에는 그 이름을 남긴다 — 목록은
+    // 캐시에서 오므로 대개 네트워크를 타지 않고, 못 알아내면 빈 값으로 둔다.
+    const model = updated.model || (await resolveModel().then((r) => r.model).catch(() => ""));
+    await appendFeedback(req.ownerId, {
+      at: new Date().toISOString(),
+      conversationId: req.params.id,
+      messageId: req.params.messageId,
+      model,
+      rating: feedback?.rating ?? null,
+      ...(feedback?.reason ? { reason: feedback.reason } : {}),
+    });
+    res.json({ feedback });
   } catch (err) {
     next(err);
   }

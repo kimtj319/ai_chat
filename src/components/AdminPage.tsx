@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api/client";
 import type { AdminUserAction } from "../api/client";
 import type { AdminGroup, AdminUser } from "../api/types";
@@ -52,6 +52,9 @@ export function AdminPage({ onBack }: AdminPageProps) {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>("pending");
+  // 처음 열 때만: 승인 대기가 없으면 "전체" 로 연다. "승인 대기 중인 계정이 없습니다." 한 줄이
+  // 첫 화면이면 계정이 하나도 없는 것처럼 보인다. 그 뒤로는 고른 필터를 건드리지 않는다.
+  const filterDefaulted = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -72,6 +75,10 @@ export function AdminPage({ onBack }: AdminPageProps) {
       setUsers(nextUsers);
       setGroups(nextGroups);
       setLoadError(null);
+      if (!filterDefaulted.current) {
+        filterDefaulted.current = true;
+        if (pendingCount(nextUsers) === 0) setFilter("all");
+      }
     } catch (error) {
       setLoadError(authFailureMessage(error));
     }
@@ -399,10 +406,12 @@ export function AdminPage({ onBack }: AdminPageProps) {
                               차단 해제
                             </button>
                           )}
+                          {/* 차단은 되돌릴 수 있다(차단 해제). 되돌릴 수 없는 삭제와 같은 빨간 단추로
+                              두면 둘의 무게가 같아 보인다 — 빨강은 삭제에만. */}
                           {actions.block && (
                             <button
                               type="button"
-                              className="btn btn-sm btn-danger-quiet"
+                              className="btn btn-sm"
                               disabled={busy}
                               onClick={() => setPendingBlock(user)}
                             >

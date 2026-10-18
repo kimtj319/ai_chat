@@ -1,5 +1,5 @@
 // 답변 오류를 한국어 안내로 바꾸는 규칙 검사. `npm test` 로 돈다.
-import { friendlyError } from "./friendlyError.js";
+import { friendlyError, isUserStop } from "./friendlyError.js";
 
 let passed = 0;
 const failures: string[] = [];
@@ -42,6 +42,13 @@ is("소수점 숫자에도 걸리지 않는다", "score 0.502 too low", GENERIC)
 is("컨텍스트 한도 안내는 서버 문구 그대로", "메시지가 모델의 컨텍스트 한도를 넘습니다. 내용을 나눠서 보내거나 첨부로 올린 뒤 다시 시도해 주세요.", "메시지가 모델의 컨텍스트 한도를 넘습니다. 내용을 나눠서 보내거나 첨부로 올린 뒤 다시 시도해 주세요.");
 is("사용자 중지는 오류가 아니다", "답변이 끝나기 전에 중지되었습니다.", null);
 is("AbortError 도 오류가 아니다", "AbortError: The user aborted a request.", null);
+// 서버가 멈춘 답을 저장하던 문구(server/chat/toolLoop.ts CANCELLED_BY_CLIENT). 이 수정 전에
+// 저장된 답에 남아 있어, 다시 열면 실패 카드가 붙었다(감사 A1-01).
+is("서버가 저장한 멈춤 문구도 오류가 아니다", "Cancelled by client.", null);
+check("isUserStop: 서버의 멈춤 문구", isUserStop("Cancelled by client."));
+check("isUserStop: 화면의 중지 문구", isUserStop("답변이 끝나기 전에 중지되었습니다."));
+check("isUserStop: 진짜 오류는 아니다", !isUserStop("모델 호출 실패 (502 Bad Gateway)"));
+check("isUserStop: 없으면 아니다", !isUserStop(undefined));
 is("빈 값은 null", "", null);
 is("없으면 null", undefined, null);
 

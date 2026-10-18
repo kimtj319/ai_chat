@@ -2,14 +2,18 @@ import { useState } from "react";
 import type { McpHealth, McpServerSummary } from "../api/types";
 import { AUTH_MODE_LABELS, healthIsBad, healthLabel, hostOf, shortToolName } from "../mcp/rules";
 import { MISSING_KEY_NOTICE } from "../hooks/useMyAccess";
+import { probeErrorSummary } from "../mcp/probeError";
 import { formatDateTime } from "../state/dateTime";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 /* 커넥터(라이브러리) 화면의 서버 카드: 내 서버(LibraryCard)와 다른 사람이 올린 서버(SharedCard). */
 
 function HealthLine({ health }: { health: McpHealth }) {
   const tone = healthIsBad(health.state) ? "danger" : health.state === "ok" ? "ok" : "unknown";
+  const summary = probeErrorSummary(health.error);
   return (
-    <p className="library-health" data-tone={tone}>
+    // <p> 가 아니라 <div>: 원문을 접어 둔 <details> 를 안에 둘 수 있어야 한다.
+    <div className="library-health" data-tone={tone}>
       <span className="library-health-dot" aria-hidden="true" />
       <span>
         {healthLabel(health.state)}
@@ -17,9 +21,17 @@ function HealthLine({ health }: { health: McpHealth }) {
         {health.checkedAt && ` · ${formatDateTime(health.checkedAt)} 확인`}
       </span>
       {/* Unfolded, not behind a disclosure: when a server is unhealthy the
-          reason is the only thing that tells you whether it is yours to fix. */}
-      {health.error && <span className="library-health-error">{health.error}</span>}
-    </p>
+          reason is the only thing that tells you whether it is yours to fix.
+          아는 원문은 한국어 한 줄로 바꿔 보이고, 원문은 '자세히' 에 남긴다 — 관리자에게
+          그대로 전할 수 있게. */}
+      {health.error && <span className="library-health-error">{summary ?? health.error}</span>}
+      {health.error && summary && (
+        <details className="library-health-raw">
+          <summary>자세히</summary>
+          <code>{health.error}</code>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -83,6 +95,8 @@ export function LibraryCard({
   const [credentialOpen, setCredentialOpen] = useState(false);
   const [credential, setCredential] = useState("");
   const [toolsShown, setToolsShown] = useState(false);
+  // 개인 키 삭제는 한 번 묻는다. 저장한 키는 다시 보이지 않아 잘못 누르면 새로 받아 와야 한다.
+  const [confirmCredentialDelete, setConfirmCredentialDelete] = useState(false);
   const needsCredential = server.requiresCredential && !server.hasCredential;
 
   return (
@@ -148,11 +162,7 @@ export function LibraryCard({
               type="button"
               className="btn btn-sm btn-danger-quiet"
               disabled={busy}
-              onClick={() => {
-                onSaveCredential(null);
-                setCredential("");
-                setCredentialOpen(false);
-              }}
+              onClick={() => setConfirmCredentialDelete(true)}
             >
               삭제
             </button>
@@ -200,6 +210,22 @@ export function LibraryCard({
           </button>
         )}
       </div>
+
+      {confirmCredentialDelete && (
+        <ConfirmDialog
+          title={`${server.name} 개인 키를 삭제할까요?`}
+          message="키를 지우면 이 서버의 도구가 실행되지 않습니다. 저장한 키는 다시 보여 주지 않으므로, 다시 쓰려면 키를 새로 붙여 넣어야 합니다."
+          confirmLabel="삭제"
+          danger
+          onCancel={() => setConfirmCredentialDelete(false)}
+          onConfirm={() => {
+            setConfirmCredentialDelete(false);
+            onSaveCredential(null);
+            setCredential("");
+            setCredentialOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

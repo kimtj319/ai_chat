@@ -89,11 +89,10 @@ export function AdminNoticesTab() {
         ) : notices === null ? (
           <ListSkeleton rows={3} />
         ) : notices.length === 0 ? (
+          // 쓰는 칸이 바로 옆에 있으므로 "공지 쓰기" 단추를 따로 두지 않는다 — 시작하는 길은 하나.
           <EmptyState
             title="올린 공지가 없습니다"
-            reason="공지를 올리면 모든 계정의 대화 화면 종 아이콘에 새 공지로 알려집니다."
-            actionLabel="공지 쓰기"
-            onAction={() => document.getElementById("notice-title")?.focus()}
+            reason="'새 공지' 칸에 쓰고 올리면 모든 계정의 대화 화면 종 아이콘에 새 공지로 알려집니다."
           />
         ) : (
           <ul className="admin-notice-list">

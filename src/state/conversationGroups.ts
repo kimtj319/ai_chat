@@ -5,11 +5,15 @@
  * 날짜는 마지막으로 바뀐 때(updatedAt)로 보고, 없거나 읽을 수 없으면 만든 때(createdAt).
  * 날짜 경계는 이 브라우저의 지역 자정이다 — "어제" 는 24시간 전이 아니라 달력의 어제다.
  * 묶음 안의 순서는 받은 순서 그대로 둔다(서버가 이미 최근 것부터 준다).
+ *
+ * 고정한 대화(pinned)는 날짜와 상관없이 맨 위 '고정됨' 한 묶음에만 둔다 — 같은 제목이
+ * 아홉 개씩 쌓이는 목록에서 늘 돌아가는 대화를 찾아 내려가지 않게.
  */
 
 export interface Dated {
   createdAt: string;
   updatedAt?: string;
+  pinned?: boolean;
 }
 
 export interface ConversationGroup<T> {
@@ -53,7 +57,9 @@ export function groupConversationsByDate<T extends Dated>(items: T[], now: Date 
   const today = startOfDay(now.getTime());
   const groups = new Map<string, ConversationGroup<T> & { rank: number }>();
   for (const item of items) {
-    const { rank, key, label } = bucketOf(timeOf(item), today);
+    const { rank, key, label } = item.pinned
+      ? { rank: -5e6, key: "pinned", label: "고정됨" }
+      : bucketOf(timeOf(item), today);
     let group = groups.get(key);
     if (!group) {
       group = { rank, key, label, items: [] };

@@ -1,0 +1,97 @@
+/* ---- 대화 머리의 "출처 링크" ----
+   단추·메뉴·줄의 모양은 SourcePicker.css(출처 문서)를 그대로 쓴다. 여기에는 링크에만
+   있는 것 — 줄 끝의 복사 단추, 호스트 글자 표식, 두 줄 글자, 생략 안내 — 만 둔다. */
+
+.source-links-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* .source-picker-item 은 단추를 위해 쓰였다 — 링크(a)로 쓸 때 밑줄과 링크 색을 걷는다. */
+.source-links-item {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.source-links-item:hover {
+  text-decoration: none;
+}
+
+/* 파비콘 자리. 밖으로 요청을 내지 않으려고 호스트의 첫 글자를 쓴다. */
+.source-links-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--surface-container-highest);
+  color: var(--on-surface-variant);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.source-links-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.source-links-host {
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-links-copy {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-surface-variant);
+  transition: scale var(--press-out) var(--press-ease);
+}
+
+.source-links-copy:hover,
+.source-links-copy:focus-visible {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  outline: none;
+}
+
+.source-links-copy:active {
+  scale: var(--press-scale);
+  transition-duration: var(--press-in);
+}
+
+.source-links-copy svg {
+  width: 16px;
+  height: 16px;
+}
+
+.source-links-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--on-surface-variant);
+}
+
+@media (pointer: coarse) {
+  .source-links-copy {
+    width: 44px;
+    height: 44px;
+  }
+}

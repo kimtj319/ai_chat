@@ -12,6 +12,12 @@ interface ModalProps {
   width?: number;
   /** Opt-in wider layout for modals with more content to scan at once (e.g. the tools grid). Every other dialog is unaffected. */
   size?: "wide";
+  /**
+   * false 면 바깥(어두운 막)을 눌러도 닫히지 않는다. 입력 칸이 여럿인 양식이 고친
+   * 내용을 들고 있을 때 쓴다 — 빗나간 클릭 한 번에 적어 둔 것이 말없이 사라지면 안 된다.
+   * Esc·닫기·취소처럼 일부러 닫는 길은 그대로 둔다.
+   */
+  dismissOnBackdrop?: boolean;
 }
 
 /** Tab 이 닿을 수 있는 것들. disabled 와 숨겨진 것은 빠진다. */
@@ -26,7 +32,7 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
   );
 }
 
-export function Modal({ title, onClose, children, width, size }: ModalProps) {
+export function Modal({ title, onClose, children, width, size, dismissOnBackdrop = true }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,6 +88,10 @@ export function Modal({ title, onClose, children, width, size }: ModalProps) {
   // 한다 — 방금 누른 버튼이 어디였는지와 상관없이.
   useEffect(() => {
     const restoreTo = document.activeElement as HTMLElement | null;
+    // 되돌릴 자리가 사라지거나 숨을 때를 위해 그 위쪽 줄기를 적어 둔다 — 대화 목록의
+    // 삭제 단추는 행에 포커스가 없으면 감춰지고, 삭제를 확정하면 행째 없어진다.
+    const ancestors: HTMLElement[] = [];
+    for (let el = restoreTo?.parentElement; el && el !== document.body; el = el.parentElement) ancestors.push(el);
     const dialog = dialogRef.current;
     if (dialog) {
       const first = focusableIn(dialog).find((el) => !el.classList.contains("modal-close"));
@@ -93,6 +103,24 @@ export function Modal({ title, onClose, children, width, size }: ModalProps) {
       // 사라진 요소에 포커스를 주려 하면 body 로 떨어진다. 아직 문서에 있을
       // 때만 되돌린다.
       if (restoreTo && restoreTo.isConnected) restoreTo.focus();
+      // 그래도 body 에 떨어졌으면(되돌릴 단추가 숨었거나 없어졌으면), 아직 남은 가장
+      // 가까운 윗 요소 안의 보이는 첫 조작 요소로 보낸다 — 키보드 사용자가 문서 맨
+      // 처음부터 다시 Tab 하지 않도록(감사 A3-08). 지우기를 확정하면 행은 서버가
+      // 답한 뒤에야 없어지므로, 닫힌 직후 한 번이 아니라 잠시 동안 몇 번 더 본다.
+      const fallBack = () => {
+        const active = document.activeElement;
+        if (active && active !== document.body) return;
+        for (const scope of ancestors) {
+          if (!scope.isConnected) continue;
+          const target = focusableIn(scope)[0];
+          if (target) {
+            target.focus();
+            return;
+          }
+        }
+      };
+      requestAnimationFrame(fallBack);
+      for (const ms of [300, 1000, 2000]) window.setTimeout(fallBack, ms);
     };
   }, []);
 
@@ -106,7 +134,7 @@ export function Modal({ title, onClose, children, width, size }: ModalProps) {
   // instead of on the screen. A portal puts the overlay outside that box, so
   // "fixed" means the window again no matter who opened the dialog.
   return createPortal(
-    <div className="modal-overlay" onMouseDown={onClose}>
+    <div className="modal-overlay" onMouseDown={dismissOnBackdrop ? onClose : undefined}>
       <div
         ref={dialogRef}
         className={`modal${size === "wide" ? " modal-wide" : ""}`}

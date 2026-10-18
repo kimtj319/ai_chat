@@ -8,7 +8,7 @@ interface CopyButtonProps {
   className?: string;
 }
 
-function CopyIcon() {
+export function CopyIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="9" width="12" height="12" rx="2" />

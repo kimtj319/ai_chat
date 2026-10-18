@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { StoredMessage } from "../types.js";
-import type { TurnResult } from "./toolLoop.js";
+import { CANCELLED_BY_CLIENT, type TurnResult } from "./toolLoop.js";
 
 /**
  * The assistant message a finished turn is stored as.
@@ -13,6 +13,9 @@ import type { TurnResult } from "./toolLoop.js";
  * and override it.
  */
 export function assistantMessageFromTurn(result: TurnResult, startedAt: number): StoredMessage {
+  // 사용자가 멈춘 답은 실패가 아니다. 오류로 저장하면 다시 열었을 때 받은 데까지의
+  // 글 아래에 "답변을 만들지 못했습니다" 카드가 붙었다(2026-10-18 감사 A1-01).
+  const stopped = result.error === CANCELLED_BY_CLIENT;
   return {
     id: crypto.randomUUID(),
     role: "assistant",
@@ -21,7 +24,8 @@ export function assistantMessageFromTurn(result: TurnResult, startedAt: number):
     ...(result.toolCalls.length ? { toolCalls: result.toolCalls } : {}),
     ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
     usage: result.usage,
-    ...(result.error ? { error: result.error } : {}),
+    ...(result.error && !stopped ? { error: result.error } : {}),
+    ...(stopped ? { stopped: true } : {}),
     ...(result.notice ? { notice: result.notice } : {}),
     ...(result.contentPromotedFromReasoning ? { contentPromotedFromReasoning: true } : {}),
     durationMs: Date.now() - startedAt,

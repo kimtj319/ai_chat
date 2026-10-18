@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import * as api from "../api/client";
 import type { MyAccess, PersonalKeyName } from "../api/types";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { Modal } from "./Modal";
 import { errorMessage } from "../state/friendlyError";
@@ -94,6 +95,9 @@ function KeyRow({
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
+  // 지우기 전에 한 번 묻는다. 저장한 키는 다시 보여 주지 않으므로, 잘못 누르면 발급처에 가서
+  // 키를 새로 받아 와야 한다. entryId 는 여러 개 등록하는 키(GitLab)의 한 줄.
+  const [confirming, setConfirming] = useState<{ entryId?: string; name: string } | null>(null);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -148,7 +152,7 @@ function KeyRow({
                 type="button"
                 className="btn btn-sm btn-danger-quiet"
                 disabled={busy}
-                onClick={() => void remove(item.id)}
+                onClick={() => setConfirming({ entryId: item.id, name: `${spec.title} · ${item.label || item.hint}` })}
                 aria-label={`${item.label || item.hint} 키 삭제`}
               >
                 삭제
@@ -182,7 +186,12 @@ function KeyRow({
           {spec.multi ? "추가" : "저장"}
         </button>
         {state.set && !spec.multi && (
-          <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={() => void remove()}>
+          <button
+            type="button"
+            className="btn btn-sm btn-danger-quiet"
+            disabled={busy}
+            onClick={() => setConfirming({ name: spec.title })}
+          >
             삭제
           </button>
         )}
@@ -191,6 +200,20 @@ function KeyRow({
         <p className="keys-row-message" role="status" data-tone={message.tone}>
           {message.text}
         </p>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          title="개인 키를 삭제할까요?"
+          message={`${confirming.name}\n저장한 키는 다시 보여 주지 않으므로, 다시 쓰려면 발급처에서 받은 키를 새로 붙여 넣어야 합니다.`}
+          confirmLabel="삭제"
+          danger
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const target = confirming;
+            setConfirming(null);
+            void remove(target.entryId);
+          }}
+        />
       )}
     </form>
   );

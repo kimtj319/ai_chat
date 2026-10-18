@@ -6,6 +6,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DocumentViewer } from "./DocumentViewer";
 import { EmptyState, ListSkeleton, LoadFailed } from "./ListSkeleton";
 import { PageHeader } from "./PageHeader";
+import { showToast } from "./Toast";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { errorMessage } from "../state/friendlyError";
 import "./DocumentsPage.css";
@@ -72,6 +73,8 @@ export function DocumentsPage({ onBack }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [confirming, setConfirming] = useState<RagDocument[] | null>(null);
+  /** 공개하기 전에 묻는 문서들. 내부 문서에서는 지우기보다 공개가 더 되돌리기 어려운 일이다. */
+  const [confirmingShare, setConfirmingShare] = useState<RagDocument[] | null>(null);
   const [viewing, setViewing] = useState<RagDocument | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -186,7 +189,9 @@ export function DocumentsPage({ onBack }: Props) {
     docs: RagDocument[],
     verb: string,
     each: (doc: RagDocument) => Promise<RagDocument | null>,
-  ) {
+    /** 다 됐을 때 알림 줄 대신 다른 길(되돌리기 단추가 붙은 알림)로 알리는 경우 false. */
+    announceDone = true,
+  ): Promise<boolean> {
     setError(null);
     setNotice(null);
     setBusy(new Set(docs.map((d) => d.id)));
@@ -210,17 +215,32 @@ export function DocumentsPage({ onBack }: Props) {
     }
     setBusy(new Set());
     if (failures.length === 0) {
-      setNotice(`${done}건을 ${verb}.`);
-    } else {
-      setNotice(done > 0 ? `${done}건을 ${verb}.` : null);
-      setError(`${failures.length}건은 실패했습니다 — ${failures.slice(0, 2).join(" / ")}`);
+      if (announceDone) setNotice(`${done}건을 ${verb}.`);
+      return true;
     }
+    setNotice(done > 0 ? `${done}건을 ${verb}.` : null);
+    setError(`${failures.length}건은 실패했습니다 — ${failures.slice(0, 2).join(" / ")}`);
+    return false;
   }
 
-  const setScope = (docs: RagDocument[], scope: RagDocumentScope) =>
-    runBulk(docs, scope === "shared" ? "모두에게 공개했습니다" : "나만 보기로 바꿨습니다", (d) =>
-      api.setDocumentScope(d.id, scope),
+  const setScope = (docs: RagDocument[], scope: RagDocumentScope, announceDone = true) =>
+    runBulk(
+      docs,
+      scope === "shared" ? "모두에게 공개했습니다" : "나만 보기로 바꿨습니다",
+      (d) => api.setDocumentScope(d.id, scope),
+      announceDone,
     );
+
+  /** 확인을 거친 공개. 되돌리기가 싸므로(나만 보기로 한 번) 알림에 그 단추를 붙인다. */
+  async function share(docs: RagDocument[]) {
+    // 이미 공개된 것까지 되돌리면 원래 공개였던 문서가 '나만' 으로 바뀐다 — 이번에 바뀌는 것만 기억한다.
+    const changing = docs.filter((d) => d.scope !== "shared");
+    if (!(await setScope(docs, "shared", false))) return;
+    showToast(`문서 ${docs.length}개를 모두에게 공개했습니다.`, "info", {
+      label: "되돌리기",
+      onClick: () => void setScope(changing, "private"),
+    });
+  }
 
   const retry = (docs: RagDocument[]) => runBulk(docs, "다시 색인했습니다", (d) => api.retryDocument(d.id));
 
@@ -234,6 +254,8 @@ export function DocumentsPage({ onBack }: Props) {
   const working = busy.size > 0 || progress !== null;
   const hasAny = documents.length + shared.length > 0;
   const canUpload = enabled && !working;
+  // 문서 색인이 없는 서버. 올리기 단추를 회색으로 남겨 두면 왜 못 누르는지 알 수 없다 — 숨기고 까닭을 한 번만 말한다.
+  const unavailable = !enabled && !loading;
   // 파일을 끌 때만, 그리고 자식 행을 넘나들어도 깜박이지 않게(깊이를 센다).
   const { isDragging, dropHandlers } = useFileDrop((files) => {
     if (canUpload) void upload(files);
@@ -259,9 +281,11 @@ export function DocumentsPage({ onBack }: Props) {
                 aria-label="이름으로 거르기"
               />
             )}
-            <button type="button" className="btn btn-primary" disabled={!canUpload} onClick={openPicker}>
-              문서 올리기
-            </button>
+            {!unavailable && (
+              <button type="button" className="btn btn-primary" disabled={!canUpload} onClick={openPicker}>
+                문서 올리기
+              </button>
+            )}
             <input
               ref={fileInput}
               type="file"
@@ -285,9 +309,10 @@ export function DocumentsPage({ onBack }: Props) {
             문서가 여남은 개만 돼도 실패 문구가 화면 밖에 있었다 — 올린 사람
             눈에는 아무 일도 일어나지 않은 것처럼 보인다. */}
         <div className="documents-banners">
-          {!enabled && (
-            <p className="documents-error" role="alert">
-              이 서버에는 문서 색인이 설정되어 있지 않습니다. 관리자에게 알려 주세요.
+          {/* 목록이 비어 있으면 아래 빈 자리가 까닭을 말한다. 여기서는 문서가 남아 있을 때만. */}
+          {unavailable && hasAny && (
+            <p className="documents-notice" role="status">
+              이 서버에는 문서 색인이 설정되어 있지 않아 새 문서를 올릴 수 없습니다.
             </p>
           )}
           {error && (
@@ -345,6 +370,11 @@ export function DocumentsPage({ onBack }: Props) {
           <ListSkeleton rows={3} />
         ) : !hasAny && loadFailed ? (
           <LoadFailed message="문서 목록을 불러오지 못했습니다." onRetry={() => void reload()} />
+        ) : !hasAny && unavailable ? (
+          <EmptyState
+            title="문서 검색을 쓸 수 없습니다"
+            reason="이 서버에는 문서 색인이 설정되어 있지 않습니다. 관리자가 설정하면 여기에서 문서를 올려 대화의 근거로 쓸 수 있습니다."
+          />
         ) : !hasAny ? (
           <div className="documents-empty">
             <p className="documents-empty-title">아직 올린 문서가 없습니다.</p>
@@ -416,7 +446,7 @@ export function DocumentsPage({ onBack }: Props) {
                         <EmptyState
                           title="전체 공개된 문서가 없습니다"
                           reason="문서를 올린 뒤 '모두에게 공개' 하면 모든 사람의 대화에서 검색됩니다."
-                          actionLabel="문서 올리기"
+                          actionLabel={unavailable ? undefined : "문서 올리기"}
                           onAction={openPicker}
                           actionDisabled={!canUpload}
                         />
@@ -445,7 +475,13 @@ export function DocumentsPage({ onBack }: Props) {
                   </label>
                   {chosen.length > 0 && (
                     <div className="documents-toolbar-actions">
-                      <button type="button" className="btn btn-sm" disabled={working} onClick={() => void setScope(chosen, "shared")}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={working}
+                        // 모두 이미 공개돼 있으면 바뀌는 것이 없으니 묻지 않는다.
+                        onClick={() => (chosen.some((d) => d.scope !== "shared") ? setConfirmingShare(chosen) : void setScope(chosen, "shared"))}
+                      >
                         모두에게 공개
                       </button>
                       <button type="button" className="btn btn-sm" disabled={working} onClick={() => void setScope(chosen, "private")}>
@@ -524,7 +560,7 @@ export function DocumentsPage({ onBack }: Props) {
                       <EmptyState
                         title="올린 문서가 없습니다"
                         reason="올린 문서는 대화 중에 모델이 사내 문서 검색으로 찾아 근거로 씁니다."
-                        actionLabel="문서 올리기"
+                        actionLabel={unavailable ? undefined : "문서 올리기"}
                         onAction={openPicker}
                         actionDisabled={!canUpload}
                       />
@@ -539,6 +575,22 @@ export function DocumentsPage({ onBack }: Props) {
       </div>
 
       {viewing && <DocumentViewer document={viewing} onClose={() => setViewing(null)} />}
+
+      {confirmingShare && (
+        <ConfirmDialog
+          title={
+            confirmingShare.length === 1 ? "문서를 모두에게 공개할까요?" : `문서 ${confirmingShare.length}개를 모두에게 공개할까요?`
+          }
+          message={`${namesOf(confirmingShare)} — 이 서버의 모든 사용자가 대화에서 검색하고 인용할 수 있게 됩니다. '나만 보기로' 로 다시 거둘 수 있습니다.`}
+          confirmLabel="공개"
+          onConfirm={() => {
+            const docs = confirmingShare;
+            setConfirmingShare(null);
+            void share(docs);
+          }}
+          onCancel={() => setConfirmingShare(null)}
+        />
+      )}
 
       {confirming && (
         <ConfirmDialog

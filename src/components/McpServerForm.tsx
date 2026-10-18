@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { McpAuthMode, McpServerSummary } from "../api/types";
-import { hasErrors, hostOf, validateDraft, type McpDraftErrors, type McpServerDraft } from "../mcp/rules";
+import { hasErrors, hostOf, validateDraft, type McpDraftErrors, type McpDraftField, type McpServerDraft } from "../mcp/rules";
 import { Modal } from "./Modal";
 import { errorMessage } from "../state/friendlyError";
 
@@ -32,13 +32,26 @@ function draftFrom(server: McpServerSummary | null): McpServerDraft {
 export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps) {
   const editing = server !== null;
   const [draft, setDraft] = useState<McpServerDraft>(() => draftFrom(server));
+  const [initial] = useState(() => draftFrom(server));
   const [errors, setErrors] = useState<McpDraftErrors>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function set<K extends keyof McpServerDraft>(key: K, value: McpServerDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+    // 고친 칸의 빨간 문구는 걷는다. 제출 때만 다시 재면 이미 채운 칸 밑에 "입력해 주세요"가 남는다.
+    if (key in errors) setErrors((current) => ({ ...current, [key]: undefined }));
   }
+
+  /** 오류가 있는 칸은 테두리와 보조 기술 양쪽에 알린다. 문구의 id 로 칸과 잇는다. */
+  function invalid(field: McpDraftField) {
+    return errors[field]
+      ? { "aria-invalid": true as const, "aria-describedby": `mcp-${field}-error` }
+      : { "aria-invalid": undefined, "aria-describedby": undefined };
+  }
+
+  // 등록·수정 양식은 칸이 예닐곱 개(개인 키 포함)라, 고친 것이 있으면 바깥을 눌러도 닫지 않는다.
+  const dirty = (Object.keys(initial) as Array<keyof McpServerDraft>).some((key) => draft[key] !== initial[key]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -61,7 +74,7 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
   }
 
   return (
-    <Modal title={editing ? "MCP 서버 수정" : "MCP 서버 등록"} onClose={onClose}>
+    <Modal title={editing ? "MCP 서버 수정" : "MCP 서버 등록"} onClose={onClose} dismissOnBackdrop={!dirty}>
       <form onSubmit={(event) => void handleSubmit(event)}>
         <div className="field">
           <label htmlFor="mcp-name">이름</label>
@@ -71,8 +84,13 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
             value={draft.name}
             autoFocus
             onChange={(event) => set("name", event.target.value)}
+            {...invalid("name")}
           />
-          {errors.name && <span className="mcp-form-error">{errors.name}</span>}
+          {errors.name && (
+            <span id="mcp-name-error" className="mcp-form-error">
+              {errors.name}
+            </span>
+          )}
         </div>
 
         <div className="field">
@@ -86,13 +104,18 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
                off every tool anyone had enabled. */
             readOnly={editing}
             onChange={(event) => set("slug", event.target.value)}
+            {...invalid("slug")}
           />
           <span className="field-hint">
             {editing
               ? "등록 후에는 바꿀 수 없습니다. 대화에 저장된 도구 이름이 이 값을 포함합니다."
               : `도구 이름이 mcp__${draft.slug.trim() || "slug"}__도구이름 형태로 만들어집니다.`}
           </span>
-          {errors.slug && <span className="mcp-form-error">{errors.slug}</span>}
+          {errors.slug && (
+            <span id="mcp-slug-error" className="mcp-form-error">
+              {errors.slug}
+            </span>
+          )}
         </div>
 
         <div className="field">
@@ -102,8 +125,13 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
             rows={2}
             value={draft.description}
             onChange={(event) => set("description", event.target.value)}
+            {...invalid("description")}
           />
-          {errors.description && <span className="mcp-form-error">{errors.description}</span>}
+          {errors.description && (
+            <span id="mcp-description-error" className="mcp-form-error">
+              {errors.description}
+            </span>
+          )}
         </div>
 
         <div className="field">
@@ -114,12 +142,17 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
             placeholder="https://example.com/mcp"
             value={draft.url}
             onChange={(event) => set("url", event.target.value)}
+            {...invalid("url")}
           />
           <span className="field-hint">
             요청은 {hostOf(draft.url.trim()) || "…"} 으로 나갑니다. 이 서버를 추가한 모든 사용자의 대화 내용이 이 호스트로
             전달됩니다.
           </span>
-          {errors.url && <span className="mcp-form-error">{errors.url}</span>}
+          {errors.url && (
+            <span id="mcp-url-error" className="mcp-form-error">
+              {errors.url}
+            </span>
+          )}
         </div>
 
         <div className="field">
@@ -147,8 +180,13 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
                 placeholder="Authorization"
                 value={draft.authHeaderName}
                 onChange={(event) => set("authHeaderName", event.target.value)}
+                {...invalid("authHeaderName")}
               />
-              {errors.authHeaderName && <span className="mcp-form-error">{errors.authHeaderName}</span>}
+              {errors.authHeaderName && (
+                <span id="mcp-authHeaderName-error" className="mcp-form-error">
+                  {errors.authHeaderName}
+                </span>
+              )}
             </div>
 
             <div className="field">
@@ -159,13 +197,18 @@ export function McpServerForm({ server, onSubmit, onClose }: McpServerFormProps)
                 autoComplete="off"
                 value={draft.credential}
                 onChange={(event) => set("credential", event.target.value)}
+                {...invalid("credential")}
               />
               <span className="field-hint">
                 {server?.hasCredential
                   ? "비워 두면 저장된 값을 그대로 둡니다."
                   : "서버에 저장되며 다시 보이지 않습니다."}
               </span>
-              {errors.credential && <span className="mcp-form-error">{errors.credential}</span>}
+              {errors.credential && (
+                <span id="mcp-credential-error" className="mcp-form-error">
+                  {errors.credential}
+                </span>
+              )}
             </div>
           </>
         )}

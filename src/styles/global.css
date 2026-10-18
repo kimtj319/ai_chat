@@ -84,6 +84,14 @@ button {
   touch-action: manipulation;
 }
 
+/* 안내 글자. 브라우저 기본값은 흐린 회색이라 밝은 테마 4.35:1, 어두운 테마 3.93:1 로
+   AA(4.5:1)에 못 미쳤다. 보조 글자색을 불투명 그대로 쓴다 — 입력창·사이드바 검색이
+   이미 쓰는 값이라 칸마다 안내 글자 진하기가 달라지지도 않는다. */
+::placeholder {
+  color: var(--on-surface-variant);
+  opacity: 1;
+}
+
 /* One accent for every native control the app leaves unstyled. */
 input[type="checkbox"],
 input[type="radio"],
@@ -315,6 +323,12 @@ a {
   font-size: var(--text-xs);
   color: var(--on-surface-variant);
   font-weight: var(--weight-regular);
+}
+
+/* 칸 바로 아래에 붙는 오류 한 줄. 칸 테두리(aria-invalid)와 함께 어느 칸이 문제인지 말한다. */
+.field .field-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
 }
 
 .field input[type="text"],

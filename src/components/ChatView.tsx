@@ -7,6 +7,7 @@ import { useFileDrop } from "../hooks/useFileDrop";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useHealthCheck } from "../hooks/useHealthCheck";
 import { shouldShowAnswerNowButton } from "../state/answerNow";
+import { isUserStop } from "../state/friendlyError";
 import { capabilityOf, kindOf } from "../state/modelCapability";
 import { useStore, useActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
@@ -21,12 +22,15 @@ import { useRemoteCompaction } from "../hooks/useRemoteCompaction";
 import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
 import { CompactionProgress } from "./CompactionProgress";
-import { ChevronDownIcon, PaperclipIcon } from "./icons";
+import { BoardIcon, ChevronDownIcon, PaperclipIcon } from "./icons";
 import "./ChatView.css";
 import { prefetchBoardList } from "../state/boardCache";
 import { NoticeButton } from "./NoticeButton";
+import { SourceLinks } from "./SourceLinks";
 import { SourcePicker } from "./SourcePicker";
 import { useScrollKeys } from "../hooks/useScrollKeys";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { showErrorToast } from "./Toast";
 
 interface ChatViewProps {
   chatStream: ReturnType<typeof useChatStream>;
@@ -37,15 +41,73 @@ interface ChatViewProps {
   onOpenBoard: () => void;
 }
 
-/* 말풍선 안에 줄 두 개 — 게시판은 결국 오가는 말이다. 연필(새 대화)과 실루엣이
-   겹치지 않아 나란히 놓여도 구분된다. */
-function BoardIcon() {
+/**
+ * 대화 머리 왼쪽의 제목. 누르면 그 자리에서 이름을 고친다(Enter 저장, Esc 취소) —
+ * 사이드바까지 가서 줄을 찾지 않아도 된다. 저장은 사이드바와 같은 renameConversation.
+ */
+function ChatTitle({ title, onRename }: { title: string; onRename: (title: string) => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(title);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef(false);
+
+  useEffect(() => {
+    // 고치기를 마치면 포커스를 제목 단추로 돌려준다 — 입력칸이 사라지며 body 로 떨어지지 않게.
+    if (!editing && returnFocusRef.current) {
+      returnFocusRef.current = false;
+      buttonRef.current?.focus({ preventScroll: true });
+    }
+  }, [editing]);
+
+  function finish(save: boolean) {
+    if (!editing) return;
+    returnFocusRef.current = true;
+    setEditing(false);
+    const next = value.trim();
+    if (!save || next.length === 0 || next === title) return;
+    onRename(next).catch(showErrorToast);
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        className="chat-header-title-input"
+        aria-label="대화 이름"
+        maxLength={200}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onFocus={(event) => event.currentTarget.select()}
+        onBlur={() => finish(true)}
+        onKeyDown={(event) => {
+          // 한글 조합 중의 Enter 는 글자를 맺는 키다.
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(true);
+          } else if (event.key === "Escape") {
+            // 출처 창 닫기·생성 중단도 window 에서 Esc 를 듣는다. 이 Esc 는 이름 고치기의 것이다.
+            event.nativeEvent.stopPropagation();
+            finish(false);
+          }
+        }}
+      />
+    );
+  }
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
-      <path d="M8.5 10h7" />
-      <path d="M8.5 13.5h4.5" />
-    </svg>
+    <button
+      ref={buttonRef}
+      type="button"
+      className="chat-header-title"
+      data-tooltip="이름 바꾸기"
+      aria-label={`대화 이름 「${title}」 — 바꾸기`}
+      onClick={() => {
+        setValue(title);
+        setEditing(true);
+      }}
+    >
+      {title}
+    </button>
   );
 }
 
@@ -63,34 +125,32 @@ export function ChatView({
   onOpenTools,
   onOpenBoard,
 }: ChatViewProps) {
-  const { createConversation, selectConversation, ui, setSidebarCollapsed } = useStore();
+  const { createConversation, selectConversation, renameConversation, conversations, ui, setSidebarCollapsed } = useStore();
   // 메시지를 그리는 쪽이라 흐르는 값을 직접 읽는다 — 토큰마다 다시 그려지는 것이 여기서는 제 일이다.
   const { activeConversation, activeConversationLoading, activeConversationError } = useActiveConversation();
   // A conversation with an empty `model` uses whatever the server defaults to,
   // which is the first entry of the catalog — show that name rather than blank.
   const { models, catalog, current } = useModels();
-  const {
-    isStreaming,
-    sendMessage,
-    stopGeneration,
-    turnStartedAt,
-    answerNowAfterMs,
-    answerNowState,
-    answerStreaming,
-    requestAnswerNow,
-    regenerateLast,
-    editLastAndResend,
-  } = chatStream;
+  const { sendMessage, stopGeneration, requestAnswerNow, regenerateLast, editLastAndResend } = chatStream;
   // 도구 줄이 MCP 도구를 "<서버 이름> 사용" 으로 쓰도록 slug → 이름.
   const { servers: mcpServers } = useMcpLibrary();
   const mcpServerNames = useMemo(() => Object.fromEntries(mcpServers.map((server) => [server.slug, server.name])), [mcpServers]);
   const activeId = activeConversation?.id ?? null;
+  // 흐르는 상태는 대화마다 따로다. 이 화면은 열린 대화의 턴만 본다 — 다른 대화가 답하는
+  // 동안에도 여기서는 보내기·다시 생성이 그대로 되고, 멈춤 단추는 그 대화에만 뜬다.
+  const turn = activeId ? chatStream.turns[activeId] : undefined;
+  const streamingHere = turn !== undefined;
+  const turnStartedAt = turn?.turnStartedAt ?? null;
+  const answerNowState = turn?.answerNowState ?? "idle";
+  const answerStreaming = turn?.answerStreaming ?? false;
   // 이 페이지가 흘려 받지 않는 압축(새로 고침·다시 열기)은 서버에 묻는다. 끝나면 요약된 대화를 다시 불러온다.
-  const remoteCompaction = useRemoteCompaction(activeId, chatStream.streamingId !== activeId, () => {
+  const remoteCompaction = useRemoteCompaction(activeId, !streamingHere, () => {
     if (activeId) void selectConversation(activeId);
   });
-  const compacting = (activeId !== null && chatStream.compactingId === activeId) || remoteCompaction !== null;
+  const compacting = turn?.compacting === true || remoteCompaction !== null;
   const { status, retrying, retry } = useHealthCheck();
+  // 폰 폭: 머리의 저장·공유·게시판을 ⋯ 하나로 접는다(ConversationExportActions).
+  const compactHeader = useMediaQuery("(max-width: 480px)");
   const listRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -133,7 +193,6 @@ export function ChatView({
 
   // 화면 읽기 프로그램용. 흐르는 동안 목록은 aria-busy 라 조각마다 읽지 않고, 끝나면
   // 아래 status 가 한 번만 말한다. 멈추기는 여기서 누른 것만 안다(단축키로 멈추면 "완료").
-  const streamingHere = isStreaming && chatStream.streamingId === activeId;
   const stopRequestedRef = useRef(false);
   const wasStreamingRef = useRef(false);
   const lastMessageRef = useRef<ClientChatMessage | undefined>(undefined);
@@ -159,24 +218,25 @@ export function ChatView({
   }, [streamingHere]);
 
   const handleStop = useCallback(() => {
+    if (!activeId) return;
     stopRequestedRef.current = true;
-    stopGeneration();
-  }, [stopGeneration]);
+    stopGeneration(activeId);
+  }, [activeId, stopGeneration]);
 
   // "지금 답변하기" 가 뜰 시각을 알기 위한 재렌더 심장박동. 이미 눌렀으면
   // (answerNowState === "requested") 더 잴 것이 없으니 멈춘다 — 그 뒤로는
   // isStreaming 하나로 배너의 "정리하는 중" 상태가 결정된다.
   const [answerNowNow, setAnswerNowNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!isStreaming || turnStartedAt === null || answerNowState === "requested") return;
+    if (!streamingHere || turnStartedAt === null || answerNowState === "requested") return;
     const id = window.setInterval(() => setAnswerNowNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [isStreaming, turnStartedAt, answerNowState]);
+  }, [streamingHere, turnStartedAt, answerNowState]);
 
   const showAnswerNowIdle = shouldShowAnswerNowButton({
-    isStreaming,
+    isStreaming: streamingHere,
     turnStartedAt,
-    answerNowAfterMs,
+    answerNowAfterMs: turn?.answerNowAfterMs ?? 0,
     clicked: answerNowState === "requested",
     answerStreaming,
     now: answerNowNow,
@@ -184,7 +244,7 @@ export function ChatView({
   // 누른 뒤에는(pending) "정리하는 중…" 으로 바뀌어 떠 있다가, 마무리 답변이
   // 흘러나오기 시작하면 사라진다 — 답이 보이는데 "정리하는 중" 을 계속 띄울
   // 이유가 없다.
-  const answerNowPending = isStreaming && answerNowState === "requested" && !answerStreaming;
+  const answerNowPending = streamingHere && answerNowState === "requested" && !answerStreaming;
 
   if (!activeConversation) {
     return (
@@ -207,6 +267,9 @@ export function ChatView({
   }
 
   const hasMessages = activeConversation.messages.length > 0;
+  // 첫 답 뒤에 서버가 지어 주는 제목은 목록(요약)만 다시 받아 온다 — 열린 대화의 기록은 "새 대화" 로
+  // 남아 있다. 머리는 사이드바와 같은 이름을 보여야 하므로 목록 쪽을 먼저 본다.
+  const headerTitle = conversations.find((c) => c.id === activeConversation.id)?.title ?? activeConversation.title;
 
   // Until the first message lands nothing is locked, so the composer follows
   // the model that is selected right now; after that it follows the
@@ -254,8 +317,33 @@ export function ChatView({
       <header className="chat-header">
         <div className="chat-header-inner">
           {/* 대화 합계 토큰은 머리에 늘 띄우지 않는다 — 답변마다 아래에 같은 숫자가 있어
-              화면 위쪽에 떠 있는 알약 하나가 둘째 사본이었다. 합계는 저장 메뉴 아래에 둔다. */}
-          <div className="chat-header-left" />
+              화면 위쪽에 떠 있는 알약 하나가 둘째 사본이었다. 합계는 저장 메뉴 아래에 둔다.
+              왼쪽에는 지금 어느 대화인지(제목)와 어느 모델이 답하는지를 둔다. 빈 대화는
+              인사말 아래에 같은 모델 칩이 있어 비워 둔다. */}
+          <div className="chat-header-left">
+            {hasMessages && (
+              <>
+                <ChatTitle
+                  key={activeConversation.id}
+                  title={headerTitle}
+                  onRename={(title) => renameConversation(activeConversation.id, title)}
+                />
+                <button
+                  type="button"
+                  className="chat-header-model"
+                  data-tooltip="모델 바꾸기"
+                  aria-label={`모델 ${modelLabel} — 모델 바꾸기`}
+                  onClick={openModelSelector}
+                >
+                  {modelLabel}
+                  <ChevronDownIcon aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
+          {/* 답변이 웹 페이지에 기댔을 때만 나타난다. 출처 문서 바로 왼쪽 — 문서 단추가 늘
+              서던 자리를 지키고, 둘이 한 무리의 "출처" 로 읽힌다. */}
+          <SourceLinks messages={activeConversation.messages} />
           {/* 답변이 문서를 인용했을 때만 나타난다. 아이콘 묶음 바로 왼쪽. */}
           <SourcePicker messages={activeConversation.messages} />
           <div className="chat-header-right">
@@ -266,20 +354,23 @@ export function ChatView({
                 conversation={activeConversation}
                 transcriptRef={listInnerRef}
                 fallbackModel={current || models[0] || ""}
+                collapsedBoard={compactHeader ? { onOpenBoard, onPrefetchBoard: prefetchBoardList } : undefined}
               />
             )}
             <NoticeButton />
-            <button
-              type="button"
-              className="btn-icon"
-              data-tooltip="문의 게시판"
-              aria-label="문의 게시판"
-              onPointerEnter={prefetchBoardList}
-              onFocus={prefetchBoardList}
-              onClick={onOpenBoard}
-            >
-              <BoardIcon />
-            </button>
+            {!(compactHeader && hasMessages) && (
+              <button
+                type="button"
+                className="btn-icon"
+                data-tooltip="문의 게시판"
+                aria-label="문의 게시판"
+                onPointerEnter={prefetchBoardList}
+                onFocus={prefetchBoardList}
+                onClick={onOpenBoard}
+              >
+                <BoardIcon />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -321,10 +412,13 @@ export function ChatView({
               const last = messages[messages.length - 1];
               const latestAnswerId = last?.role === "assistant" ? last.id : null;
               const conversationId = activeConversation.id;
-              const idle = !isStreaming;
+              const idle = !streamingHere;
               const expectsReasoning = activeConversation.settings.reasoningLevel !== "off" || selectedEntry?.reasoningFixed === true;
               return messages.map((message, index) => {
                 const isLatest = message.id === latestAnswerId;
+                // 멈춘 답(예전에 "Cancelled by client." 로 저장된 것 포함)은 실패가 아니다 —
+                // 다시 시도 카드가 아니라 다시 생성 단추를 단다.
+                const failed = Boolean(message.error) && !isUserStop(message.error);
                 return (
                   <MessageItem
                     key={message.id}
@@ -333,8 +427,8 @@ export function ChatView({
                     isLatest={isLatest}
                     expectsReasoning={expectsReasoning}
                     mcpServerNames={mcpServerNames}
-                    onRegenerate={isLatest && idle && !message.error ? () => regenerateLast(conversationId) : undefined}
-                    onRetry={isLatest && idle && message.error ? () => regenerateLast(conversationId) : undefined}
+                    onRegenerate={isLatest && idle && !failed ? () => regenerateLast(conversationId) : undefined}
+                    onRetry={isLatest && idle && failed ? () => regenerateLast(conversationId) : undefined}
                     onEdit={
                       index === lastUserIndex && idle ? (content: string) => editLastAndResend(conversationId, content) : undefined
                     }
@@ -382,13 +476,13 @@ export function ChatView({
         <AnswerNowButton
           show={showAnswerNowIdle || answerNowPending}
           pending={answerNowPending}
-          onClick={requestAnswerNow}
+          onClick={() => activeId && requestAnswerNow(activeId)}
         />
         <Composer
           conversation={activeConversation}
           kind={kind}
           reasoningFixed={selectedEntry?.reasoningFixed === true}
-          isStreaming={isStreaming}
+          isStreaming={streamingHere}
           compacting={compacting}
           attachments={attachments}
           onSend={(text, attachmentIds) => {

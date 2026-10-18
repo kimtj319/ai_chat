@@ -14,11 +14,15 @@ import { getExtensionState, sendBrowserCommand } from "./extension";
  *   - 목록을 받을 때 서버 시각도 받아, 이 PC 시계와의 차이만큼 당기거나 미룬다.
  *   - 예약마다 정확한 시각에 타이머를 건다. 백그라운드 탭의 타이머는 크롬이 최대 1분까지
  *     늦추므로, 확장 프로그램의 알람이 1분 전에 이 탭을 깨워(wake) 타이머를 새로 건다.
- *   - 15초마다 목록을 다시 받아, 놓친 예약(GRACE 안)도 집는다.
+ *   - 15초마다 목록을 다시 받아, 놓친 예약(GRACE 안)도 집는다. 탭이 가려져 있으면 1분마다
+ *     (크롬도 오래 가려진 탭의 타이머를 그만큼 늦춘다) — 아주 멈추지는 않는다. 다른 기기에서
+ *     만든 예약은 이 탭이 목록을 받아야 알게 되고, 가려진 탭에서 도는 것이 예약 작업이다.
+ *     다시 보이면 곧바로 받는다.
  * 탭이 여럿이어도 서버의 claim 은 한 곳만 성공한다.
  */
 
 const POLL_MS = 15_000;
+const HIDDEN_POLL_MS = 60_000;
 /** 서버의 놓침 판정(GRACE_MS)과 같다 — 그보다 늦으면 페이지도 집지 않는다. */
 const GRACE_MS = 10 * 60 * 1000;
 const MAX_TIMER_MS = 2_147_000_000;
@@ -88,16 +92,30 @@ export function useScheduleRunner(deps: RunnerDeps): void {
   // 목록 받기: 처음, 주기적으로, 확장이 깨울 때, 답변이 끝날 때(방금 예약했을 수 있다).
   useEffect(() => {
     void refreshSchedules();
-    const poll = window.setInterval(() => void refreshSchedules(), POLL_MS);
+    let poll = 0;
+    const startPolling = () => {
+      window.clearInterval(poll);
+      poll = window.setInterval(() => void refreshSchedules(), document.hidden ? HIDDEN_POLL_MS : POLL_MS);
+    };
+    const handleVisibility = () => {
+      if (!document.hidden) void refreshSchedules();
+      startPolling();
+    };
+    startPolling();
     const wake = () => void refreshSchedules();
     window.addEventListener("aic-schedule-wake", wake);
+    document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.clearInterval(poll);
       window.removeEventListener("aic-schedule-wake", wake);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
+  // 답변이 끝날 때만. 처음 마운트에서는 위가 이미 받았다(같은 요청이 두 번 나가던 것).
+  const wasStreaming = useRef(deps.isStreaming);
   useEffect(() => {
-    if (!deps.isStreaming) void refreshSchedules();
+    if (wasStreaming.current && !deps.isStreaming) void refreshSchedules();
+    wasStreaming.current = deps.isStreaming;
   }, [deps.isStreaming]);
 
   useEffect(() => {

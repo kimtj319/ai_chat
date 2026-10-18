@@ -37,3 +37,15 @@
   align-items: center;
   gap: var(--space-4);
 }
+
+/* 터치 화면에는 말풍선(data-tooltip)이 뜨지 않으므로, 잘린 부제("열림 3개 · 닫힘 …")를 다
+   읽을 길이 없었다. 손가락 기기에서는 두 줄까지 보이고 그 뒤에서 자른다. */
+@media (hover: none) {
+  .page-header-subtitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+  }
+}

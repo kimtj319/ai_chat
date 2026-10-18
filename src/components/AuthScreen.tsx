@@ -34,6 +34,11 @@ export function AuthScreen() {
   const [signupDone, setSignupDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /** 고친 칸의 오류 문구는 그 자리에서 걷는다. 제출 때만 다시 재면 다 채운 칸 밑에 "입력해주세요"가 남는다. */
+  function clearFieldError(field: keyof typeof fieldErrors) {
+    setFieldErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
   function switchMode(next: Mode) {
     setMode(next);
     setFieldErrors({});
@@ -134,7 +139,10 @@ export function AuthScreen() {
                   autoComplete="username"
                   autoFocus
                   value={id}
-                  onChange={(event) => setId(event.target.value)}
+                  onChange={(event) => {
+                    setId(event.target.value);
+                    clearFieldError("id");
+                  }}
                   aria-invalid={fieldErrors.id ? true : undefined}
                   aria-describedby={fieldErrors.id ? "auth-login-id-error" : undefined}
                 />
@@ -152,7 +160,10 @@ export function AuthScreen() {
                   type="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    clearFieldError("password");
+                  }}
                   aria-invalid={fieldErrors.password ? true : undefined}
                   aria-describedby={fieldErrors.password ? "auth-login-password-error" : undefined}
                 />
@@ -195,7 +206,10 @@ export function AuthScreen() {
                   autoComplete="username"
                   autoFocus
                   value={id}
-                  onChange={(event) => setId(event.target.value)}
+                  onChange={(event) => {
+                    setId(event.target.value);
+                    clearFieldError("id");
+                  }}
                   aria-invalid={fieldErrors.id ? true : undefined}
                   aria-describedby={fieldErrors.id ? "auth-signup-id-error" : undefined}
                 />
@@ -213,7 +227,10 @@ export function AuthScreen() {
                   type="text"
                   autoComplete="name"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    clearFieldError("name");
+                  }}
                   aria-invalid={fieldErrors.name ? true : undefined}
                   aria-describedby={fieldErrors.name ? "auth-signup-name-error" : undefined}
                 />
@@ -231,7 +248,10 @@ export function AuthScreen() {
                   type="email"
                   autoComplete="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    clearFieldError("email");
+                  }}
                   aria-invalid={fieldErrors.email ? true : undefined}
                   aria-describedby={fieldErrors.email ? "auth-signup-email-error" : undefined}
                 />
@@ -249,7 +269,10 @@ export function AuthScreen() {
                   type="password"
                   autoComplete="new-password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    clearFieldError("password");
+                  }}
                   aria-invalid={fieldErrors.password ? true : undefined}
                   aria-describedby={
                     fieldErrors.password ? "auth-signup-password-error" : "auth-signup-password-hint"
@@ -273,7 +296,10 @@ export function AuthScreen() {
                   type="password"
                   autoComplete="new-password"
                   value={confirm}
-                  onChange={(event) => setConfirm(event.target.value)}
+                  onChange={(event) => {
+                    setConfirm(event.target.value);
+                    clearFieldError("confirm");
+                  }}
                   aria-invalid={fieldErrors.confirm ? true : undefined}
                   aria-describedby={fieldErrors.confirm ? "auth-signup-confirm-error" : undefined}
                 />

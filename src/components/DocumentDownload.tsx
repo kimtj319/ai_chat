@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ToolCall, ToolResult } from "../api/types";
 import { documentFilename, documentsOf, documentTextBlob, type DocumentFormat, type GeneratedDocument } from "../state/documentExport";
-import { MarkdownRenderer } from "./MarkdownRenderer";
+import { MarkdownRenderer, preloadMarkdownMath } from "./MarkdownRenderer";
 import { showErrorToast } from "./Toast";
 import "./DocumentDownload.css";
 
@@ -99,6 +99,8 @@ async function saveDocumentPdf(doc: GeneratedDocument): Promise<void> {
   try {
     // 본문이 제목으로 시작하지 않으면 제목을 붙인다 — 파일만 받은 사람이 무엇인지 알게.
     const content = /^\s*#\s/.test(doc.content) ? doc.content : `# ${doc.title}\n\n${doc.content}`;
+    // 수식 렌더러는 따로 불러온다 — 그리기 전에 받아 두어야 50ms 안에 수식까지 그려진다.
+    if (content.includes("$")) await preloadMarkdownMath();
     root.render(<MarkdownRenderer content={content} />);
     await new Promise((resolve) => setTimeout(resolve, 50));
     await document.fonts?.ready;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listMcpServers, McpError } from "../api/client";
-import type { McpServerSummary } from "../api/types";
+import type { McpServerSummary, McpServersResponse } from "../api/types";
 import { errorMessage } from "../state/friendlyError";
 
 export interface McpLibrary {
@@ -19,6 +19,26 @@ export interface McpLibrary {
   reload: () => Promise<void>;
 }
 
+/**
+ * 대화 화면과 + 메뉴의 도구 고르기가 거의 같은 때 마운트되어 목록을 두 번 받던 것.
+ * 마운트할 때는 진행 중인 요청이나 몇 초 안에 받은 답을 같이 쓴다. reload() 는 늘
+ * 새로 받는다(라이브러리에서 무언가 바꾼 뒤) — 그 답이 다음 마운트의 몫이 된다.
+ */
+const SHARED_FRESH_MS = 5000;
+let shared: { at: number; request: Promise<McpServersResponse> } | null = null;
+function loadServers(force: boolean): Promise<McpServersResponse> {
+  const now = Date.now();
+  if (force || !shared || now - shared.at > SHARED_FRESH_MS) {
+    const request = listMcpServers();
+    shared = { at: now, request };
+    // 실패는 같이 쓰지 않는다 — 다음 마운트가 다시 해 본다.
+    request.catch(() => {
+      if (shared?.request === request) shared = null;
+    });
+  }
+  return shared.request;
+}
+
 export function useMcpLibrary(): McpLibrary {
   const [servers, setServers] = useState<McpServerSummary[]>([]);
   const [adopted, setAdopted] = useState<string[]>([]);
@@ -27,9 +47,9 @@ export function useMcpLibrary(): McpLibrary {
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
+  const load = useCallback(async (force: boolean) => {
     try {
-      const data = await listMcpServers();
+      const data = await loadServers(force);
       // Defaulted rather than trusted: a half-answered body must leave an empty
       // page behind, not a crash in the first `.filter` that reads it.
       setServers(data.servers ?? []);
@@ -49,9 +69,11 @@ export function useMcpLibrary(): McpLibrary {
     }
   }, []);
 
+  const reload = useCallback(() => load(true), [load]);
+
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void load(false);
+  }, [load]);
 
   return { servers, adopted, hidden, loading, unavailable, error, reload };
 }

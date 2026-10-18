@@ -14,6 +14,7 @@ import type {
   CreateConversationRequest,
   HealthResponse,
   MessageAttachment,
+  MessageFeedback,
   ModelEndpointErrorCode,
   ModelEndpointsResponse,
   ModelsResponse,
@@ -99,6 +100,23 @@ export async function stopGeneration(id: string): Promise<void> {
  */
 export async function answerNow(id: string): Promise<void> {
   await request<void>(`/conversations/${id}/answer-now`, { method: "POST" });
+}
+
+/**
+ * 답변 하나에 👍/👎 를 남긴다. null 은 지우기다. 서버는 메시지에 저장하고 기록에 한 줄
+ * 덧붙인 뒤 저장된 값을 돌려준다.
+ */
+export async function setMessageFeedback(
+  conversationId: string,
+  messageId: string,
+  rating: MessageFeedback["rating"] | null,
+  reason?: string,
+): Promise<MessageFeedback | null> {
+  const result = await request<{ feedback: MessageFeedback | null }>(
+    `/conversations/${conversationId}/messages/${messageId}/feedback`,
+    { method: "PUT", body: JSON.stringify({ rating, ...(reason ? { reason } : {}) }) },
+  );
+  return result.feedback;
 }
 
 /** Path the browser fetches an attachment's bytes from (also an <img> src). */

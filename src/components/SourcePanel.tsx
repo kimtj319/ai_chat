@@ -3,7 +3,9 @@ import { apiPath } from "../api/base";
 import type { CitationSource } from "../state/citations";
 import { findPassage, type Range } from "../state/highlightMatch";
 import { pdfCache, textCache, type TextLoad } from "../state/sourceCache";
+import { stripHeadingMarks } from "../state/sourceText";
 import { closeSource, useOpenSource } from "../state/sourcePanel";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { pushOverlay } from "../ui/overlayStack";
 import { CloseIcon } from "./icons";
 import "./SourcePanel.css";
@@ -31,6 +33,38 @@ export function SourcePanel() {
     if (source) setShown(source);
   }, [source]);
   const open = source !== null;
+  // 이 폭부터 창이 화면을 통째로 덮는다(SourcePanel.css 의 900px). 그때는 대화상자다.
+  const fullScreen = useMediaQuery("(max-width: 900px)");
+  const modal = open && fullScreen;
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // 화면을 덮는 동안: 포커스를 창 안(닫기 단추)으로 데려가고, 뒤(대화·사이드바·서랍 토글)는
+  // inert 로 막아 Tab 과 화면 읽기 프로그램이 보이지 않는 것을 지나지 않게 한다. 닫으면
+  // 연 자리(누른 출처 번호·출처 문서 단추)로 돌려준다. 넓은 화면에서는 옆에 붙는 창이라
+  // 본문과 함께 쓴다 — 막지 않는다.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!modal || !panel) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const blocked: HTMLElement[] = [];
+    for (let node: HTMLElement = panel; node.parentElement && !node.classList.contains("app-shell"); node = node.parentElement) {
+      for (const sibling of node.parentElement.children) {
+        if (sibling === node || !(sibling instanceof HTMLElement) || sibling.inert) continue;
+        sibling.inert = true;
+        blocked.push(sibling);
+      }
+    }
+    return () => {
+      for (const element of blocked) element.inert = false;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [modal]);
+  // 포커스는 닫기 단추가 그려진 뒤에 옮긴다 — 처음 여는 순간에는 머리가 아직 없다(shown 은 위 effect 가 채운다).
+  const hasContent = shown !== null;
+  useEffect(() => {
+    if (modal && hasContent) closeRef.current?.focus({ preventScroll: true });
+  }, [modal, hasContent]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +80,14 @@ export function SourcePanel() {
   }, [open]);
 
   return (
-    <aside className={`source-panel${open ? " open" : ""}`} aria-hidden={!open} aria-label="출처 원문">
+    <aside
+      ref={panelRef}
+      className={`source-panel${open ? " open" : ""}`}
+      aria-hidden={!open}
+      aria-label="출처 원문"
+      role={modal ? "dialog" : undefined}
+      aria-modal={modal || undefined}
+    >
       <div className="source-panel-inner">
         {shown && (
           <>
@@ -56,6 +97,7 @@ export function SourcePanel() {
                 {shown.title || "출처"}
               </h2>
               <button
+                ref={closeRef}
                 type="button"
                 className="btn-icon source-panel-close"
                 aria-label="출처 닫기"
@@ -208,7 +250,7 @@ function SourceBody({ source }: { source: CitationSource }) {
         <>
           <p className="source-panel-note">문서를 열 수 없습니다. 지워졌거나 볼 수 없는 문서입니다. 검색된 단락만 보여 드립니다.</p>
           <div className="source-text">
-            <mark className="source-hl">{source.text}</mark>
+            <mark className="source-hl">{stripHeadingMarks(source.text, true)}</mark>
           </div>
         </>
       )}
@@ -229,18 +271,21 @@ function SourceText({ text, passage, known }: { text: string; passage: string; k
     box.scrollTop = mark.offsetTop - box.clientHeight / 3;
   }, [ranges]);
 
+  // 마크다운 제목의 "## " 는 그릴 때만 뗀다. 강조 자리는 원문 글자 위치라 원문을 바꾸면 어긋난다.
+  const piece = (start: number, end: number) =>
+    stripHeadingMarks(text.slice(start, end), start === 0 || text[start - 1] === "\n");
   const parts: ReactNode[] = [];
   let at = 0;
   ranges.forEach((r, i) => {
-    if (r.start > at) parts.push(text.slice(at, r.start));
+    if (r.start > at) parts.push(piece(at, r.start));
     parts.push(
       <mark key={i} ref={i === 0 ? firstMark : undefined} className="source-hl">
-        {text.slice(r.start, r.end)}
+        {piece(r.start, r.end)}
       </mark>,
     );
     at = r.end;
   });
-  if (at < text.length) parts.push(text.slice(at));
+  if (at < text.length) parts.push(piece(at, text.length));
 
   return (
     <>

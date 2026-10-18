@@ -231,3 +231,17 @@ button.mcp-picker-action:hover {
 .mcp-picker-links .mcp-picker-link {
   padding: 0;
 }
+
+/* 손가락: "도구 설정 · 커넥터 관리" 는 글자 높이(17px)뿐이라 누르기 어려웠다. 모양은 그대로
+   두고 보이지 않는 누르는 자리만 위아래로 40px 이상 넓힌다. */
+@media (pointer: coarse) {
+  .mcp-picker-link {
+    position: relative;
+  }
+
+  .mcp-picker-link::after {
+    content: "";
+    position: absolute;
+    inset: -12px -6px;
+  }
+}

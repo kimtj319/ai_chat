@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { getShareToken, saveShare } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { ChatMessage } from "../api/types";
 import { useDismiss } from "../hooks/useDismiss";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { usePopoverFocus } from "../hooks/usePopoverFocus";
 import { shareHash } from "../routes";
 import { copyText } from "../state/clipboard";
 import { conversationTokenTotals } from "../state/conversationOps";
@@ -11,7 +12,7 @@ import { conversationHistoryFile, downloadJson } from "../state/exportImport";
 import { exportConversationPdf } from "../state/pdfExport";
 import type { ActiveConversation } from "../state/StoreContext";
 import type { ClientChatMessage } from "../state/types";
-import { DownloadIcon } from "./icons";
+import { BoardIcon, DownloadIcon } from "./icons";
 import { inSheet } from "./popoverSheet";
 import { showErrorToast, showToast } from "./Toast";
 
@@ -23,6 +24,17 @@ function ShareIcon() {
       <path d="M12 15V3" />
       <path d="M7.5 7.5 12 3l4.5 4.5" />
       <path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2" />
+    </svg>
+  );
+}
+
+/* 가로 점 셋 — 폰에서 자리가 모자라 접어 둔 단추들을 여는 "더 보기". */
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+      <circle cx="5.5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="18.5" cy="12" r="1.6" />
     </svg>
   );
 }
@@ -62,6 +74,11 @@ interface ConversationExportActionsProps {
   transcriptRef: RefObject<HTMLDivElement | null>;
   /** The model that answers when the conversation's own `model` is "" (server default). */
   fallbackModel: string;
+  /**
+   * 있으면 폰 머리처럼 자리가 모자란 곳이다: 저장·공유·문의 게시판을 "더 보기"(⋯) 하나에
+   * 접어 넣는다. 360px 에서 아이콘 묶음이 화면 밖으로 밀려 게시판 단추가 잘렸다.
+   */
+  collapsedBoard?: { onOpenBoard: () => void; onPrefetchBoard: () => void };
 }
 
 /** 대화 머리의 저장(JSON / PDF) 메뉴와 공유 링크 단추. 메시지가 있는 대화에만 그린다. */
@@ -69,6 +86,7 @@ export function ConversationExportActions({
   conversation: activeConversation,
   transcriptRef,
   fallbackModel,
+  collapsedBoard,
 }: ConversationExportActionsProps) {
   const totals = conversationTokenTotals(activeConversation.messages);
   const shareBaseUrl = useAuth().me?.shareBaseUrl;
@@ -78,11 +96,13 @@ export function ConversationExportActions({
   const [pdfBusy, setPdfBusy] = useState(false);
   const downloadRef = useRef<HTMLDivElement>(null);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const downloadTriggerRef = useRef<HTMLButtonElement>(null);
   // 폰에서는 바텀시트. 단추에 붙여 띄우면 화면 왼쪽 밖으로 잘리고, 머리의 유리 막 안이라
   // 뒤의 본문도 비쳤다(390px 실측).
   const sheet = useMediaQuery("(max-width: 640px)");
+  // 열면 포커스가 첫 항목으로 들어가고 Esc 는 단추로 돌려준다(다른 머리 메뉴와 같은 약속).
+  usePopoverFocus(downloadOpen, downloadMenuRef, downloadTriggerRef, () => setDownloadOpen(false));
   useDismiss(downloadOpen, downloadRef, () => setDownloadOpen(false), {
-    escape: true,
     ignore: (target) => downloadMenuRef.current?.contains(target) === true || target.closest?.(".popover-sheet-scrim") != null,
   });
 
@@ -127,25 +147,61 @@ export function ConversationExportActions({
       .finally(() => setShareBusy(false));
   }
 
+  // 항목 사이는 화살표로(SourcePicker 와 같은 규칙). 카드가 두 줄로 놓여도 순서대로 돈다.
+  function onMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      // 여기서 멈춘다: 열려 있는 출처 창과 생성 중단(Esc)도 window 에서 같은 키를 듣는다.
+      event.stopPropagation();
+      setDownloadOpen(false);
+      downloadTriggerRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const items = [...(downloadMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const forward = event.key === "ArrowDown" || event.key === "ArrowRight";
+    const backward = event.key === "ArrowUp" || event.key === "ArrowLeft";
+    const next = forward
+      ? (at + 1) % items.length
+      : backward
+        ? (at - 1 + items.length) % items.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? items.length - 1
+            : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    items[next]?.focus();
+  }
+
+  const collapsed = collapsedBoard !== undefined;
   return (
     <>
-      <div className="chat-download" ref={downloadRef}>
+      <div className={`chat-download${collapsed ? " chat-download-more" : ""}`} ref={downloadRef}>
         <button
+          ref={downloadTriggerRef}
           type="button"
           className="btn-icon"
-          data-tooltip={pdfBusy ? "PDF 만드는 중…" : "대화 기록 저장"}
-          aria-label="대화 기록 저장"
+          data-tooltip={collapsed ? "더 보기" : pdfBusy ? "PDF 만드는 중…" : "대화 기록 저장"}
+          aria-label={collapsed ? "더 보기 — 저장·공유·문의 게시판" : "대화 기록 저장"}
           aria-haspopup="menu"
           aria-expanded={downloadOpen}
-          disabled={pdfBusy}
+          disabled={pdfBusy && !collapsed}
           onClick={() => setDownloadOpen((open) => !open)}
         >
-          <DownloadIcon />
+          {collapsed ? <MoreIcon /> : <DownloadIcon />}
         </button>
         {downloadOpen && inSheet(
           sheet,
           () => setDownloadOpen(false),
-          <div ref={downloadMenuRef} className="chat-download-menu" role="menu" aria-label="저장 형식">
+          <div
+            ref={downloadMenuRef}
+            className="chat-download-menu"
+            role="menu"
+            aria-label={collapsed ? "더 보기" : "저장 형식"}
+            tabIndex={-1}
+            onKeyDown={onMenuKeyDown}
+          >
             <button
               type="button"
               role="menuitem"
@@ -171,6 +227,7 @@ export function ConversationExportActions({
               type="button"
               role="menuitem"
               className="chat-download-option"
+              disabled={pdfBusy}
               onClick={() => {
                 setDownloadOpen(false);
                 const inner = transcriptRef.current;
@@ -183,8 +240,42 @@ export function ConversationExportActions({
               }}
             >
               <span className="chat-download-format">PDF</span>
-              <span className="chat-download-hint">화면과 같은 모습</span>
+              <span className="chat-download-hint">{pdfBusy ? "만드는 중…" : "화면과 같은 모습"}</span>
             </button>
+            {collapsedBoard && (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="chat-download-option"
+                  disabled={shareBusy}
+                  onClick={() => {
+                    setDownloadOpen(false);
+                    handleShare();
+                  }}
+                >
+                  <span className="chat-download-format">공유</span>
+                  <span className="chat-download-hint">링크 복사</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="chat-download-option"
+                  onFocus={collapsedBoard.onPrefetchBoard}
+                  onPointerEnter={collapsedBoard.onPrefetchBoard}
+                  onClick={() => {
+                    setDownloadOpen(false);
+                    collapsedBoard.onOpenBoard();
+                  }}
+                >
+                  <span className="chat-download-format chat-download-format-icon">
+                    <BoardIcon aria-hidden="true" />
+                    문의 게시판
+                  </span>
+                  <span className="chat-download-hint">질문·요청 남기기</span>
+                </button>
+              </>
+            )}
             {totals.totalTokens > 0 && (
               <p className="chat-download-usage">
                 이 대화 합계 {totals.totalTokens.toLocaleString()} 토큰 (프롬프트 {totals.promptTokens.toLocaleString()} · 완성{" "}
@@ -194,17 +285,19 @@ export function ConversationExportActions({
           </div>,
         )}
       </div>
-      {/* 저장(다운로드) 바로 옆 — 둘 다 "이 대화를 밖으로 내보내는" 일이다. */}
-      <button
-        type="button"
-        className="btn-icon"
-        data-tooltip="공유 링크 복사"
-        aria-label="대화 공유 — 링크 복사"
-        disabled={shareBusy}
-        onClick={handleShare}
-      >
-        <ShareIcon />
-      </button>
+      {/* 저장(다운로드) 바로 옆 — 둘 다 "이 대화를 밖으로 내보내는" 일이다. 접힌 머리에서는 ⋯ 안에 있다. */}
+      {!collapsed && (
+        <button
+          type="button"
+          className="btn-icon"
+          data-tooltip="공유 링크 복사"
+          aria-label="대화 공유 — 링크 복사"
+          disabled={shareBusy}
+          onClick={handleShare}
+        >
+          <ShareIcon />
+        </button>
+      )}
     </>
   );
 }

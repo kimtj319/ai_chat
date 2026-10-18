@@ -46,7 +46,7 @@
   gap: var(--space-4);
   min-width: 0;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .chat-header-right {
@@ -54,6 +54,118 @@
   align-items: center;
   gap: var(--space-2);
   flex-shrink: 0;
+}
+
+/* 머리 왼쪽의 대화 제목. 한 줄, 넘치면 말줄임 — 오른쪽 아이콘 묶음이 늘 먼저 자리를 갖는다.
+   누르면 이름을 고친다(ChatTitle). */
+.chat-header-title {
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
+  margin-left: calc(-1 * var(--space-4));
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.chat-header-title:hover {
+  background: var(--surface-container-highest);
+}
+
+.chat-header-title:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.chat-header-title-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  padding: var(--space-2) var(--space-4);
+  margin-left: calc(-1 * var(--space-4));
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+/* 제목 옆의 모델 칩. 인사말 아래 칩(.empty-model-chip)과 같은 일 — 사이드바의 선택기를 연다. */
+.chat-header-model {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.chat-header-model:hover {
+  color: var(--on-surface);
+}
+
+.chat-header-model svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 접힌 머리(폰)의 ⋯ 는 묶음 맨 끝에. 마크업에서는 저장 메뉴 자리에 그대로 있다. */
+.chat-download-more {
+  order: 1;
+}
+
+.chat-download-format-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-download-format-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 제목 칸이 글자 두어 개 폭까지 밀리면(320px 폰에 출처 단추가 둘 다 선 때) 말줄임 한 글자만
+   남는다 — 읽을 수 없는 조각보다 비우는 편이 낫다. 칸 폭은 제 내용과 상관없이 남는 자리라
+   (flex: 1) 크기 컨테이너로 두고 그 폭으로 판단한다. */
+.chat-header-left {
+  container-type: inline-size;
+}
+
+@container (max-width: 72px) {
+  .chat-header-title {
+    display: none;
+  }
+}
+
+/* 폰: 제목은 한 줄 말줄임으로 남고, 모델 칩은 뺀다(모델은 서랍 바닥과 빈 대화의 칩에 있다).
+   제목 칸의 왼쪽 여백(본문 칸 맞춤)도 걷는다 — 서랍 토글이 이미 그 자리를 비워 둔다. */
+@media (max-width: 480px) {
+  .chat-header-model {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .chat-header-left {
+    padding-left: 0;
+  }
 }
 
 

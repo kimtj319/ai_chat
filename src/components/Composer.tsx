@@ -4,9 +4,11 @@ import { attachmentTotal, draftOverBudget, WAITING_FOR_UPLOAD } from "../attachm
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { AttachmentDraft, DraftAttachment } from "../hooks/useAttachmentDraft";
+import { readDraft, writeDraft } from "../state/composerDraft";
 import { composerKeyHint, composerPlaceholder, EMBEDDING_MODE_NOTICE } from "../state/modelCapability";
 import type { ActiveConversation } from "../state/StoreContext";
 import { useStore } from "../state/StoreContext";
+import { overlayOpen } from "../ui/overlayStack";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentPreview, type PreviewTarget } from "./AttachmentPreview";
 import { McpPicker } from "./McpPicker";
@@ -94,7 +96,10 @@ export function Composer({
   const { updateSettings, setLastReasoning, setLastReasoningMode } = useStore();
   // 손가락으로 쓰는 화면: Shift 가 없으니 Enter 는 줄바꿈, 보내기는 단추(handleKeyDown).
   const touch = useMediaQuery("(pointer: coarse)");
-  const [text, setText] = useState("");
+  // 쓰던 글은 대화마다 따로 남는다(state/composerDraft.ts). 이 컴포넌트는 대화를 옮겨도
+  // 새로 만들어지지 않으므로, 대화가 바뀌면 그 대화의 초안을 불러온다.
+  const [text, setTextState] = useState(() => readDraft(conversation.id));
+  const draftOwnerRef = useRef(conversation.id);
   const [budget, setBudget] = useState(conversation.settings.thinkingTokenBudget);
   // Enter pressed while an upload is still running: the text is frozen and the
   // turn goes out by itself once every upload has settled.
@@ -102,6 +107,29 @@ export function Composer({
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentsRef = useRef<HTMLDivElement>(null);
+
+  function setText(value: string) {
+    setTextState(value);
+    writeDraft(draftOwnerRef.current, value);
+  }
+
+  useEffect(() => {
+    if (draftOwnerRef.current === conversation.id) return;
+    draftOwnerRef.current = conversation.id;
+    setTextState(readDraft(conversation.id));
+    // 업로드를 기다리던 전송은 그 대화의 것이다 — 옮겨 간 대화로 나가지 않게 거둔다.
+    setPendingSubmit(false);
+  }, [conversation.id]);
+
+  // 새 대화(새 대화 단추·⌘⇧O·처음 열 때·열린 대화를 지운 뒤)를 열면 곧바로 쓸 수 있게
+  // 입력창에 커서를 둔다. 손가락 화면에서는 두지 않는다 — 자판이 저절로 올라와 화면을
+  // 가린다. 모달이 떠 있으면 그 모달의 차례다.
+  useEffect(() => {
+    if (touch || conversation.messages.length > 0 || overlayOpen()) return;
+    textareaRef.current?.focus();
+    // 대화가 바뀔 때만 — 메시지가 붙을 때마다 커서를 빼앗지 않는다.
+  }, [conversation.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Grow with the content up to MAX_COMPOSER_HEIGHT, then stop and let the
   // textarea scroll internally — the composer must never push the transcript
@@ -213,6 +241,21 @@ export function Composer({
     if (picked.length > 0) attachments.addFiles(picked, "picker");
   }
 
+  /**
+   * 칩을 지우면 그 단추가 사라져 포커스가 body 로 떨어졌다. 같은 자리의 다음 칩(없으면
+   * 앞 칩)의 지우기 단추로, 칩이 다 없어지면 입력창으로 옮긴다 — 키보드로 여러 개를
+   * 연달아 지울 수 있게.
+   */
+  function removeAttachment(localId: string) {
+    const index = items.findIndex((item) => item.localId === localId);
+    attachments.remove(localId);
+    requestAnimationFrame(() => {
+      const buttons = attachmentsRef.current?.querySelectorAll<HTMLButtonElement>('[data-tooltip="첨부 제거"]');
+      const next = buttons && buttons.length > 0 ? buttons[Math.min(index, buttons.length - 1)] : null;
+      (next ?? textareaRef.current)?.focus();
+    });
+  }
+
   function fillFromStarter(value: string) {
     setText(value);
     // 값이 그려진 뒤에 커서를 끝으로 옮긴다. 지금 옮기면 이전 값의 끝에 선다.
@@ -250,14 +293,14 @@ export function Composer({
 
         {hasAttachments && (
           <>
-            <div className="composer-attachments">
+            <div className="composer-attachments" ref={attachmentsRef}>
               {items.map((item) => (
                 <AttachmentChip
                   key={item.localId}
                   item={item}
                   overBudget={attachments.overBudgetIds.has(item.localId)}
                   onPreview={() => setPreview(previewTargetFor(item))}
-                  onRemove={() => attachments.remove(item.localId)}
+                  onRemove={() => removeAttachment(item.localId)}
                   onRetry={() => attachments.retry(item.localId)}
                 />
               ))}

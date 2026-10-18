@@ -57,6 +57,7 @@ type _MessageAttachment = Expect<Mutual<Server.MessageAttachment, Client.Message
 type _MessageEmbedding = Expect<Mutual<Server.MessageEmbedding, Client.MessageEmbedding>>;
 type _MessageRole = Expect<Mutual<Server.MessageRole, Client.MessageRole>>;
 type _MessageUsage = Expect<Mutual<Server.MessageUsage, Client.MessageUsage>>;
+type _MessageFeedback = Expect<Mutual<Server.MessageFeedback, Client.MessageFeedback>>;
 type _RagDocument = Expect<Mutual<Server.RagDocument, Client.RagDocument>>;
 type _SharedRagDocument = Expect<Mutual<Server.SharedRagDocument, Client.SharedRagDocument>>;
 type _RagDocumentScope = Expect<Mutual<Server.RagDocumentScope, Client.RagDocumentScope>>;
@@ -93,6 +94,7 @@ export type ContractChecked = [
   _MessageEmbedding,
   _MessageRole,
   _MessageUsage,
+  _MessageFeedback,
   _RagDocument,
   _RagDocumentScope,
   _SharedRagDocument,

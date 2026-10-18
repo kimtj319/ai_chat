@@ -11,8 +11,17 @@ const RATE_LIMITED = "요청이 많아 잠시 처리할 수 없습니다. 1분�
 const UNAUTHORIZED = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
 const GENERIC = "답변을 만들지 못했습니다.";
 
-/** 사용자의 중지 버튼으로 끝난 답. 오류가 아니다. */
-const USER_STOP = /중지되었습니다|AbortError|aborted by user|aborted-by-user|The user aborted/i;
+/**
+ * 사용자의 중지 버튼으로 끝난 답. 오류가 아니다. "Cancelled by client." 는 서버가
+ * 멈춘 답을 저장하던 문구다(server/chat/toolLoop.ts) — 지금은 stopped 로 저장하지만,
+ * 그 전에 저장된 답은 이 문구를 error 로 들고 있다.
+ */
+const USER_STOP = /중지되었습니다|AbortError|aborted by user|aborted-by-user|The user aborted|Cancelled by client/i;
+
+/** 이 오류 문구가 사용자가 멈춘 것인가. 멈춘 답은 실패 카드 대신 "중지됨" 으로 보인다. */
+export function isUserStop(raw: string | undefined | null): boolean {
+  return USER_STOP.test((raw ?? "").trim());
+}
 
 /** 브라우저 쪽 연결(src/api/client.ts 의 문구)과 각 브라우저의 fetch 실패 문구. */
 const NETWORK_ERROR =
@@ -32,7 +41,7 @@ function hasStatus(raw: string, status: number): boolean {
 export function friendlyError(raw: string | undefined | null): string | null {
   const text = (raw ?? "").trim();
   if (text.length === 0) return null;
-  if (USER_STOP.test(text)) return null;
+  if (isUserStop(text)) return null;
   if (SERVER_GUIDANCE.test(text)) return text;
   // 연결 문구가 먼저다: "서버에 연결할 수 없습니다: fetch failed" 는 모델 서버가 아니라
   // 이 브라우저와 웹 서버 사이가 끊긴 것이다.
@@ -45,7 +54,37 @@ export function friendlyError(raw: string | undefined | null): string | null {
   return GENERIC;
 }
 
-/** 잡은 예외의 원문 한 줄. Error 가 아닌 것이 던져져도 문자열로 바꾼다. */
-export function errorMessage(error: unknown): string {
+/* ------------------------------------------------- 화면에 보일 오류 한 줄 */
+
+/**
+ * src/api/http.ts 가 서버 문장 뒤에 붙이는 상태 꼬리 — "… (404 Not Found)".
+ * 세 자리 상태 번호로 시작하는 맨 끝 괄호만 본다. "(2건 실패)" 같은 다른 괄호는 건드리지 않는다.
+ */
+const STATUS_SUFFIX = /\s*\((\d{3})(?:\s[^()]*)?\)$/;
+
+/** 서버가 문장을 주지 않았을 때의 문구(http.ts). 이때는 상태가 유일한 단서라 남긴다. */
+const BARE_FAILURE = /^요청이 실패했습니다$/;
+
+function rawMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 잡은 예외를 화면에 보일 한 줄로. Error 가 아닌 것이 던져져도 문자열로 바꾼다.
+ *
+ * "(404 Not Found)" 같은 HTTP 꼬리는 뗀다 — 서버가 이미 사람에게 쓴 문장 뒤에 붙은
+ * 개발자용 표기라, 화면에서는 소음이다. 상태로 갈라야 하는 곳은 isNotFoundError 를 쓴다.
+ */
+export function errorMessage(error: unknown): string {
+  const raw = rawMessage(error);
+  const match = STATUS_SUFFIX.exec(raw);
+  if (!match) return raw;
+  const text = raw.slice(0, match.index);
+  return text.trim() === "" || BARE_FAILURE.test(text.trim()) ? raw : text;
+}
+
+/** 찾는 것이 없다는 답(404·410)이었는가. 지워진 글·만료된 공유 링크처럼 '오류' 가 아니라 '없음' 인 경우. */
+export function isNotFoundError(error: unknown): boolean {
+  const status = STATUS_SUFFIX.exec(rawMessage(error))?.[1];
+  return status === "404" || status === "410";
 }

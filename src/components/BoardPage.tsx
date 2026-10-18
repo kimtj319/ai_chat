@@ -5,7 +5,7 @@ import type { BoardPostStatus, BoardPostSummary, BoardPostView } from "../api/ty
 import { BOARD_HASH, boardPostHash, boardPostIdFromHash } from "../routes";
 import { cachedBoardList, loadBoardList } from "../state/boardCache";
 import { exactTime, hueOf, relativeTime } from "../state/boardFormat";
-import { errorMessage } from "../state/friendlyError";
+import { errorMessage, isNotFoundError } from "../state/friendlyError";
 import { BoardComposer } from "./BoardComposer";
 import { PostDetail } from "./BoardPost";
 import { CommentIcon, Label, ListBackIcon, nameOf, ref, SearchIcon, StatusIcon } from "./boardParts";
@@ -137,7 +137,8 @@ export function BoardPage({ onBack }: Props) {
       .catch((err) => {
         if (!alive) return;
         setPost(null);
-        setError(errorMessage(err));
+        // 없는 글(지워졌거나 주소가 틀림)은 아래 빈 자리가 말한다. 위 배너까지 띄우면 같은 말을 두 번 한다.
+        if (!isNotFoundError(err)) setError(errorMessage(err));
       })
       .finally(() => {
         if (alive) setPostLoading(false);
@@ -209,6 +210,8 @@ export function BoardPage({ onBack }: Props) {
       setConfirming(null);
       showList();
       void reload();
+      // 목록으로 돌아오기만 하면 지워졌는지 알 수 없다.
+      showToast(`${ref(target.number)} 문의를 삭제했습니다.`.trim());
     }
   }
 
@@ -285,10 +288,12 @@ export function BoardPage({ onBack }: Props) {
           ) : (
             // 지워졌거나, 주소를 잘못 받았거나. 막다른 길에 세워 두지 않는다.
             <div className="board-row-empty">
-              <p>글을 열 수 없습니다.</p>
-              <button type="button" className="btn" onClick={showList}>
-                목록으로
-              </button>
+              <EmptyState
+                title="글을 열 수 없습니다"
+                reason="지워졌거나 주소가 잘못되었을 수 있습니다."
+                actionLabel="목록으로"
+                onAction={showList}
+              />
             </div>
           )
         ) : (
