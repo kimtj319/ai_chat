@@ -10,6 +10,8 @@
  * 다시 process.env 를 읽는 이유도 그것이다 — 파서를 거친 뒤의 값은 이미
  * 멀쩡해 보여서, 원본을 봐야 오타를 알 수 있다.
  */
+import { isMailAddress } from "./mail/smtp.js";
+
 export interface ConfigProblem {
   key: string;
   value: string;
@@ -17,7 +19,7 @@ export interface ConfigProblem {
 }
 
 /** ratio0 은 0 도 받는 비율이다 — CONTEXT_COMPACT_RATIO 는 0 이 "압축 끄기" 다. */
-type Kind = "int" | "port" | "ratio" | "ratio0" | "ms" | "url" | "bool" | "dir" | "level" | "crash";
+type Kind = "int" | "port" | "ratio" | "ratio0" | "ms" | "url" | "bool" | "dir" | "level" | "crash" | "smtpSecure" | "mail";
 
 interface Rule {
   key: string;
@@ -72,6 +74,11 @@ const RULES: Rule[] = [
   { key: "COOKIE_SECURE", kind: "bool" },
   { key: "LOGIN_ATTEMPTS_PER_MINUTE", kind: "int" },
   { key: "LOGIN_ATTEMPTS_PER_IP_PER_MINUTE", kind: "int" },
+  { key: "APP_BASE_URL", kind: "url" },
+  { key: "SMTP_PORT", kind: "port" },
+  { key: "SMTP_SECURE", kind: "smtpSecure" },
+  { key: "SMTP_TLS_REJECT_UNAUTHORIZED", kind: "bool" },
+  { key: "MAIL_FROM", kind: "mail" },
 ];
 
 function checkValue(rule: Rule, raw: string): string | null {
@@ -111,6 +118,11 @@ function checkValue(rule: Rule, raw: string): string | null {
       return /^(debug|info|warn|error|silent)$/i.test(raw.trim()) ? null : "debug·info·warn·error·silent 중 하나여야 합니다";
     case "crash":
       return /^(exit|keep)$/i.test(raw.trim()) ? null : "exit 또는 keep 이어야 합니다";
+    case "smtpSecure":
+      // 파서는 모르는 값을 starttls 로 읽는다. "tls" 라고 적은 사람은 465 를 뜻했을 것이다.
+      return /^(starttls|ssl|none)$/i.test(raw.trim()) ? null : "starttls·ssl·none 중 하나여야 합니다";
+    case "mail":
+      return isMailAddress(raw.trim()) ? null : "메일 주소여야 합니다 (예: noreply@example.com) — 이름은 MAIL_FROM_NAME 에";
     case "dir":
       // 있는지까지만 본다. 만들 수 있는지는 실제로 쓸 때 알게 되고, 여기서
       // 디렉터리를 만들어 버리면 오타난 경로가 조용히 생겨난다.
@@ -145,6 +157,9 @@ export function inspectConfig(env: NodeJS.ProcessEnv = process.env): {
   const pairs: Array<[string, string, string]> = [
     ["GITLAB_MCP_URL", "GITLAB_TOKEN", "둘 다 있어야 GitLab MCP 가 등록됩니다"],
     ["RAG_CHUNK_MODEL_URL", "RAG_CHUNK_MODEL", "둘 다 있어야 모델 청킹을 씁니다"],
+    // 한쪽만 있으면 답변 알림 메일이 조용히 꺼진 채로 뜬다.
+    ["SMTP_HOST", "MAIL_FROM", "둘 다 있어야 답변 알림 메일을 보냅니다"],
+    ["SMTP_USER", "SMTP_PASSWORD", "둘 다 있어야 메일 서버에 로그인합니다"],
   ];
 
   // 관리자 짝은 **막지 않는다**. ensureAdminFromEnv() 는 첫 기동에만 계정을
@@ -172,6 +187,13 @@ export function inspectConfig(env: NodeJS.ProcessEnv = process.env): {
       key: "MCP_IDENTITY_TOKEN",
       value: "(비어 있음)",
       message: "RAG MCP 는 등록되지만 누가 묻는지 전하지 않아, 모두가 공용 문서만 보게 됩니다",
+    });
+  }
+  if (env.SMTP_USER?.trim() && /^none$/i.test(env.SMTP_SECURE?.trim() ?? "")) {
+    warnings.push({
+      key: "SMTP_SECURE",
+      value: "none",
+      message: "메일 서버 비밀번호를 암호화 없이 보냅니다 — 사내망 안의 서버가 아니라면 starttls 나 ssl 을 쓰세요",
     });
   }
   for (const key of ["RAG_MCP_URL", "GITLAB_MCP_URL"]) {

@@ -671,17 +671,18 @@
   border-radius: 0;
 }
 
-.board-note-body .markdown-body {
+/* 글과 답변은 적은 그대로 — 줄바꿈과 공백을 지키고, 긴 주소는 아무 데서나 끊어 칸을 넘지 않게. */
+.board-plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: var(--text-sm);
   line-height: 1.75;
 }
 
-.board-note-body .markdown-body > :first-child {
-  margin-top: 0;
-}
-
-.board-note-body .markdown-body > :last-child {
-  margin-bottom: 0;
+.board-plain a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .board-note-empty {
@@ -820,7 +821,8 @@
   font: inherit;
   font-size: var(--text-sm);
   line-height: 1.7;
-  resize: vertical;
+  /* 칸이 내용을 따라 자란다(PlainTextField). 손으로 늘린 높이는 다음 글자에 되돌아간다. */
+  resize: none;
   outline: none;
 }
 
@@ -952,68 +954,8 @@
 }
 
 .board-textarea {
-  resize: vertical;
+  resize: none;
   line-height: 1.7;
-}
-
-/* 마크다운 입력과 바로 보이는 결과. 화면 폭이 아니라 이 상자의 폭으로 가른다 —
-   같은 칸이 넓은 글쓰기 창에도, 정보 패널 옆의 좁은 본문 칸에도 놓인다. */
-.board-md {
-  container-type: inline-size;
-}
-
-.board-md-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
-}
-
-.board-md-preview {
-  min-width: 0;
-  max-height: min(60vh, 520px);
-  overflow: auto;
-  border: 1px dashed var(--outline-variant);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-}
-
-.board-md-preview-label {
-  display: block;
-  margin-bottom: var(--space-3);
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  color: var(--on-surface-variant);
-}
-
-.board-md-preview-empty {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--on-surface-variant);
-}
-
-@container (min-width: 600px) {
-  .board-md-split {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-}
-
-/* 답변 상자 안에서는 상자가 테두리를 맡는다. 입력과 결과 사이에 선 하나만. */
-.board-reply-form .board-md-split {
-  gap: 0;
-}
-
-.board-reply-form .board-md-preview {
-  border: none;
-  border-top: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
-  border-radius: 0;
-  background: transparent;
-}
-
-@container (min-width: 600px) {
-  .board-reply-form .board-md-preview {
-    border-top: none;
-    border-left: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
-  }
 }
 
 .board-compose-actions {

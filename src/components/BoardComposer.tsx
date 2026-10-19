@@ -4,14 +4,14 @@ import * as api from "../api/client";
 import type { BoardPostView } from "../api/types";
 import { hueOf } from "../state/boardFormat";
 import { errorMessage } from "../state/friendlyError";
-import { isSubmitChord, Label, MarkdownField, MAX_BODY_CHARS, MAX_TAGS, MAX_TITLE_CHARS, ref } from "./boardParts";
+import { isSubmitChord, Label, MAX_BODY_CHARS, MAX_TAGS, MAX_TITLE_CHARS, PlainTextField, ref } from "./boardParts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
 
 /* ------------------------------------------------------- 새 글 쓰기·고치기 */
 
 interface BoardComposerProps {
-  /** 있으면 이 글을 고친다. 같은 칸·같은 미리보기를 써야 고친 글이 쓴 글과 같은 모양이 된다. */
+  /** 있으면 이 글을 고친다. 쓸 때와 같은 칸을 쓴다. */
   editing?: BoardPostView;
   knownTags: string[];
   onCancel: () => void;
@@ -80,8 +80,7 @@ export function BoardComposer({ editing, knownTags, onCancel, onDone, onError }:
 
   return (
     <>
-      {/* 미리보기가 입력칸 옆에 설 만큼 넓게. 좁은 화면에서는 모달이 화면 폭을 따른다. */}
-      <Modal title={editing ? `문의 수정 ${ref(editing.number)}`.trim() : "새 문의"} onClose={requestClose} width={960}>
+      <Modal title={editing ? `문의 수정 ${ref(editing.number)}`.trim() : "새 문의"} onClose={requestClose} width={560}>
         <div className="board-compose">
           <label className="board-field">
             <span className="board-field-label">제목</span>
@@ -102,7 +101,6 @@ export function BoardComposer({ editing, knownTags, onCancel, onDone, onError }:
             />
           </label>
 
-          {/* label 로 감싸지 않는다 — 미리보기 안의 링크·복사 단추를 누르면 입력칸으로 포커스가 튄다. */}
           <div className="board-field">
             <label className="board-field-label" htmlFor="board-compose-body">
               내용
@@ -112,7 +110,7 @@ export function BoardComposer({ editing, knownTags, onCancel, onDone, onError }:
                 </span>
               )}
             </label>
-            <MarkdownField
+            <PlainTextField
               id="board-compose-body"
               className="board-input board-textarea"
               rows={7}
@@ -125,7 +123,7 @@ export function BoardComposer({ editing, knownTags, onCancel, onDone, onError }:
                   void submit();
                 }
               }}
-              placeholder="상황과 재현 방법을 적어 주시면 답하기 쉽습니다. 마크다운을 쓸 수 있습니다."
+              placeholder="상황과 재현 방법을 적어 주시면 답하기 쉽습니다."
             />
           </div>
 

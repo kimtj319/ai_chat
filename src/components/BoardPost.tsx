@@ -6,9 +6,8 @@ import { boardPostHash } from "../routes";
 import { exactTime, hueOf, initialOf, participantsOf, relativeTime, timelineOf } from "../state/boardFormat";
 import { copyText } from "../state/clipboard";
 import { errorMessage } from "../state/friendlyError";
-import { isSubmitChord, Label, LinkIcon, MarkdownField, MAX_BODY_CHARS, nameOf, ref, StatusIcon } from "./boardParts";
+import { isSubmitChord, Label, LinkIcon, MAX_BODY_CHARS, nameOf, PlainText, PlainTextField, ref, StatusIcon } from "./boardParts";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { MarkdownRenderer } from "./MarkdownRenderer";
 import { showToast } from "./Toast";
 
 /* ------------------------------------------------------------------- 글 하나 */
@@ -89,7 +88,7 @@ export function PostDetail({ post, busy, onStatus, onEdit, onDelete, onReplied, 
           <section className="board-note board-note-description" aria-label="본문">
             <NoteHead name={post.authorName} id={post.authorId} at={post.createdAt} editedAt={post.editedAt} isAuthor={false} />
             <div className="board-note-body">
-              {post.body ? <MarkdownRenderer content={post.body} /> : <p className="board-note-empty">설명이 없습니다.</p>}
+              {post.body ? <PlainText text={post.body} /> : <p className="board-note-empty">설명이 없습니다.</p>}
             </div>
           </section>
 
@@ -126,12 +125,12 @@ export function PostDetail({ post, busy, onStatus, onEdit, onDelete, onReplied, 
 
           {/* 닫힌 글에도 답변은 달 수 있다 — 닫았다고 대화가 끝나는 것은 아니다. */}
           <div className="board-reply-form">
-            <MarkdownField
+            <PlainTextField
               id="board-reply"
               className="board-reply-input"
               rows={4}
               maxLength={MAX_BODY_CHARS}
-              placeholder="답변을 적어 주세요. 마크다운을 쓸 수 있습니다."
+              placeholder="답변을 적어 주세요."
               value={reply}
               onChange={(e) => setReply(e.target.value)}
               onKeyDown={(e) => {
@@ -204,8 +203,8 @@ export function PostDetail({ post, busy, onStatus, onEdit, onDelete, onReplied, 
 }
 
 /**
- * 답변 하나. 쓴 사람(과 관리자)은 그 자리에서 고친다 — 달 때와 같은 입력칸과
- * 미리보기를 쓴다. 고치는 동안의 글은 이 안에만 있어서, 다른 답변이 달려 글이
+ * 답변 하나. 쓴 사람(과 관리자)은 그 자리에서 고친다 — 달 때와 같은 입력칸을
+ * 쓴다. 고치는 동안의 글은 이 안에만 있어서, 다른 답변이 달려 글이
  * 새로 와도(key 가 답변 id 라) 쓰던 것이 날아가지 않는다.
  */
 function ReplyNote({
@@ -264,11 +263,11 @@ function ReplyNote({
       />
       {draft === null ? (
         <div className="board-note-body">
-          <MarkdownRenderer content={reply.body} />
+          <PlainText text={reply.body} />
         </div>
       ) : (
         <div className="board-reply-form board-note-editor">
-          <MarkdownField
+          <PlainTextField
             className="board-reply-input"
             rows={4}
             maxLength={MAX_BODY_CHARS}

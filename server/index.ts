@@ -12,6 +12,7 @@ import { ensureAdminFromEnv } from "./auth/bootstrap.js";
 import { seedBuiltinServers } from "./mcp/builtinServers.js";
 import { warm as warmMcpDiscovery } from "./mcp/discovery.js";
 import { startScheduleRunner } from "./chat/scheduleRunner.js";
+import { describeMailConfig, mailConfigFromEnv } from "./mail/smtp.js";
 
 // 무엇이든 기록되기 전에 건다 — 기동 중의 경고도 파일에 남아야 한다.
 if (config.logDir) startFileLogging(config.logDir);
@@ -36,6 +37,8 @@ const server = app.listen(config.port, () => {
   console.log(`[server] listening on 0.0.0.0:${config.port} (http://localhost:${config.port})`);
   console.log(`[server] vLLM base URL: ${config.vllmBaseUrl}`);
   console.log(`[server] data dir: ${config.dataDir}`);
+  // 메일이 꺼져 있다는 것도 말해 둔다 — 안 오는 메일은 아무 데도 흔적을 남기지 않는다.
+  console.log(`[mail] 답변 알림 메일: ${describeMailConfig(mailConfigFromEnv())}`);
 
   // One probe per endpoint at boot, so a typo in .model or a host that is down
   // shows up in the log instead of as an empty model picker. Never fatal: a

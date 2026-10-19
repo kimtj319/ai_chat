@@ -1,8 +1,7 @@
 import type React from "react";
-import { useDeferredValue, type TextareaHTMLAttributes } from "react";
+import { useLayoutEffect, useRef, type TextareaHTMLAttributes } from "react";
 import type { BoardPostStatus } from "../api/types";
-import { hueOf } from "../state/boardFormat";
-import { MarkdownRenderer } from "./MarkdownRenderer";
+import { hueOf, linkParts } from "../state/boardFormat";
 
 /* 문의 게시판의 목록·글·새 글 쓰기가 같이 쓰는 조각들. */
 
@@ -23,31 +22,45 @@ export function isSubmitChord(e: { key: string; ctrlKey: boolean; metaKey: boole
   return e.key === "Enter" && (e.ctrlKey || e.metaKey);
 }
 
+/** 입력칸이 이만큼까지 자라고, 넘으면 칸 안에서 굴린다 — 창 밖으로 밀어내지 않게. */
+const FIELD_MAX_VH = 0.6;
+
 /**
- * 마크다운 입력칸과 그 결과를 한 상자에. GitLab 은 작성·미리보기 탭을 오가야
- * 결과가 보이지만 여기서는 치는 대로 바로 그려진다 — 표나 코드 블록이 제대로
- * 닫혔는지 올리기 전에 안다. 넓으면 나란히, 좁으면 입력칸 아래에 놓인다.
- *
- * 글과 답변을 그리는 것과 같은 MarkdownRenderer 를 쓰고, 서버가 하듯 앞뒤 공백을
- * 걷은 뒤에 그린다(앞에 공백 넷이면 코드 블록이 되지만 올리면 사라진다). 미리보기와
- * 올린 결과가 어긋나면 미리보기를 믿을 수 없다.
- *
- * 그리기는 useDeferredValue 로 한 박자 늦춘다. 긴 글에서 글자마다 다시 그리면
- * 입력이 끊기는데, 늦춘 값은 손이 쉬는 틈에 따라잡고 입력칸은 늘 바로 반응한다.
+ * 게시판의 여러 줄 입력칸. 글은 적은 그대로 올라가고 그대로 보인다(마크다운을
+ * 해석하지 않는다) — 그래서 미리보기가 필요 없다. 대신 칸이 내용을 따라 자라서
+ * 긴 글도 굴리지 않고 한눈에 본다. 높이는 rows 아래로 줄지 않는다.
  */
-export function MarkdownField({ value, ...textarea }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
-  const shown = useDeferredValue(value).trim();
+export function PlainTextField({ value, ...textarea }: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 먼저 비워야 줄어들 때도 맞는다. 최소 높이는 CSS(min-height)와 rows 가 맡는다.
+    el.style.height = "auto";
+    const max = Math.round(window.innerHeight * FIELD_MAX_VH);
+    el.style.height = `${Math.min(el.scrollHeight + (el.offsetHeight - el.clientHeight), max)}px`;
+    el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
+  }, [value]);
+  return <textarea ref={ref} {...textarea} value={value} />;
+}
+
+/**
+ * 글과 답변을 일반 글로 그린다. 줄바꿈과 공백은 CSS(pre-wrap)가 지키고,
+ * http(s) 주소만 새 탭에서 열리는 링크가 된다. 마크다운으로 쓴 옛 글은 적힌
+ * 그대로 보인다.
+ */
+export function PlainText({ text }: { text: string }) {
   return (
-    <div className="board-md">
-      <div className="board-md-split">
-        <textarea {...textarea} value={value} />
-        <section className="board-md-preview board-note-body" aria-label="미리보기">
-          <span className="board-md-preview-label" aria-hidden="true">
-            미리보기
-          </span>
-          {shown ? <MarkdownRenderer content={shown} /> : <p className="board-md-preview-empty">적는 대로 여기에 바로 보입니다.</p>}
-        </section>
-      </div>
+    <div className="board-plain">
+      {linkParts(text).map((part, i) =>
+        part.url ? (
+          <a key={i} href={part.text} target="_blank" rel="noopener noreferrer">
+            {part.text}
+          </a>
+        ) : (
+          part.text
+        ),
+      )}
     </div>
   );
 }

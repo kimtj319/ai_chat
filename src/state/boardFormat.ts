@@ -63,3 +63,47 @@ export function participantsOf(post: BoardPostView): Array<{ id: string; name: s
   for (const r of post.replies) if (!seen.has(r.authorId)) seen.set(r.authorId, r.authorName);
   return [...seen].map(([id, name]) => ({ id, name }));
 }
+
+/** 게시판 글 한 조각. url 이면 그 글자 그대로가 링크 주소다. */
+export interface TextPart {
+  text: string;
+  url: boolean;
+}
+
+/** 공백과 꺾쇠·따옴표·백틱에서 끝난다 — 글 속에서 주소를 감쌀 때 흔히 쓰는 글자들이다. */
+const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi;
+
+/**
+ * 게시판은 일반 글이라 HTML 도 마크다운도 해석하지 않는다. 다만 http(s) 주소만은
+ * 눌러서 열 수 있게 조각을 나눈다 — innerHTML 이 아니라 조각을 돌려주므로 화면은
+ * 글자를 늘 글자로 그리고, 링크가 되는 것은 http(s) 로 시작하는 조각뿐이다.
+ *
+ * 문장부호는 주소 끝에서 뗀다("…/x." 의 마침표, "(…/x)" 의 닫는 괄호). 주소 안의
+ * 짝 맞는 괄호(위키 주소의 "Foo_(bar)")는 남긴다. 조각을 이으면 늘 원문이다.
+ */
+export function linkParts(text: string): TextPart[] {
+  const parts: TextPart[] = [];
+  let last = 0;
+  for (const match of text.matchAll(URL_PATTERN)) {
+    let url = match[0];
+    for (;;) {
+      const trimmed = url.replace(/[.,;:!?…\]}。、]+$/, "");
+      if (trimmed !== url) {
+        url = trimmed;
+        continue;
+      }
+      if (url.endsWith(")") && url.split("(").length < url.split(")").length) {
+        url = url.slice(0, -1);
+        continue;
+      }
+      break;
+    }
+    if (!/^https?:\/\/[^/?#]+/i.test(url)) continue;
+    const at = match.index;
+    if (at > last) parts.push({ text: text.slice(last, at), url: false });
+    parts.push({ text: url, url: true });
+    last = at + url.length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), url: false });
+  return parts;
+}

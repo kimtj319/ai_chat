@@ -22,6 +22,7 @@ import {
   setStatus,
 } from "../storage/boardStore.js";
 import { userNamesById } from "../storage/userStore.js";
+import { notifyBoardReply } from "../mail/boardReplyMail.js";
 import { isValidId } from "../storage/paths.js";
 import type {
   BoardErrorCode,
@@ -139,6 +140,9 @@ boardRouter.post("/board/:id/replies", express.json({ limit: "64kb" }), async (r
         ? fail(res, 400, "invalid_input", "답변 내용을 적어 주세요.")
         : fail(res, 404, "not_found", "존재하지 않는 글입니다.");
     }
+    // 글쓴이에게 메일로 알린다. 기다리지 않는다 — 답변은 이미 저장됐고, 메일
+    // 서버가 느리거나 죽어 있어도 답변 요청이 그 때문에 늦거나 실패하면 안 된다.
+    void notifyBoardReply(post, post.replies[post.replies.length - 1]);
     res.status(201).json({ post: await toView(post, req) });
   } catch (err) {
     next(err);

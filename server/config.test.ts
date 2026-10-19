@@ -129,6 +129,26 @@ console.log("server/config.ts — inspectConfig");
   check("둘 다 있으면 조용하다", warns({ ADMIN_ID: "kim", ADMIN_PASSWORD: "x" }).length === 0);
 }
 
+/* ------------------------------------------------------------ 답변 알림 메일 */
+
+{
+  const mail = { SMTP_HOST: "smtp.example.com", MAIL_FROM: "noreply@example.com" };
+  check("메일 설정이 없으면 문제가 아니다(꺼짐)", errs({}).length === 0);
+  check("서버와 보내는 주소가 있으면 통과", errs(mail).length === 0, JSON.stringify(errs(mail)));
+  check("SMTP_HOST 만 있으면 막는다", errs({ SMTP_HOST: "smtp.example.com" }).includes("MAIL_FROM"));
+  check("MAIL_FROM 만 있으면 막는다", errs({ MAIL_FROM: "noreply@example.com" }).includes("SMTP_HOST"));
+  check("MAIL_FROM 이 주소가 아니면 막는다", errs({ ...mail, MAIL_FROM: "AI Console" }).includes("MAIL_FROM"));
+  check("SMTP_SECURE 는 셋 중 하나", errs({ ...mail, SMTP_SECURE: "tls" }).includes("SMTP_SECURE"));
+  check("  ssl·starttls·none 은 통과", ["ssl", "starttls", "none", "SSL"].every((v) => !errs({ ...mail, SMTP_SECURE: v }).includes("SMTP_SECURE")));
+  check("SMTP_PORT 는 포트", errs({ ...mail, SMTP_PORT: "abc" }).includes("SMTP_PORT"));
+  check("SMTP_TLS_REJECT_UNAUTHORIZED 는 불리언", errs({ ...mail, SMTP_TLS_REJECT_UNAUTHORIZED: "아마" }).includes("SMTP_TLS_REJECT_UNAUTHORIZED"));
+  check("APP_BASE_URL 은 주소", errs({ APP_BASE_URL: "console" }).includes("APP_BASE_URL"));
+  check("SMTP_USER 만 있고 비밀번호가 없으면 막는다", errs({ ...mail, SMTP_USER: "mailer" }).includes("SMTP_PASSWORD"));
+  check("비밀번호만 있어도 막는다", errs({ ...mail, SMTP_PASSWORD: "x" }).includes("SMTP_USER"));
+  const plain = { ...mail, SMTP_SECURE: "none", SMTP_USER: "mailer", SMTP_PASSWORD: "x" };
+  check("평문으로 비밀번호를 보내면 알려 준다", warns(plain).includes("SMTP_SECURE") && errs(plain).length === 0, JSON.stringify(inspectConfig(plain)));
+}
+
 /* ------------------------------------------- http MCP 인데 허용 목록에 없으면 막는다 */
 
 {

@@ -72,6 +72,23 @@
   padding: var(--space-2);
 }
 
+/* 인사말 아래 칩·대화 머리 칩에서 열 때는 단추 아래로(폰은 바텀시트, App.css). 데스크톱은
+   body 에 띄워 단추 자리에 고정하므로(ModelSelector) 입력창·머리보다 위에 선다. */
+.model-switcher-popover.below {
+  top: calc(100% + var(--space-3));
+  bottom: auto;
+}
+
+.model-switcher-popover.floating {
+  z-index: 70;
+}
+
+/* 폰의 칩에서 연 바텀시트(위치·모양은 App.css 의 폰 규칙). 폭은 화면 전체를 쓰므로
+   목록의 폭 상한을 푼다. */
+.model-switcher-popover.sheet {
+  max-width: none;
+}
+
 .model-switcher-option {
   display: flex;
   align-items: center;

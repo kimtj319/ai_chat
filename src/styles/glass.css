@@ -87,7 +87,7 @@
    an opaque sheet with only its top edge drawn, like the composer's sheets.
    This file loads last, so the sheet rule alone would lose to the pop tier. */
 @media (max-width: 640px) {
-  :is(.chat-download-menu, .notice-popover, .source-picker-menu) {
+  :is(.chat-download-menu, .notice-popover, .source-picker-menu, .model-switcher-popover.sheet) {
     background: var(--surface);
     backdrop-filter: none;
     border: none;

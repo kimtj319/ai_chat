@@ -1,3 +1,4 @@
+import { ModelSelector } from "./ModelSelector";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { attachmentLimitsFor } from "../attachments/limits";
 import { DROP_SUBTITLE, DROP_TITLE } from "../attachments/messages";
@@ -15,14 +16,13 @@ import { AnswerNowButton } from "./AnswerNowButton";
 import { Composer } from "./Composer";
 import { ConversationExportActions } from "./ConversationExportActions";
 import { MessageItem } from "./MessageItem";
-import { shortModelName } from "../state/modelCatalog";
 import { useModels } from "../hooks/useModels";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
 import { useRemoteCompaction } from "../hooks/useRemoteCompaction";
 import { StatusBanner } from "./StatusBanner";
 import { ScheduleBanner } from "./ScheduleBanner";
 import { CompactionProgress } from "./CompactionProgress";
-import { BoardIcon, ChevronDownIcon, PaperclipIcon } from "./icons";
+import { BoardIcon, PaperclipIcon } from "./icons";
 import "./ChatView.css";
 import { prefetchBoardList } from "../state/boardCache";
 import { NoticeButton } from "./NoticeButton";
@@ -125,7 +125,7 @@ export function ChatView({
   onOpenTools,
   onOpenBoard,
 }: ChatViewProps) {
-  const { createConversation, selectConversation, renameConversation, conversations, ui, setSidebarCollapsed } = useStore();
+  const { createConversation, selectConversation, renameConversation, conversations } = useStore();
   // 메시지를 그리는 쪽이라 흐르는 값을 직접 읽는다 — 토큰마다 다시 그려지는 것이 여기서는 제 일이다.
   const { activeConversation, activeConversationLoading, activeConversationError } = useActiveConversation();
   // A conversation with an empty `model` uses whatever the server defaults to,
@@ -280,24 +280,7 @@ export function ChatView({
     : capabilityOf(selectedEntry) === "embedding"
       ? "embedding"
       : "chat";
-  // "Qwen3.8-27B (abliterated)" → "Qwen3.8-27B": 괄호 꼬리표는 고르는 목록에서 보면 된다.
-  const modelLabel = shortModelName(activeConversation.model || current || models[0] || "").replace(/\s*\([^)]*\)$/, "");
 
-  // 모델은 사이드바 바닥의 선택기에서 고른다. 거기를 열어 준다 — 폰이면 서랍을, 접혀
-  // 있으면 사이드바를 먼저 펼치고, 그려진 다음 프레임에 선택기를 연다.
-  function openModelSelector() {
-    const drawerToggle = document.querySelector<HTMLButtonElement>(".app-drawer-toggle");
-    if (drawerToggle) drawerToggle.click();
-    else if (ui.sidebarCollapsed) setSidebarCollapsed(false);
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const trigger = document.querySelector<HTMLButtonElement>(".sidebar .model-switcher-trigger");
-        if (!trigger) return;
-        trigger.focus();
-        if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
-      }),
-    );
-  }
 
   return (
     <div ref={viewRef} className={`chat-view${hasMessages ? " has-messages" : ""}`} {...dropHandlers}>
@@ -328,16 +311,8 @@ export function ChatView({
                   title={headerTitle}
                   onRename={(title) => renameConversation(activeConversation.id, title)}
                 />
-                <button
-                  type="button"
-                  className="chat-header-model"
-                  data-tooltip="모델 바꾸기"
-                  aria-label={`모델 ${modelLabel} — 모델 바꾸기`}
-                  onClick={openModelSelector}
-                >
-                  {modelLabel}
-                  <ChevronDownIcon aria-hidden="true" />
-                </button>
+                {/* 누른 자리에서 바로 고른다(ModelSelector). */}
+                <ModelSelector triggerClassName="chat-header-model" placement="below" />
               </>
             )}
           </div>
@@ -391,17 +366,8 @@ export function ChatView({
           {!hasMessages ? (
             <div className="chat-empty-state chat-empty-state-greeting">
               <h1 className="empty-greeting">무엇을 도와드릴까요?</h1>
-              {/* Reads the conversation's own model, so switching it in the
-                  sidebar updates this chip immediately. */}
-              <button
-                type="button"
-                className="empty-model-chip"
-                aria-label={`모델 ${modelLabel} — 모델 바꾸기`}
-                onClick={openModelSelector}
-              >
-                모델 · {modelLabel}
-                <ChevronDownIcon aria-hidden="true" />
-              </button>
+              {/* 누른 자리에서 바로 고른다. 사이드바 바닥의 선택기와 같은 대화 모델을 본다. */}
+              <ModelSelector triggerClassName="empty-model-chip" placement="below" renderLabel={(name) => `모델 · ${name}`} />
             </div>
           ) : (
             (() => {

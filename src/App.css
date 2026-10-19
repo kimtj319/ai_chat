@@ -338,7 +338,8 @@
   .reasoning-popover,
   .chat-download-menu,
   .notice-popover,
-  .source-picker-menu {
+  .source-picker-menu,
+  .model-switcher-popover.sheet {
     position: fixed;
     top: auto;
     right: 0;
@@ -377,7 +378,8 @@
   .reasoning-popover,
   .chat-download-menu,
   .notice-popover,
-  .source-picker-menu {
+  .source-picker-menu,
+  .model-switcher-popover.sheet {
     animation: none;
   }
 }
