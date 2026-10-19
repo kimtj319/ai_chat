@@ -1,15 +1,3 @@
-/* Persistent, not dismissible: this API makes the server fetch an arbitrary
-   address on request and the app has no authentication of its own. */
-.endpoint-warning {
-  margin: 0 0 var(--space-8);
-  padding: var(--space-5) var(--space-6);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-  color: var(--warning);
-  background: var(--warning-bg);
-}
-
 .endpoint-list {
   list-style: none;
   margin: 0 0 var(--space-9);

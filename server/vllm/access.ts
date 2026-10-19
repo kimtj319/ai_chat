@@ -10,8 +10,10 @@ import { isEnvEndpoint } from "./endpoints.js";
 /**
  * 누가 어느 모델을 쓸 수 있는가.
  *   - 공용 자원 계정(관리자·AI Product, auth/privilege.ts): 전부.
- *   - 그 밖의 계정: 기본 모델(VLLM_ENDPOINTS — 운영에서는 wise 모델만 둔다)과
- *     본인이 화면에서 등록한 엔드포인트의 모델.
+ *   - 그 밖의 계정: 기본 모델(VLLM_ENDPOINTS — 운영에서는 wise 모델만 둔다),
+ *     본인이 화면에서 등록한 엔드포인트의 모델, 그리고 같은 그룹 사람이 등록한 엔드포인트의 모델.
+ *     그룹은 등록할 때가 아니라 쓸 때 본다 — 등록한 사람이나 쓰는 사람이 그룹을 옮기면 공유도 따라간다.
+ *     그룹이 없는 계정은 본인 것만, 등록한 사람이 기록되지 않은 엔드포인트는 공용 자원 계정만 쓴다.
  * 화면에서 가리는 것만으로는 부족하다 — 모델 선택·질문 전송·예약 실행이 모두 이 규칙을 지난다.
  */
 export interface ModelAccess {
@@ -19,16 +21,28 @@ export interface ModelAccess {
   allows(entry: { baseUrl: string }): boolean;
   /** 이 엔드포인트를 등록한 사람이 이 계정인가. */
   owns(baseUrl: string): boolean;
+  /** 같은 그룹의 다른 사람이 등록한 엔드포인트인가. */
+  sharedWithGroup(baseUrl: string): boolean;
 }
 
 export async function modelAccessFor(user: Pick<UserRecord, "id" | "role" | "groupId"> | null | undefined): Promise<ModelAccess> {
   const privileged = await isPrivilegedUser(user);
   const owners = await readModelOwners();
   const owns = (baseUrl: string) => Boolean(user) && owners[ownerKey(baseUrl)] === user!.id;
+  const groupShared = new Set<string>();
+  if (user?.groupId) {
+    for (const [key, ownerId] of Object.entries(owners)) {
+      if (ownerId === user.id) continue;
+      const owner = await getUser(ownerId).catch(() => null);
+      if (owner?.groupId === user.groupId) groupShared.add(key);
+    }
+  }
+  const sharedWithGroup = (baseUrl: string) => groupShared.has(ownerKey(baseUrl));
   return {
     privileged,
     owns,
-    allows: (entry) => privileged || isEnvEndpoint(entry.baseUrl) || owns(entry.baseUrl),
+    sharedWithGroup,
+    allows: (entry) => privileged || isEnvEndpoint(entry.baseUrl) || owns(entry.baseUrl) || sharedWithGroup(entry.baseUrl),
   };
 }
 

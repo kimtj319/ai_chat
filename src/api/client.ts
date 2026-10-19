@@ -292,13 +292,8 @@ export class ModelEndpointError extends ApiError {
   }
 }
 
-/** Header the server accepts on endpoint mutations when it is protected. */
-const ADMIN_TOKEN_HEADER = "X-Model-Admin-Token";
-
-async function endpointMutation<T>(init: RequestInit, adminToken: string, signal?: AbortSignal, subpath = ""): Promise<T> {
+async function endpointMutation<T>(init: RequestInit, signal?: AbortSignal, subpath = ""): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  // Only sent when the operator actually supplied one.
-  if (adminToken.length > 0) headers[ADMIN_TOKEN_HEADER] = adminToken;
 
   let response: Response;
   try {
@@ -326,32 +321,26 @@ export function listModelEndpoints(): Promise<ModelEndpointsResponse> {
 
 export function addModelEndpoint(
   body: AddModelEndpointRequest,
-  adminToken: string,
   signal?: AbortSignal,
 ): Promise<AddModelEndpointResponse> {
-  return endpointMutation<AddModelEndpointResponse>(
-    { method: "POST", body: JSON.stringify(body) },
-    adminToken,
-    signal,
-  );
+  return endpointMutation<AddModelEndpointResponse>({ method: "POST", body: JSON.stringify(body) }, signal);
 }
 
 /** The models a server offers, without adding it (for the chooser). */
 export function probeModelEndpoint(
   body: { baseUrl: string; apiKey?: string },
-  adminToken: string,
   signal?: AbortSignal,
 ): Promise<ProbeModelEndpointResponse> {
-  return endpointMutation<ProbeModelEndpointResponse>({ method: "POST", body: JSON.stringify(body) }, adminToken, signal, "/probe");
+  return endpointMutation<ProbeModelEndpointResponse>({ method: "POST", body: JSON.stringify(body) }, signal, "/probe");
 }
 
 /** Limit an already-registered endpoint to these models ([] = all). */
-export function setModelEndpointModels(baseUrl: string, models: string[], adminToken: string): Promise<{ baseUrl: string; allowedModels: string[] | null }> {
-  return endpointMutation({ method: "PATCH", body: JSON.stringify({ baseUrl, models }) }, adminToken);
+export function setModelEndpointModels(baseUrl: string, models: string[]): Promise<{ baseUrl: string; allowedModels: string[] | null }> {
+  return endpointMutation({ method: "PATCH", body: JSON.stringify({ baseUrl, models }) });
 }
 
-export async function deleteModelEndpoint(baseUrl: string, adminToken: string): Promise<void> {
-  await endpointMutation<void>({ method: "DELETE", body: JSON.stringify({ baseUrl }) }, adminToken);
+export async function deleteModelEndpoint(baseUrl: string): Promise<void> {
+  await endpointMutation<void>({ method: "DELETE", body: JSON.stringify({ baseUrl }) });
 }
 
 /** 이 대화에서 진행 중인 컨텍스트 압축(새로 열었거나 새로 고친 페이지가 확인한다). */

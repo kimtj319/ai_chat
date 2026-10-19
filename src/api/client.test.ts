@@ -41,8 +41,8 @@ answer(401, { error: "로그인이 필요합니다.", code: "unauthenticated" })
 await bounces("관리 API 의 401 은 로그인 화면으로", () => api.listAdminUsers(), true);
 await bounces("계정 상태 변경의 401 도", () => api.updateUserStatus("u1", "approve"), true);
 await bounces("비밀번호 변경의 401 도", () => api.changePassword("a", "b"), true);
-await bounces("모델 서버 추가의 401 도", () => api.addModelEndpoint({ baseUrl: "http://x" }, ""), true);
-await bounces("모델 서버 제거의 401 도", () => api.deleteModelEndpoint("http://x", ""), true);
+await bounces("모델 서버 추가의 401 도", () => api.addModelEndpoint({ baseUrl: "http://x" }), true);
+await bounces("모델 서버 제거의 401 도", () => api.deleteModelEndpoint("http://x"), true);
 await bounces("로그인의 401 은 틀린 비밀번호일 뿐", () => api.login("id", "pw"), false);
 await bounces("내 계정 확인의 401 은 로그인 전일 뿐", () => api.getMe(), false);
 await bounces("가입의 401 도 그대로", () => api.signup({ id: "a", password: "b", name: "c", email: "d@e.f" } as never), false);

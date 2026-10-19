@@ -328,8 +328,10 @@ export interface ModelEndpoint {
   baseUrl: string;
   /** "env" entries are fixed by deployment and cannot be removed from the UI. */
   source: "file" | "env";
-  /** 이 계정이 등록한 서버 — 등록한 사람과 AI Product 팀만 쓸 수 있다. */
+  /** 이 계정이 등록한 서버 — 등록한 사람, 같은 그룹, AI Product 팀이 쓸 수 있다. */
   mine?: boolean;
+  /** 같은 그룹의 다른 사람이 등록한 서버. */
+  shared?: boolean;
   /** 이 계정이 지울 수 있는가(서버가 정한다). */
   deletable?: boolean;
   reachable: boolean;
@@ -342,8 +344,6 @@ export interface ModelEndpoint {
 }
 
 export interface ModelEndpointsResponse {
-  /** True when the server has no admin token configured — anyone can mutate. */
-  unprotected: boolean;
   /** 모든 모델을 쓰는 계정(관리자·AI Product 팀)인가. */
   privileged?: boolean;
   endpoints: ModelEndpoint[];

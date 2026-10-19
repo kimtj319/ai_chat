@@ -169,15 +169,6 @@ export const config = {
    */
   modelEndpointsFile: (process.env.MODEL_ENDPOINTS_FILE || "").trim(),
   /**
-   * Shared secret for POST/DELETE /api/models/endpoints, sent as
-   * X-Model-Admin-Token. Unset means anyone who can reach the app can make it
-   * fetch an arbitrary address and can register an endpoint that receives other
-   * people's conversations — the app has no authentication of its own. Unset is
-   * only reasonable on a trusted network; the mutations are logged with the
-   * client IP either way, and GET reports `unprotected: true`.
-   */
-  modelAdminToken: (process.env.MODEL_ADMIN_TOKEN || "").trim(),
-  /**
    * 모델별 추론 설정. "패턴=fixed" 또는 "패턴=budget[:최소값]" 을 쉼표로 잇는다.
    * 어떤 모델이 추론 필드를 받아들이는지는 서빙하는 쪽 사정이라 코드가 아니라
    * 배포가 안다 — 해석과 근거는 chat/reasoningProfiles.ts 에 있다.

@@ -20,7 +20,8 @@ process.env.VLLM_ENDPOINTS = "wise|http://mock-env/v1";
 process.env.VLLM_API_KEY = "";
 process.env.MODEL_CAPABILITY_PROBE = "0";
 process.env.REASONING_PROFILES = "";
-process.env.MODEL_ADMIN_TOKEN = "";
+// 예전 관리 키가 남아 있는 운영 .env 와 같게 둔다 — 이제는 등록을 막지 않아야 한다.
+process.env.MODEL_ADMIN_TOKEN = "legacy-admin-token";
 process.env.TAVILY_API_KEY = "shared-tavily-key";
 process.env.TAVILY_API_URL = "http://mock-tavily/search";
 process.env.GITLAB_MCP_URL = "http://mock-gitlab/mcp";
@@ -71,7 +72,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 
 /* ---------------------------------------------------------------- 계정 */
 
-for (const id of ["admin1", "aip1", "bob", "carol", "nogroup"]) {
+for (const id of ["admin1", "aip1", "bob", "carol", "nogroup", "dave"]) {
   await createUser({ id, name: id, email: `${id}@example.com`, password: "password-1234", status: "active", role: id === "admin1" ? "admin" : "user" });
 }
 const aip = await createGroup("  ai product ", "admin1");
@@ -80,6 +81,9 @@ if (!aip.ok || !other.ok) throw new Error("group setup failed");
 await setUserGroup("aip1", aip.group.id);
 await setUserGroup("bob", other.group.id);
 await setUserGroup("carol", other.group.id);
+const third = await createGroup("Third", "admin1");
+if (!third.ok) throw new Error("group setup failed");
+await setUserGroup("dave", third.group.id);
 
 /* ---------------------------------------------------------------- 1. 공용 자원 계정 */
 
@@ -240,29 +244,40 @@ async function call(as: string, method: string, p: string, body?: unknown): Prom
   check("등록한 사람은 기본+자기 모델", (await ids("bob")) === "bob-model,wise-model", await ids("bob"));
   check("AI Product 는 전부", (await ids("aip1")) === "bob-model,wise-model");
   check("관리자도 전부", (await ids("admin1")) === "bob-model,wise-model");
-  check("다른 일반 계정은 기본 모델만", (await ids("carol")) === "wise-model", await ids("carol"));
-  check("…current 도 쓸 수 있는 모델", (await call("carol", "GET", "/models")).json.current === "wise-model");
+  check("등록한 사람과 같은 그룹은 함께 쓴다", (await ids("carol")) === "bob-model,wise-model", await ids("carol"));
+  check("다른 그룹은 기본 모델만", (await ids("dave")) === "wise-model", await ids("dave"));
+  check("그룹 없는 계정도 기본 모델만", (await ids("nogroup")) === "wise-model", await ids("nogroup"));
+  check("…current 도 쓸 수 있는 모델", (await call("dave", "GET", "/models")).json.current === "wise-model");
 
-  const endpointsCarol = (await call("carol", "GET", "/models/endpoints")).json;
-  check("엔드포인트 목록도 걸러진다", endpointsCarol.endpoints.length === 1 && endpointsCarol.privileged === false);
+  const endpointsDave = (await call("dave", "GET", "/models/endpoints")).json;
+  check("엔드포인트 목록도 걸러진다", endpointsDave.endpoints.length === 1 && endpointsDave.privileged === false);
+  const carolRow = ((await call("carol", "GET", "/models/endpoints")).json.endpoints as Array<{ baseUrl: string; mine: boolean; shared?: boolean; deletable: boolean }>).find((e) => e.baseUrl === "http://mock-bob/v1");
+  check("같은 그룹에는 공유된 서버로 보인다(내 것 아님·못 지움)", carolRow?.mine === false && carolRow.shared === true && carolRow.deletable === false, JSON.stringify(carolRow));
   const endpointsBob = (await call("bob", "GET", "/models/endpoints")).json.endpoints as Array<{ baseUrl: string; mine: boolean; deletable: boolean }>;
   const bobRow = endpointsBob.find((e) => e.baseUrl === "http://mock-bob/v1");
   check("…자기 것은 mine·deletable", bobRow?.mine === true && bobRow.deletable === true);
   check("…기본 모델은 지울 수 없다", endpointsBob.find((e) => e.baseUrl === "http://mock-env/v1")?.deletable === false);
 
-  const carolAccess = await modelAccessForOwner("carol");
-  check("허용되지 않은 모델을 고르는 것은 금지", await modelIsForbidden(carolAccess, "bob-model"));
-  check("목록에 없는 id 는 금지가 아니다(나중에 대체)", !(await modelIsForbidden(carolAccess, "gone-model")));
-  check("질문할 때는 쓸 수 있는 모델로 대체", (await resolveModel("bob-model", carolAccess.allows)).model === "wise-model");
+  const daveAccess = await modelAccessForOwner("dave");
+  check("허용되지 않은 모델을 고르는 것은 금지", await modelIsForbidden(daveAccess, "bob-model"));
+  check("목록에 없는 id 는 금지가 아니다(나중에 대체)", !(await modelIsForbidden(daveAccess, "gone-model")));
+  check("질문할 때는 쓸 수 있는 모델로 대체", (await resolveModel("bob-model", daveAccess.allows)).model === "wise-model");
   check("등록한 사람은 그대로 쓴다", (await resolveModel("bob-model", (await modelAccessForOwner("bob")).allows)).model === "bob-model");
+  check("같은 그룹도 그대로 쓴다", (await resolveModel("bob-model", (await modelAccessForOwner("carol")).allows)).model === "bob-model");
 
-  check("대화를 그 모델로 만들 수 없다(403)", (await call("carol", "POST", "/conversations", { model: "bob-model" })).status === 403);
+  check("대화를 그 모델로 만들 수 없다(403)", (await call("dave", "POST", "/conversations", { model: "bob-model" })).status === 403);
   check("등록한 사람은 만들 수 있다", (await call("bob", "POST", "/conversations", { model: "bob-model" })).status === 201);
-  const conv = await call("carol", "POST", "/conversations", { model: "wise-model" });
+  check("같은 그룹도 만들 수 있다", (await call("carol", "POST", "/conversations", { model: "bob-model" })).status === 201);
+  const conv = await call("dave", "POST", "/conversations", { model: "wise-model" });
   check("기본 모델 대화는 만든다", conv.status === 201);
-  check("대화 모델을 바꿀 수도 없다(403)", (await call("carol", "PATCH", `/conversations/${conv.json.id}`, { model: "bob-model" })).status === 403);
+  check("대화 모델을 바꿀 수도 없다(403)", (await call("dave", "PATCH", `/conversations/${conv.json.id}`, { model: "bob-model" })).status === 403);
 
-  check("남이 등록한 서버는 지울 수 없다", (await call("carol", "DELETE", "/models/endpoints", { baseUrl: "http://mock-bob/v1" })).status === 403);
+  // 그룹을 옮기면 공유도 따라간다 — 그룹은 등록할 때가 아니라 쓸 때 본다.
+  await setUserGroup("dave", other.group.id);
+  check("등록자 그룹으로 옮기면 쓸 수 있다", (await ids("dave")) === "bob-model,wise-model", await ids("dave"));
+  await setUserGroup("dave", third.group.id);
+
+  check("같은 그룹이라도 남이 등록한 서버는 지울 수 없다", (await call("carol", "DELETE", "/models/endpoints", { baseUrl: "http://mock-bob/v1" })).status === 403);
   check("등록한 사람은 지운다", (await call("bob", "DELETE", "/models/endpoints", { baseUrl: "http://mock-bob/v1" })).status === 204);
   check("…등록자 기록도 지운다", !fs.readFileSync(path.join(dataDir, "model-owners.json"), "utf8").includes("mock-bob"));
 

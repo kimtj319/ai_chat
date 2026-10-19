@@ -82,23 +82,19 @@ export function SidebarSettings({ popover = false, open, onClose, onOpenAdmin, o
         </button>
       )}
 
-      {/* 모델 서버 연동은 서버 전체에 걸리는 설정이라 관리자에게만 보인다. */}
-      {me?.role === "admin" && (
-        <>
-          <p className="sidebar-settings-heading">모델</p>
-          <button
-            type="button"
-            className="sidebar-settings-action"
-            onClick={() => {
-              onClose();
-              setEndpointsOpen(true);
-            }}
-          >
-            <ServerIcon />
-            <span>모델 연동</span>
-          </button>
-        </>
-      )}
+      {/* 누구나 모델 서버를 연동한다. 등록한 서버는 본인 그룹과 AI Product 팀만 쓴다(server/vllm/access.ts). */}
+      <p className="sidebar-settings-heading">모델</p>
+      <button
+        type="button"
+        className="sidebar-settings-action"
+        onClick={() => {
+          onClose();
+          setEndpointsOpen(true);
+        }}
+      >
+        <ServerIcon />
+        <span>모델 연동</span>
+      </button>
 
       <p className="sidebar-settings-heading">대화</p>
       {/* 파일 입력(fileInputRef)은 메뉴 쪽에 그대로 있다 — 설정 화면은 그 위에 덮일 뿐이라

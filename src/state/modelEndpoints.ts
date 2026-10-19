@@ -90,7 +90,8 @@ export interface EndpointRow {
 }
 
 export const ENV_SOURCE_NOTE = "환경변수로 지정된 서버는 여기서 제거할 수 없습니다.";
-export const MINE_NOTE = "내가 등록한 서버 — 나와 AI Product 팀만 쓸 수 있습니다.";
+export const MINE_NOTE = "내가 등록한 서버 — 나와 같은 그룹, AI Product 팀이 쓸 수 있습니다.";
+export const SHARED_NOTE = "같은 그룹 사람이 등록한 서버입니다.";
 
 /** Everything one row of the endpoint list renders, decided in one place. */
 export function endpointRow(entry: ModelEndpoint): EndpointRow {
@@ -108,6 +109,6 @@ export function endpointRow(entry: ModelEndpoint): EndpointRow {
     statusText: entry.reachable ? "연결됨" : "연결할 수 없음",
     // The server decides (owner or AI Product); an older server sends no flag.
     removable: entry.deletable ?? entry.source !== "env",
-    sourceNote: entry.source === "env" ? ENV_SOURCE_NOTE : entry.mine ? MINE_NOTE : null,
+    sourceNote: entry.source === "env" ? ENV_SOURCE_NOTE : entry.mine ? MINE_NOTE : entry.shared ? SHARED_NOTE : null,
   };
 }

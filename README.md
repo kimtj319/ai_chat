@@ -76,7 +76,6 @@ VLLM_ENDPOINTS=OpenRouter|https://openrouter.ai/api/v1|sk-or-...|anthropic/claud
 | `GITLAB_TOKEN` + `GITLAB_MCP_URL` | GitLab 이슈 조회 MCP 서버 | GitLab → Settings → Access Tokens (읽기 전용, project-scoped 로 충분) |
 | `RAG_MCP_URL` | 업로드한 문서를 검색하는 RAG MCP 서버 | 자체 운영하는 SF-1 RAG MCP 주소 |
 | `MCP_IDENTITY_TOKEN` | MCP 서버에 "누가 물었는지" 를 전달 | 그 MCP 서버와 미리 나눠 가진 값 |
-| `MODEL_ADMIN_TOKEN` | 서빙 엔드포인트 등록·삭제를 이 토큰 소지자로 제한 | 직접 정한 임의의 긴 문자열 |
 
 `web_search` 는 특히 주의할 것: 키가 없어도 도구 목록에는 보이고, 웹이 필요한
 질문이 나오기 전까지 아무 일도 일어나지 않는다. "웹 검색이 안 된다" 면 여기부터
@@ -104,10 +103,11 @@ REASONING_PROFILES=some-model=fixed,other-model=budget:256
 기동 로그에 남는다 — 오타 하나가 그 모델의 추론 방식을 바꾸는데 달리 알 길이
 없기 때문이다.
 
-`MODEL_ADMIN_TOKEN` 을 비워 두면 **로그인한 아무 계정이나** 서빙 엔드포인트를
-등록할 수 있다. 그것은 서버가 그 사람이 고른 주소로 접속하게 만들고, 남의
-대화가 그리로 흘러갈 수 있다는 뜻이다. 계정을 전부 믿을 수 있는 게 아니라면
-반드시 설정하라.
+로그인한 계정은 누구나 서빙 엔드포인트를 등록할 수 있다. 등록한 서버의 모델은
+등록한 사람, 그와 같은 그룹 사람들, 공용 자원 계정(관리자·AI Product 팀)만 쓴다 —
+다른 그룹에는 목록에도 나오지 않고 고를 수도 없다. 그룹은 쓸 때 보므로 그룹을
+옮기면 공유도 따라간다. 고치거나 지우는 것은 등록한 사람과 공용 자원 계정만 한다.
+같은 그룹 사람이 그 모델로 대화하면 대화가 그 서버로 간다는 점은 알아 둘 것.
 
 ### 키가 새지 않게 해 둔 것
 
@@ -192,7 +192,6 @@ Copy `.env.example` to `.env` and adjust. All variables:
 | `NORMAL_MODE_DEADLINE_MS` | `180000` (3 min) | SAFETY-NET ceiling on thinking time in **normal** reasoning mode, for a turn nobody is watching any more: when it passes, the turn is stopped and the model writes its answer from the reasoning it already produced. **External** mode ignores it. This used to be the primary way a normal-mode turn ended early, enforced unconditionally at 3 minutes — that is now the person's own "지금 답변하기" click (`ANSWER_NOW_THRESHOLD_MS` below), in both modes, so this only has to catch an unattended tab. Values under 1000 are ignored |
 | `ANSWER_NOW_THRESHOLD_MS` | `180000` (3 min) | How long a turn may run before the client offers "지금 답변하기" (answer now) above the composer — mode-agnostic, unlike `NORMAL_MODE_DEADLINE_MS` above. Clicking it stops the current model call and moves the turn to the same wrap-up call, built from the reasoning and tool results already gathered. Values under 1000 are ignored |
 | `MODEL_ENDPOINTS_FILE` | (empty) | Path to the endpoints file; empty uses the lookup order `./.model`, then `{DATA_DIR}/.model` |
-| `MODEL_ADMIN_TOKEN` | (empty) | Secret required by `POST`/`DELETE /api/models/endpoints` (`X-Model-Admin-Token`). Empty = anyone can add/remove endpoints — see the warning below |
 | `ATTACHMENT_MAX_IMAGE_BYTES` | `10485760` | Largest image accepted (transport limit) |
 | `ATTACHMENT_MAX_TEXT_BYTES` | `2097152` | Largest text file accepted; above this the upload is refused with 413 |
 | `ATTACHMENT_INLINE_TEXT_BYTES` | `32768` | Text at or below this is inlined into the prompt; above it a stub + `read_attachment` |
@@ -270,7 +269,7 @@ breakdown are returned only to a signed-in account.
 - `POST /api/conversations/:id/attachments?name=<percent-encoded filename>` — raw file bytes as the body (the file's own Content-Type is a hint only; the magic bytes decide). `201 { id, kind, name, mime, bytes, width?, height?, estimatedTokens?, chars?, inlined?, createdAt }`
 - `GET/DELETE /api/conversations/:id/attachments/:aid` — the bytes / `204`
 - `GET /api/models` — `{ models, current, catalog[] }`, proxied from `GET /v1/models` (the real model id is always fetched here, never hardcoded). Each catalog entry: `{ id, endpoint, baseUrl, reachable, capability, maxModelLen, attachments: { maxMessageTokens, maxFileTokens, maxFileBytes, maxImageWidth, maxImageHeight } }` — the same limits the server enforces, so the UI can gate an upload before it is sent. `capability` is `"chat" | "embedding" | "rerank" | "unusable"`, measured rather than declared; `current` is always a chat model
-- `GET /api/models/endpoints` — `{ unprotected, endpoints: [{ label, baseUrl, source: "file"|"env", reachable, models, maxModelLen, latencyMs }] }`
+- `GET /api/models/endpoints` — `{ privileged, endpoints: [{ label, baseUrl, source: "file"|"env", mine, shared, deletable, reachable, models, maxModelLen, latencyMs }] }` — only the endpoints this account may use (its own, its group's, the deployment's; all of them for privileged accounts)
 - `POST /api/models/endpoints` `{ label?, baseUrl, apiKey? }` — validate and register a serving endpoint; `DELETE` with `{ baseUrl }` removes one (`409` for an entry that came from `VLLM_ENDPOINTS`)
 - `GET /api/health` — `{ backend, vllm, model?, latencyMs? }`
 
@@ -541,13 +540,10 @@ sent but **cannot be validated** — the same request with a deliberately wrong
 bearer token also returns 200, because these servers do not require auth.
 
 > **Security.** This endpoint makes the server fetch an address of the caller's
-> choosing. Every `/api` route now requires a signed-in, approved account, so
-> "any visitor" is no longer the exposure; without `MODEL_ADMIN_TOKEN` it is
-> every approved **user** who can probe hosts and ports from inside your network,
-> or register an endpoint that quietly receives other people's conversations.
-> Set it unless you trust every account. Mutations are
-> logged with the client IP either way, and `GET /api/models/endpoints` reports
-> `unprotected: true` so the UI can say so. There is deliberately no
+> choosing. Every `/api` route requires a signed-in, approved account, and any
+> such account may register one; what it registers is offered only to its own
+> group and the privileged accounts, so it cannot receive another group's
+> conversations. Mutations are logged with the client IP. There is deliberately no
 > private-range block: serving endpoints are often on the same private network
 > as this app, so such a rule would block exactly the machines this exists for.
 

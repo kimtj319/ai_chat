@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import { fetchCatalog, invalidateCatalog } from "../vllm/client.js";
 import {
   endpointSource,
@@ -89,25 +89,13 @@ modelsRouter.get("/models", async (req, res) => {
 /**
  * Managing serving endpoints from the UI.
  *
- * This lets a request make the server fetch an arbitrary address, and the app
- * has no authentication of its own. MODEL_ADMIN_TOKEN is the only gate; with it
- * unset the calls still work (otherwise the feature is dead on arrival for this
- * deployment) but every mutation is logged with the caller's address, and GET
- * reports `unprotected` so the UI can say so out loud. There is deliberately no
- * private-range block: the real servers are on public addresses (211.39.x.x),
- * so such a rule would block exactly the machines this exists for.
+ * Any signed-in account may register an endpoint. What it registers is usable
+ * by itself, its group and the accounts that may use every model
+ * (vllm/access.ts); changing or deleting it is limited to the registrant and
+ * those accounts (below). Every mutation is logged with the caller's address.
+ * There is deliberately no private-range block: the real servers are on public
+ * addresses, so such a rule would block exactly the machines this exists for.
  */
-function adminTokenAllowed(req: Request, res: Response): boolean {
-  // Any account may register an endpoint now: what it registers is usable only
-  // by itself and the accounts that may use every model (vllm/access.ts), so
-  // nobody else can be pointed at it. Deleting is limited to that same circle
-  // (below). MODEL_ADMIN_TOKEN stays as the extra lock on making the server
-  // fetch an address of the caller's choosing.
-  if (!config.modelAdminToken) return true;
-  if (req.get("X-Model-Admin-Token") === config.modelAdminToken) return true;
-  res.status(403).json({ error: "이 서버에서는 모델 엔드포인트를 변경할 권한이 필요합니다.", code: "forbidden" });
-  return false;
-}
 
 modelsRouter.get("/models/endpoints", async (req, res, next) => {
   try {
@@ -122,6 +110,8 @@ modelsRouter.get("/models/endpoints", async (req, res, next) => {
           source,
           // Registered by this account — and so deletable by it.
           mine: access.owns(endpoint.baseUrl),
+          // Registered by someone else in this account's group.
+          shared: access.sharedWithGroup(endpoint.baseUrl),
           deletable: source === "file" && (access.privileged || access.owns(endpoint.baseUrl)),
           reachable: probe.ok,
           models: probe.models,
@@ -132,7 +122,7 @@ modelsRouter.get("/models/endpoints", async (req, res, next) => {
         };
       }),
     );
-    res.json({ unprotected: config.modelAdminToken.length === 0, privileged: access.privileged, endpoints });
+    res.json({ privileged: access.privileged, endpoints });
   } catch (err) {
     next(err);
   }
@@ -164,7 +154,6 @@ function requestedModels(raw: unknown): string[] | null {
  */
 modelsRouter.post("/models/endpoints/probe", async (req, res, next) => {
   try {
-    if (!adminTokenAllowed(req, res)) return;
     const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
     if (!baseUrl) {
       return res.status(400).json({ error: "주소를 알아볼 수 없습니다. 예: 10.0.0.10:8000 또는 http://10.0.0.10:8000/v1", code: "invalid_url" });
@@ -182,7 +171,6 @@ modelsRouter.post("/models/endpoints/probe", async (req, res, next) => {
 
 modelsRouter.post("/models/endpoints", async (req, res, next) => {
   try {
-    if (!adminTokenAllowed(req, res)) return;
     const body = req.body ?? {};
     const baseUrl = normalizeBaseUrl(body.baseUrl);
     if (!baseUrl) {
@@ -220,7 +208,7 @@ modelsRouter.post("/models/endpoints", async (req, res, next) => {
     console.log(
       `[models] endpoint ADDED by ${req.ownerId}@${clientAddress(req)}: ${label} ${baseUrl} ` +
         `models=${chosen.length > 0 ? `${chosen.join(",")} (of ${probe.models.length})` : probe.models.join(",")} ` +
-        `apiKey=${apiKey ? "provided" : "none"} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`,
+        `apiKey=${apiKey ? "provided" : "none"}`,
     );
     res.status(201).json({
       label,
@@ -242,7 +230,6 @@ modelsRouter.post("/models/endpoints", async (req, res, next) => {
  */
 modelsRouter.patch("/models/endpoints", async (req, res, next) => {
   try {
-    if (!adminTokenAllowed(req, res)) return;
     const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
     if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
     const access = await modelAccessFor(req.user);
@@ -284,7 +271,6 @@ modelsRouter.patch("/models/endpoints", async (req, res, next) => {
 
 modelsRouter.delete("/models/endpoints", async (req, res, next) => {
   try {
-    if (!adminTokenAllowed(req, res)) return;
     const baseUrl = normalizeBaseUrl(req.body?.baseUrl);
     if (!baseUrl) return res.status(400).json({ error: "baseUrl 이 필요합니다.", code: "invalid_url" });
     const access = await modelAccessFor(req.user);
@@ -304,7 +290,7 @@ modelsRouter.delete("/models/endpoints", async (req, res, next) => {
     if (!removed) return res.status(404).json({ error: `등록되지 않은 주소입니다: ${baseUrl}` });
     await removeModelOwner(baseUrl);
     invalidateCatalog();
-    console.log(`[models] endpoint REMOVED by ${req.ownerId}@${clientAddress(req)}: ${baseUrl} adminToken=${config.modelAdminToken ? "required" : "UNSET"}`);
+    console.log(`[models] endpoint REMOVED by ${req.ownerId}@${clientAddress(req)}: ${baseUrl}`);
     res.status(204).end();
   } catch (err) {
     next(err);

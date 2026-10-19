@@ -52,7 +52,6 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const [address, setAddress] = useState("");
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [adminToken, setAdminToken] = useState("");
 
   // 이 주소로 불러온 모델 목록. 주소를 바꾸면 버린다 — 다른 서버의 목록으로 고르면 안 된다.
   const [probed, setProbed] = useState<{ baseUrl: string; models: string[]; mustChoose: boolean } | null>(null);
@@ -102,7 +101,6 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
       if (!list) {
         const result = await api.probeModelEndpoint(
           { baseUrl: normalized.baseUrl, ...(apiKey.length > 0 ? { apiKey } : {}) },
-          adminToken,
           controller.signal,
         );
         list = { baseUrl: normalized.baseUrl, models: result.models, mustChoose: result.mustChoose };
@@ -125,7 +123,6 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
           ...(apiKey.length > 0 ? { apiKey } : {}),
           ...(chosen.length > 0 ? { models: chosen } : {}),
         },
-        adminToken,
         controller.signal,
       );
       setStatus({ kind: "ok", text: connectedMessage(added.models) });
@@ -153,7 +150,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   async function startEditing(baseUrl: string, current: string[] | null | undefined) {
     setEditBusy(true);
     try {
-      const result = await api.probeModelEndpoint({ baseUrl }, adminToken);
+      const result = await api.probeModelEndpoint({ baseUrl });
       setEditing({ baseUrl, models: result.models, mustChoose: result.mustChoose, chosen: current ?? [] });
     } catch (error) {
       const code = error instanceof ModelEndpointError ? error.code : null;
@@ -171,7 +168,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
     }
     setEditBusy(true);
     try {
-      await api.setModelEndpointModels(editing.baseUrl, editing.chosen, adminToken);
+      await api.setModelEndpointModels(editing.baseUrl, editing.chosen);
       setEditing(null);
       setStatus({ kind: "ok", text: editing.chosen.length > 0 ? `모델 ${editing.chosen.length}개만 쓰도록 바꿨습니다.` : "모든 모델을 쓰도록 바꿨습니다." });
       await load();
@@ -187,7 +184,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   async function handleDelete(baseUrl: string, host: string) {
     setPendingDelete(null);
     try {
-      await api.deleteModelEndpoint(baseUrl, adminToken);
+      await api.deleteModelEndpoint(baseUrl);
       // 줄이 말없이 사라지면 눌린 것인지 알 수 없다.
       setStatus({ kind: "ok", text: `${host} 서버를 삭제했습니다.` });
       await load();
@@ -205,7 +202,7 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
   const deleteTarget = pendingDelete ? entries.find((entry) => entry.baseUrl === pendingDelete) : undefined;
   const deleteHost = deleteTarget ? endpointRow(deleteTarget).host : pendingDelete;
   // 주소·키를 적었거나 모델을 고르던 중이면 바깥 클릭으로는 닫지 않는다(Esc·닫기는 그대로).
-  const dirty = address !== "" || label !== "" || apiKey !== "" || adminToken !== "" || probed !== null || editing !== null;
+  const dirty = address !== "" || label !== "" || apiKey !== "" || probed !== null || editing !== null;
 
   return (
     <Modal
@@ -216,15 +213,9 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
       width={760}
       dismissOnBackdrop={!dirty}
     >
-      {data?.unprotected && (
-        <p className="endpoint-warning" role="status">
-          이 서버는 접근 제어가 설정되어 있지 않습니다. 신뢰할 수 있는 망에서만 사용하세요.
-        </p>
-      )}
-
       {data && !data.privileged && (
         <p className="endpoint-scope" role="note">
-          기본 모델 외에 직접 등록한 서버의 모델은 등록한 본인과 AI Product 팀만 사용할 수 있습니다.
+          직접 등록한 서버의 모델은 나와 같은 그룹 사람들, AI Product 팀이 함께 사용합니다. 다른 그룹에는 보이지 않습니다.
         </p>
       )}
 
@@ -340,21 +331,6 @@ export function ModelEndpointDialog({ onClose }: ModelEndpointDialogProps) {
             개인 키는 입력한 경우에만 전송되며, 모델 서버가 키를 요구하지 않으면 확인되지 않습니다.
           </span>
         </div>
-
-        {/* Only when the server actually has an admin token configured —
-            otherwise the field would ask for something that does not exist. */}
-        {data && !data.unprotected && (
-          <div className="field">
-            <label htmlFor="endpoint-admin">관리 키</label>
-            <input
-              id="endpoint-admin"
-              type="password"
-              value={adminToken}
-              onChange={(event) => setAdminToken(event.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-        )}
 
         {probed && probed.models.length > SMALL_LIST && (
           <ModelChooser models={probed.models} chosen={chosen} mustChoose={probed.mustChoose} onChange={setChosen} />
