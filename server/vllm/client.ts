@@ -455,6 +455,16 @@ export interface VllmStreamChunk {
     finish_reason?: string | null;
   }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+  /** vLLM reports a refused request this way inside a 200 stream, with no choices. */
+  error?: { message?: string; type?: string; code?: number | string } | null;
+}
+
+/** An error the model server sent inside the stream (status 200, `data: {"error": …}`). */
+export class VllmStreamError extends Error {
+  constructor(message: string) {
+    super(`모델 서버 오류: ${message}`);
+    this.name = "VllmStreamError";
+  }
 }
 
 async function* parseSseStream(
@@ -479,12 +489,19 @@ async function* parseSseStream(
           const payload = line.slice("data:".length).trimStart();
           if (!payload) continue;
           if (payload === "[DONE]") return;
+          let chunk: VllmStreamChunk;
           try {
-            yield JSON.parse(payload) as VllmStreamChunk;
+            chunk = JSON.parse(payload) as VllmStreamChunk;
           } catch {
             // A chunk boundary should never split a single SSE data line, but
             // if it happens, drop the malformed fragment instead of crashing.
+            continue;
           }
+          // Passed through, this ended the turn as an empty answer with no error at all.
+          if (chunk.error && !chunk.choices?.length) {
+            throw new VllmStreamError(chunk.error.message?.trim() || JSON.stringify(chunk.error));
+          }
+          yield chunk;
         }
       }
     }
@@ -495,6 +512,36 @@ async function* parseSseStream(
 
 function modelSlotKey(endpoint: VllmEndpoint, model: string): string {
   return `${endpoint.baseUrl}|${model}`;
+}
+
+/**
+ * Endpoint|model pairs whose server refused thinking_token_budget: vLLM started
+ * without --reasoning-config answers it with 400 "thinking_token_budget is set but
+ * reasoning_config is not configured" (measured on Gemma4, 2026-10-19). Thinking
+ * itself still works there, so the request is sent again without the cap and the
+ * cap is left off from then on, as the /tokenize fallback does.
+ */
+const thinkingBudgetRefusedBy = new Set<string>();
+const THINKING_BUDGET_REFUSAL = /thinking_token_budget/i;
+
+/** Whether this model's server has refused thinking_token_budget (it then runs uncapped). */
+export function thinkingBudgetRefused(endpoint: VllmEndpoint, model: string): boolean {
+  return thinkingBudgetRefusedBy.has(modelSlotKey(endpoint, model));
+}
+
+function refusedThinkingBudget(body: ChatCompletionRequestBody, endpoint: VllmEndpoint, message: string): boolean {
+  if (body.thinking_token_budget === undefined || !THINKING_BUDGET_REFUSAL.test(message)) return false;
+  const key = modelSlotKey(endpoint, body.model);
+  if (!thinkingBudgetRefusedBy.has(key)) {
+    thinkingBudgetRefusedBy.add(key);
+    console.warn(`[vllm] ${body.model} on ${endpoint.baseUrl} refused thinking_token_budget; sending it uncapped from now on.`);
+  }
+  return true;
+}
+
+function withoutThinkingBudget(body: ChatCompletionRequestBody): ChatCompletionRequestBody {
+  const { thinking_token_budget: _dropped, ...rest } = body;
+  return rest;
 }
 
 /** 이 모델에 지금 보내면 줄을 서야 하는가: -1 이면 바로, 아니면 앞에 선 요청 수. */
@@ -515,6 +562,9 @@ export async function streamChatCompletion(
   endpoint: VllmEndpoint = config.vllmEndpoints[0]!,
   priority: SlotPriority = "turn",
 ): Promise<AsyncGenerator<VllmStreamChunk>> {
+  if (body.thinking_token_budget !== undefined && thinkingBudgetRefused(endpoint, body.model)) {
+    body = withoutThinkingBudget(body);
+  }
   const release = await acquireModelSlot(modelSlotKey(endpoint, body.model), signal, config.modelMaxConcurrency, priority);
   signal.addEventListener("abort", release, { once: true });
   let res: Response;
@@ -532,11 +582,28 @@ export async function streamChatCompletion(
   if (!res.ok || !res.body) {
     release();
     const text = await res.text().catch(() => "");
+    if (res.status === 400 && refusedThinkingBudget(body, endpoint, text)) {
+      return streamChatCompletion(withoutThinkingBudget(body), signal, endpoint, priority);
+    }
     throw new Error(`vLLM /chat/completions responded ${res.status}: ${text.slice(0, 500)}`);
   }
   const chunks = parseSseStream(res.body, signal);
+  // The refusal arrives as the first line of a 200 stream, so the first chunk is
+  // read here, where the request can still be sent again without the cap.
+  let first: IteratorResult<VllmStreamChunk>;
+  try {
+    first = await chunks.next();
+  } catch (err) {
+    release();
+    signal.removeEventListener("abort", release);
+    if (err instanceof VllmStreamError && refusedThinkingBudget(body, endpoint, err.message)) {
+      return streamChatCompletion(withoutThinkingBudget(body), signal, endpoint, priority);
+    }
+    throw err;
+  }
   return (async function* () {
     try {
+      if (!first.done) yield first.value;
       yield* chunks;
     } finally {
       release();

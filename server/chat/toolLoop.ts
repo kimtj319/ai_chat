@@ -7,6 +7,7 @@ import {
   countPromptTokens,
   type ChatCompletionRequestBody,
   type PromptTokenCount,
+  thinkingBudgetRefused,
   type VllmStreamChunk,
 } from "../vllm/client.js";
 import { toolResultMessage, type VllmMessage } from "./historyBuilder.js";
@@ -540,7 +541,7 @@ export async function* runConversationTurn(
         }
         if (delta.content) {
           leakGate ??= new BudgetLeakGate({
-            budgetSet: "thinking_token_budget" in body,
+            budgetSet: "thinking_token_budget" in body && !thinkingBudgetRefused(endpoint, model),
             reasoning: roundReasoning,
             question: lastUserText(conversation),
           });
