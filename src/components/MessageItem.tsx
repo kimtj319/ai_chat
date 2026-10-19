@@ -240,21 +240,23 @@ function MessageItemView({
   const citations = useMemo(() => (isUser ? [] : citationSources(message.toolResults)), [isUser, message.toolResults]);
   const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
 
-  // 바닥줄은 짧게("4.6초 · 276 토큰"), 자세한 값은 툴팁과 화면 읽기 프로그램에.
+  // 바닥줄은 짧게("4.6초 · 12,345 토큰"), 자세한 값은 툴팁과 화면 읽기 프로그램에.
+  // 토큰은 이 답에 실제로 쓴 전체(입력 + 출력, 도구 라운드·요약·압축·제목 같은 곁 호출까지).
   // 멈춘 답은 모델이 사용량을 끝에만 알려 주어 대개 0 이다 — "0 토큰" 은 틀린 말이라 뺀다.
-  const usage = stopped && message.usage?.completionTokens === 0 ? undefined : message.usage;
+  const usage = stopped && message.usage?.totalTokens === 0 ? undefined : message.usage;
   const hasMeta = !embedding && (usage !== undefined || message.durationMs !== undefined || stopped);
   const shortMeta = [
     message.durationMs !== undefined ? formatDuration(message.durationMs) : null,
-    usage ? `${usage.completionTokens.toLocaleString()} 토큰` : null,
+    usage ? `${usage.totalTokens.toLocaleString()} 토큰` : null,
     stopped ? "중지됨" : null,
   ]
     .filter(Boolean)
     .join(" · ");
   const fullMeta = [
     stopped ? "사용자가 중지한 답변" : null,
-    usage ? `프롬프트 ${usage.promptTokens.toLocaleString()}` : null,
-    usage ? `완성 ${usage.completionTokens.toLocaleString()}` : null,
+    usage ? `전체 ${usage.totalTokens.toLocaleString()} 토큰` : null,
+    usage ? `입력 ${usage.promptTokens.toLocaleString()}` : null,
+    usage ? `출력 ${usage.completionTokens.toLocaleString()}` : null,
     message.durationMs !== undefined ? `처리 시간 ${formatDuration(message.durationMs)}` : null,
   ]
     .filter(Boolean)

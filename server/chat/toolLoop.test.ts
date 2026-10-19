@@ -333,6 +333,12 @@ async function runTurn(
 
   check("시나리오 A: 이전 대화 요약이 실제로 실행됐다", historySummaryCalls === 1, String(historySummaryCalls));
   check(
+    "시나리오 A: 사용량에 요약 호출의 입력·출력도 들어간다",
+    result.usage.totalTokens === 20 * (mainRoundCalls + historySummaryCalls) &&
+      result.usage.promptTokens === 10 * (mainRoundCalls + historySummaryCalls),
+    JSON.stringify(result.usage),
+  );
+  check(
     "시나리오 A: 도구 중단 알림이 없다",
     !notices.some((n) => n.includes("도구 호출을 중단")),
     JSON.stringify(notices),
@@ -407,6 +413,11 @@ async function runTurn(
     "시나리오 C: 압축이 설정된 상한(CONTEXT_MAX_COMPACTIONS)만큼만 일어났다",
     compactionSummaryCalls === config.contextMaxCompactions,
     `compactionSummaryCalls=${compactionSummaryCalls}, contextMaxCompactions=${config.contextMaxCompactions}`,
+  );
+  check(
+    "시나리오 C: 사용량에 압축 요약 호출도 들어간다",
+    result.usage.totalTokens === 20 * (mainRoundCalls + compactionSummaryCalls),
+    `${JSON.stringify(result.usage)} rounds=${mainRoundCalls} compactions=${compactionSummaryCalls}`,
   );
   check(
     "시나리오 C: 압축이 소진된 뒤에는 컨텍스트 한도로 도구가 중단됐다",

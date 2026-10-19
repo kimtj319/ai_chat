@@ -188,6 +188,17 @@ export async function* runConversationTurn(
   // full — instead of the budget ladder dropping them, and saying so, on every
   // later turn. Never throws: any failure returns the history that
   // buildHistoryMessages would have built.
+  const totalUsage: MessageUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  // Every model call of the turn that reports usage: the history summary, the
+  // rounds, the research compactions and the wrap-up — the tokens the turn
+  // actually spent, input and output.
+  const addUsage = (usage: NonNullable<VllmStreamChunk["usage"]>): void => {
+    const prompt = usage.prompt_tokens ?? 0;
+    const completion = usage.completion_tokens ?? 0;
+    totalUsage.promptTokens += prompt;
+    totalUsage.completionTokens += completion;
+    totalUsage.totalTokens += usage.total_tokens ?? prompt + completion;
+  };
   const history = yield* withCompactionEvents(
     { ownerId, conversationId: conversation.id, kind: "history" },
     (onProgress) =>
@@ -199,6 +210,7 @@ export async function* runConversationTurn(
         contextWindow: maxModelLen,
         signal,
         onProgress,
+        onUsage: addUsage,
       }),
     (built) => Boolean(built.notice),
   );
@@ -239,13 +251,6 @@ export async function* runConversationTurn(
     options.browserControl === true,
   );
 
-  const totalUsage: MessageUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-  // Every model call of the turn that reports usage: the rounds and the wrap-up.
-  const addUsage = (usage: NonNullable<VllmStreamChunk["usage"]>): void => {
-    totalUsage.promptTokens += usage.prompt_tokens ?? 0;
-    totalUsage.completionTokens += usage.completion_tokens ?? 0;
-    totalUsage.totalTokens += usage.total_tokens ?? 0;
-  };
   let content = "";
   let reasoning = "";
   const allToolCalls: ToolCallRecord[] = [];
@@ -401,6 +406,7 @@ export async function* runConversationTurn(
           // are what the UI shows for this turn, and the user must still see
           // every call that was made.
           workingMessages = compacted.messages;
+          addUsage({ prompt_tokens: compacted.usage.promptTokens, completion_tokens: compacted.usage.completionTokens });
           for (const message of compacted.protectedMessages) protectedMessages.add(message);
           compactions++;
           // `before` no longer describes this list, so the ladder must measure

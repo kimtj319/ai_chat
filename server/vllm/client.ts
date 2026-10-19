@@ -561,14 +561,14 @@ export async function completeWithoutThinking(input: {
   maxTokens: number;
   temperature: number;
   signal: AbortSignal;
+  /** Token usage the model reports for this call (counted into the turn's total). */
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
 }): Promise<{ text: string; thought: boolean }> {
   const body: ChatCompletionRequestBody = {
     model: input.model,
     messages: [{ role: "user", content: input.prompt }],
     stream: true,
-    // Required by the request type. Nothing here reads the usage back — the
-    // turn beside this one is what reports tokens — but the field is part of
-    // the shape every call to this endpoint sends.
+    // Read back through onUsage: a side call's tokens count toward the turn it ran beside.
     stream_options: { include_usage: true },
     temperature: input.temperature,
     top_p: 0.9,
@@ -587,6 +587,7 @@ export async function completeWithoutThinking(input: {
   const stream = await streamChatCompletion(body, input.signal, input.endpoint, "side");
   for await (const chunk of stream) {
     if (input.signal.aborted) break;
+    if (chunk.usage) input.onUsage?.(chunk.usage);
     const delta = chunk.choices?.[0]?.delta;
     if (delta?.reasoning ?? delta?.reasoning_content) thought = true;
     if (delta?.content) text += delta.content;

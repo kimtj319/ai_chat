@@ -1,4 +1,4 @@
-import { streamChatCompletion, countPromptTokens, estimatePromptTokens, stripThinkBlocks, type ChatCompletionRequestBody } from "../vllm/client.js";
+import { streamChatCompletion, countPromptTokens, estimatePromptTokens, stripThinkBlocks, type ChatCompletionRequestBody, type VllmStreamChunk } from "../vllm/client.js";
 import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { SAFETY_MARGIN_TOKENS } from "./contextBudget.js";
@@ -286,6 +286,8 @@ export interface HistorySummaryInput {
   mode?: CoverageMode;
   /** 0..1 as the summary streams in; first called with 0 when the model call starts. */
   onProgress?: (fraction: number) => void;
+  /** Token usage of the summary call, reported even when the summary is then discarded. */
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
 }
 
 /**
@@ -331,7 +333,10 @@ export async function summariseHistory(input: HistorySummaryInput): Promise<Hist
     const stream = await streamChatCompletion(body, input.signal, input.endpoint);
     for await (const chunk of stream) {
       if (input.signal.aborted) return null;
-      if (chunk.usage) completionTokens += chunk.usage.completion_tokens ?? 0;
+      if (chunk.usage) {
+        completionTokens += chunk.usage.completion_tokens ?? 0;
+        input.onUsage?.(chunk.usage);
+      }
       const choice = chunk.choices?.[0];
       // Reasoning deltas are ignored: only the summary survives this call.
       if (choice?.delta?.content) {
@@ -383,6 +388,8 @@ export interface TurnHistoryInput {
   signal: AbortSignal;
   /** Progress of a summarisation, when one runs (0 = started). Not called otherwise. */
   onProgress?: (fraction: number) => void;
+  /** Token usage of every summary call this turn makes. */
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
 }
 
 export interface TurnHistory {
@@ -456,6 +463,7 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
       signal: input.signal,
       mode,
       onProgress: input.onProgress && ((f) => input.onProgress!(i * 0.5 + f * share)),
+      onUsage: input.onUsage,
     });
     if (!next) break;
     summary = next;

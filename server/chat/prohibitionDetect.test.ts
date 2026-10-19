@@ -15,7 +15,7 @@ process.env.VLLM_API_KEY = "";
 process.env.MODEL_ENDPOINTS_FILE = "";
 process.env.MODEL_CAPABILITY_PROBE = "0";
 
-const { consolidateProhibitions } = await import("./prohibitionDetect.js");
+const { consolidateProhibitions, detectProhibition } = await import("./prohibitionDetect.js");
 
 let passed = 0;
 const failures: string[] = [];
@@ -41,7 +41,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (method === "POST" && url.pathname === "/v1/chat/completions") {
     chatHosts.push(url.host);
     const chunk = { choices: [{ delta: { content: "- 영어로 답하지 않는다." }, finish_reason: "stop" }] };
-    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { status: 200 });
+    const usage = { choices: [], usage: { prompt_tokens: 40, completion_tokens: 6, total_tokens: 46 } };
+    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify(usage)}\n\ndata: [DONE]\n\n`, { status: 200 });
   }
   throw new Error(`unexpected request ${method} ${url}`);
 }) as typeof fetch;
@@ -61,6 +62,19 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   chatHosts.length = 0;
   await consolidateProhibitions(["가를 하지 않는다.", "나를 하지 않는다."], new AbortController().signal);
   check("allows 를 주지 않으면 예전처럼 카탈로그 첫 모델을 쓴다", JSON.stringify(chatHosts) === '["mock-first"]', JSON.stringify(chatHosts));
+}
+
+{
+  // 판정도 그 질문 때문에 쓴 토큰이다 — 턴의 사용량에 더할 수 있게 알려 준다.
+  const reported: number[] = [];
+  await detectProhibition({
+    assistant: "Here is the answer in English.",
+    user: "영어로 답하지 마",
+    model: "",
+    signal: new AbortController().signal,
+    onUsage: (usage) => reported.push(usage.total_tokens ?? 0),
+  });
+  check("판정 호출의 사용량을 알려 준다", JSON.stringify(reported) === "[46]", JSON.stringify(reported));
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

@@ -22,6 +22,7 @@ import { summariseConversationTitle } from "../chat/titleSummary.js";
 import { detectProhibition } from "../chat/prohibitionDetect.js";
 import { appendPending } from "../storage/prohibitionsStore.js";
 import { runEmbeddingTurn } from "../chat/embeddingTurn.js";
+import { addWireUsage, sideUsageMeter, type WireUsage } from "../chat/turnUsage.js";
 import { config } from "../config.js";
 import type {
   Conversation,
@@ -451,8 +452,9 @@ function renameFromSummary(
   clippedTitle: string,
   signal: AbortSignal,
   send: (payload: unknown) => void,
+  onUsage: (usage: WireUsage) => void,
 ): void {
-  void summariseConversationTitle(content, model, signal, ownerId)
+  void summariseConversationTitle(content, model, signal, ownerId, onUsage)
     .then(async (title) => {
       if (!title) return;
       let applied = false;
@@ -474,7 +476,13 @@ function renameFromSummary(
  * 그대로다. 검토 대기에만 들어가므로 이번 답변에도, 다음 답변에도 아직 반영되지
  * 않는다(storage/prohibitionsStore.ts).
  */
-function recordProhibitionInBackground(ownerId: string, afterUser: Conversation, content: string, model: string): void {
+function recordProhibitionInBackground(
+  ownerId: string,
+  afterUser: Conversation,
+  content: string,
+  model: string,
+  onUsage: (usage: WireUsage) => void,
+): void {
   const previous = afterUser.messages
     .slice(0, -1)
     .reverse()
@@ -486,6 +494,7 @@ function recordProhibitionInBackground(ownerId: string, afterUser: Conversation,
     model,
     ownerId,
     signal: AbortSignal.timeout(PROHIBITION_DETECT_TIMEOUT_MS),
+    onUsage,
   })
     .then((rule) => (rule ? appendPending(ownerId, rule, content, new Date()) : false))
     .then((added) => {
@@ -590,14 +599,23 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
     controller.abort();
   });
 
+  // 제목 짓기·"하지 마" 판정도 이 질문 때문에 쓴 토큰이라 이 턴의 답에 더한다(chat/turnUsage.ts).
+  const ownerId = req.ownerId;
+  const sideUsage = sideUsageMeter((messageId, usage) =>
+    mutateConversation(ownerId, id, (conv) => {
+      const message = conv.messages.find((m) => m.id === messageId);
+      if (message) message.usage = addWireUsage(message.usage, usage);
+      return conv;
+    }).then(() => undefined),
+  );
   if (clippedTitle !== null && turnKind === "chat") {
-    renameFromSummary(req.ownerId, id, content, resolved.model, clippedTitle, controller.signal, send);
+    renameFromSummary(req.ownerId, id, content, resolved.model, clippedTitle, controller.signal, send, sideUsage.add);
   }
 
   // 그대로 다시 돌리는 것은 새로 한 말이 아니므로 또 판정하지 않는다(편집은 판정한다).
   const saidSomethingNew = !regenerateTarget || content !== regenerateTarget.content;
   if (turnKind === "chat" && config.feedbackDetect && content.trim() && saidSomethingNew) {
-    recordProhibitionInBackground(req.ownerId, afterUser, content, resolved.model);
+    recordProhibitionInBackground(req.ownerId, afterUser, content, resolved.model, sideUsage.add);
   }
 
   try {
@@ -661,6 +679,7 @@ export const postMessage: RequestHandler<{ id: string }> = async (req, res, next
       }
     }
 
+    assistantMessage = sideUsage.settle(assistantMessage);
     await mutateConversation(req.ownerId, id, (conv) => {
       conv.messages.push(assistantMessage);
       return conv;

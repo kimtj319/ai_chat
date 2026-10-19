@@ -1,4 +1,4 @@
-import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
+import { completeWithoutThinking, resolveModel, stripThinkBlocks, type VllmStreamChunk } from "../vllm/client.js";
 import { endpointForOwner, type ModelAccess } from "../vllm/access.js";
 import { RULE_MAX_CHARS, RULE_MIN_CHARS } from "../storage/prohibitionsStore.js";
 
@@ -44,6 +44,8 @@ export interface DetectInput {
   /** 질문한 사람. 기본(wise) 모델을 그 사람의 키로 부른다(vllm/access.ts). */
   ownerId?: string;
   signal: AbortSignal;
+  /** 이 판정에 든 토큰. 판정을 부른 턴의 사용량에 더한다. */
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
 }
 
 /**
@@ -79,12 +81,13 @@ async function complete(
   signal: AbortSignal,
   allows?: ModelAccess["allows"],
   ownerId?: string,
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void,
 ): Promise<string | null> {
   const resolved = await resolveModel(requestedModel, allows);
   const model = resolved.model;
   const endpoint = await endpointForOwner(resolved.endpoint, ownerId);
   const attempt = (budget: number) =>
-    completeWithoutThinking({ model, endpoint, prompt, maxTokens: budget, temperature: 0.1, signal });
+    completeWithoutThinking({ model, endpoint, prompt, maxTokens: budget, temperature: 0.1, signal, onUsage });
   const first = await attempt(maxTokens);
   if (signal.aborted) return null;
   if (first.text.trim() || !first.thought) return first.text;
@@ -102,7 +105,7 @@ export async function detectProhibition(input: DetectInput): Promise<string | nu
   if (!NEGATIVE_CUE.test(user)) return null;
   try {
     const prompt = `${INSTRUCTION}\n\n[직전 답변]\n${assistant.slice(0, MAX_ASSISTANT_CHARS)}\n\n[사용자의 말]\n${user.slice(0, MAX_USER_CHARS)}`;
-    const raw = await complete(prompt, input.model, MAX_TOKENS, input.signal, undefined, input.ownerId);
+    const raw = await complete(prompt, input.model, MAX_TOKENS, input.signal, undefined, input.ownerId, input.onUsage);
     return raw ? parseDetection(raw) : null;
   } catch (err) {
     console.warn("[prohibitions] detection failed:", err instanceof Error ? err.message : err);

@@ -11,6 +11,8 @@
 //      덮거나 끊는 지점이 사라진 요약은 버린다.
 //   6. 새 대화의 기본 제목은 '새 대화' 이고, 첫 메시지가 오면 이름이 붙는다.
 //   7. 첫 답이 오는 사이 사용자가 바꾼 제목은, 늦게 도착한 요약 제목이 덮지 않는다.
+//   8. 답의 사용량은 그 질문 때문에 쓴 전체다 — 제목 짓기 호출도, 답이 저장된 뒤에
+//      끝난 호출도 그 답에 더해진다.
 //
 // conversations.answerNow.test.ts 와 같은 방식이다: 라우트를 실제로 띄우고
 // vLLM 만 가짜로 바꾼다.
@@ -110,7 +112,10 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     }
     // 제목 요약도 스트림으로 온다 — 도구를 싣지 않은 호출은 곁가지다.
     if (body.tools === undefined) {
-      return sseResponse([{ choices: [{ delta: { content: "요약 제목" }, finish_reason: "stop" }] }]);
+      return sseResponse([
+        { choices: [{ delta: { content: "요약 제목" }, finish_reason: "stop" }] },
+        { choices: [], usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 } },
+      ]);
     }
     const messages = (body.messages ?? []) as Array<{ role?: string; content?: unknown }>;
     mainRoundPrompts.push(messages);
@@ -189,6 +194,12 @@ check("첫 답이 저장된다", doneOf(first)?.content === "답변 1: 첫 질�
 {
   const stored = await getConversation("alice", conv.id);
   check("첫 메시지로 기본 제목이 바뀐다", stored?.title !== "새 대화", stored?.title);
+  const answer = stored?.messages.find((m) => m.role === "assistant");
+  check(
+    "첫 답의 사용량에 제목 짓기 호출(입력 7·출력 3)도 들어간다",
+    answer?.usage?.totalTokens === 20 && answer.usage.promptTokens === 12 && answer.usage.completionTokens === 8,
+    JSON.stringify(answer?.usage),
+  );
 }
 
 /* ------------------------------------------------------------------ 1) 다시 생성 */
@@ -310,6 +321,8 @@ check("첫 답이 저장된다", doneOf(first)?.content === "답변 1: 첫 질�
   }
   const stored = await getConversation("alice", fresh.id);
   check("사용자가 바꾼 제목이 남는다", stored?.title === "내가 지은 제목", stored?.title);
+  const answer = stored?.messages.find((m) => m.role === "assistant");
+  check("답이 저장된 뒤에 끝난 제목 호출의 사용량도 그 답에 더해진다", answer?.usage?.totalTokens === 20, JSON.stringify(answer?.usage));
 }
 
 server.close();

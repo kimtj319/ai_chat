@@ -1,5 +1,5 @@
 import { endpointForOwner } from "../vllm/access.js";
-import { completeWithoutThinking, resolveModel, stripThinkBlocks } from "../vllm/client.js";
+import { completeWithoutThinking, resolveModel, stripThinkBlocks, type VllmStreamChunk } from "../vllm/client.js";
 
 /**
  * A short name for a conversation, summarised from the request that started it.
@@ -73,6 +73,7 @@ export async function summariseConversationTitle(
   requestedModel: string,
   signal: AbortSignal,
   ownerId?: string,
+  onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void,
 ): Promise<string | null> {
   const trimmed = request.trim();
   if (trimmed.length === 0) return null;
@@ -87,7 +88,7 @@ export async function summariseConversationTitle(
     // Naming something is not a reasoning task, so thinking is switched off.
     // Not every model obeys that; see THINKING_RETRY_MAX_TOKENS.
     const attempt = (maxTokens: number) =>
-      completeWithoutThinking({ model, endpoint, prompt, maxTokens, temperature: 0.2, signal });
+      completeWithoutThinking({ model, endpoint, prompt, maxTokens, temperature: 0.2, signal, onUsage });
 
     const first = await attempt(MAX_TOKENS);
     if (signal.aborted) return null;

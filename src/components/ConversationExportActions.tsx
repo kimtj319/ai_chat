@@ -278,7 +278,7 @@ export function ConversationExportActions({
             )}
             {totals.totalTokens > 0 && (
               <p className="chat-download-usage">
-                이 대화 합계 {totals.totalTokens.toLocaleString()} 토큰 (프롬프트 {totals.promptTokens.toLocaleString()} · 완성{" "}
+                이 대화 합계 {totals.totalTokens.toLocaleString()} 토큰 (입력 {totals.promptTokens.toLocaleString()} · 출력{" "}
                 {totals.completionTokens.toLocaleString()})
               </p>
             )}
