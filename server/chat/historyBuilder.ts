@@ -5,6 +5,7 @@ import { activeText, capActive, readProhibitions } from "../storage/prohibitions
 import { readAttachmentBytes } from "../storage/attachmentStore.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
 import { STUB_PREVIEW_CHARS } from "../attachments/budget.js";
+import { fitPastTurnToolResults } from "./pastToolResults.js";
 
 export interface VllmTextPart {
   type: "text";
@@ -132,9 +133,12 @@ async function messageToVllm(
       },
     ];
     // 그 턴에 모델이 봤던 모양 그대로(인용 번호 포함) 다시 싣는다. 번호가 빠지면
-    // 이어지는 답변이 앞 답변의 "[n]" 을 이해하지 못한다.
+    // 이어지는 답변이 앞 답변의 "[n]" 을 이해하지 못한다. 다만 길이는 턴당 상한까지만
+    // (chat/pastToolResults.ts) — 제목·주소·번호는 남기고 본문을 줄인다.
     const sources = citationSources(message.toolResults);
-    for (const tr of message.toolResults ?? []) out.push(toolResultMessage(tr, sources));
+    const results = (message.toolResults ?? []).map((tr) => toolResultMessage(tr, sources));
+    const fitted = fitPastTurnToolResults(results.map((m) => String(m.content)));
+    results.forEach((m, i) => out.push(fitted[i] === m.content ? m : { ...m, content: fitted[i]! }));
     if (message.content.trim().length > 0) {
       out.push({ role: "assistant", content: message.content });
     }
