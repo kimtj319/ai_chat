@@ -7,6 +7,7 @@ import type { AttachmentDraft, DraftAttachment } from "../hooks/useAttachmentDra
 import { readDraft, writeDraft } from "../state/composerDraft";
 import { composerKeyHint, composerPlaceholder, EMBEDDING_MODE_NOTICE } from "../state/modelCapability";
 import type { ActiveConversation } from "../state/StoreContext";
+import type { LiveContext } from "../state/contextMeter";
 import { useStore } from "../state/StoreContext";
 import { overlayOpen } from "../ui/overlayStack";
 import { AttachmentChip } from "./AttachmentChip";
@@ -36,6 +37,8 @@ interface ComposerProps {
   isStreaming: boolean;
   /** 컨텍스트 압축 중 — 입력과 보내기를 막는다. 끝나면 풀린다. */
   compacting: boolean;
+  /** 답변 중 라운드마다 서버가 알린 요청 크기 — 사용률을 바로 바꾼다. */
+  liveContext: LiveContext | null;
   attachments: AttachmentDraft;
   onSend: (text: string, attachmentIds: string[]) => void;
   onStop: () => void;
@@ -87,6 +90,7 @@ export function Composer({
   reasoningFixed,
   isStreaming,
   compacting,
+  liveContext,
   attachments,
   onSend,
   onStop,
@@ -372,6 +376,7 @@ export function Composer({
                 model={conversation.model ?? ""}
                 revision={`${conversation.messages.length}:${conversation.messages[conversation.messages.length - 1]?.id ?? ""}`}
                 paused={isStreaming || compacting}
+                live={isStreaming || compacting ? liveContext : null}
               />
             )}
             {/* An embedding model does not reason — the control would only

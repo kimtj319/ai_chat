@@ -450,6 +450,7 @@ export function ChatView({
           reasoningFixed={selectedEntry?.reasoningFixed === true}
           isStreaming={streamingHere}
           compacting={compacting}
+          liveContext={turn?.liveContext ?? null}
           attachments={attachments}
           onSend={(text, attachmentIds) => {
             // Sending is a deliberate move to the end of the transcript, not a

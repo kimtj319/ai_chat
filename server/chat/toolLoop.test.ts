@@ -204,6 +204,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     const toolCalls = answer.toolCalls ?? (answer.toolCall ? [answer.toolCall] : null);
     if (toolCalls) {
       return sseResponse([
+        // 도구를 부르기 전에 한 줄 말하는 모델(DeepSeek 등): 내용 조각이 먼저 온다.
+        ...(answer.content ? [{ choices: [{ delta: { content: answer.content }, finish_reason: null }] }] : []),
         {
           choices: [
             {
@@ -407,7 +409,13 @@ async function runTurn(
   };
 
   const conversation = makeConversation({ model: "model-c", enabledTools: ["calculator"] });
-  const { result, notices } = await runTurn(conversation);
+  const { result, notices, events } = await runTurn(conversation);
+  const contexts = events.filter((e) => e.type === "context") as Array<{ tokens: number; contextWindow: number | null }>;
+  check(
+    "시나리오 C: 라운드마다 실제로 보내는 크기를 context 이벤트로 알린다(입력창 실시간 사용률)",
+    contexts.length === mainRoundCalls && contexts.every((c) => c.tokens > 0 && c.contextWindow === WINDOW),
+    `context ${contexts.length} / rounds ${mainRoundCalls}`,
+  );
 
   check(
     "시나리오 C: 압축이 설정된 상한(CONTEXT_MAX_COMPACTIONS)만큼만 일어났다",
@@ -435,6 +443,28 @@ async function runTurn(
     String(mainRoundCalls),
   );
   check("시나리오 C: 그래도 턴은 유한한 라운드 안에 끝나고 답을 낸다", result.content === "도구 중단 후 최종 답변.");
+}
+
+/* ============================================================== 시나리오 N */
+// 도구를 부를 때마다 "확인해 보겠습니다" 같은 한 줄을 먼저 쓰는 모델. 그 말은 최종 답이
+// 아니므로, 컨텍스트가 차면 조사 압축이 돌아야 한다(2026-11-03 운영: 압축 없이 도구 중단).
+{
+  resetCallCounters();
+  const WINDOW = 50_000;
+  registeredModels.set("model-e", WINDOW);
+  mainRoundHandler = (call, roundIndex) => {
+    if (call.body.tool_choice === "auto" && roundIndex < 12) {
+      return { content: "자료를 더 확인해 보겠습니다. ", toolCall: { name: "calculator", arguments: { expression: `${roundIndex}+${"1".repeat(20_000)}` } } };
+    }
+    return { content: "최종 답변." };
+  };
+  const conversation = makeConversation({ model: "model-e", enabledTools: ["calculator"] });
+  const { notices } = await runTurn(conversation);
+  check(
+    "시나리오 N: 도구 앞에 한 줄 말하는 모델도 컨텍스트가 차면 조사 압축이 돈다",
+    compactionSummaryCalls >= 1,
+    `compactionSummaryCalls=${compactionSummaryCalls}, notices=${JSON.stringify(notices)}`,
+  );
 }
 
 /* ============================================================== 시나리오 D */

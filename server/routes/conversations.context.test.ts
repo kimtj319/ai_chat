@@ -37,8 +37,9 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     const body = JSON.parse(String(init?.body ?? "{}"));
     tokenized.push(JSON.stringify(body.messages ?? []));
     tokenizedTools.push(Array.isArray(body.tools) ? body.tools.length : 0);
-    // 메시지가 많은 대화는 창의 60% 를 쓴 것으로 답한다.
-    return json({ count: (body.messages ?? []).length > 6 ? 60_000 : 1234, max_model_len: 100_000 });
+    // 메시지가 많은 대화는 창의 60% 를, 아주 많은 대화는 85% 를 쓴 것으로 답한다.
+    const n = (body.messages ?? []).length;
+    return json({ count: n > 12 ? 85_000 : n > 6 ? 60_000 : 1234, max_model_len: 100_000 });
   }
   if (url === "http://mock-gw/tokenize") return new Response("not found", { status: 404 });
   throw new Error(`예상하지 못한 요청: ${url}`);
@@ -70,7 +71,7 @@ await mutateConversation("alice", conv.id, (c) => {
   const res = await fetch(`${base}/conversations/${conv.id}/context`);
   const body = await res.json();
   check("대화의 모델로 잰다(토큰 계산기 값·길이)", res.status === 200 && body.model === "big-model" && body.tokens === 1234 && body.exact === true && body.contextWindow === 100_000, JSON.stringify(body));
-  check("요약·도구 중단 기준선을 함께 준다", body.summaryRatio === 0.5 && body.toolStopRatio === 0.8, JSON.stringify(body));
+  check("요약·도구 중단 기준선을 함께 준다", body.summaryRatio === 0.8 && body.toolStopRatio === 0.8, JSON.stringify(body));
   check("짧은 대화는 다음 질문에서 요약하지 않는다", body.willSummarize === false, JSON.stringify(body));
   check("다음 턴이 보낼 기록(답변 포함)을 잰다", tokenized.some((m) => m.includes("답변입니다")), tokenized[0]?.slice(0, 120));
   check("켠 도구의 정의도 함께 잰다", (tokenizedTools[0] ?? 0) > 0, JSON.stringify(tokenizedTools));
@@ -94,7 +95,16 @@ await mutateConversation("alice", conv.id, (c) => {
     return c;
   });
   const body = await (await fetch(`${base}/conversations/${long.id}/context`)).json();
-  check("기록이 창의 절반을 넘으면 다음 질문에서 요약한다고 알린다", body.willSummarize === true && body.tokens === 60_000, JSON.stringify(body));
+  check("60% 로는 아직 요약하지 않는다(기준 80%)", body.willSummarize === false && body.tokens === 60_000, JSON.stringify(body));
+  await mutateConversation("alice", long.id, (c) => {
+    for (let i = 4; i < 8; i++) {
+      c.messages.push({ id: `lu${i}`, role: "user", content: `질문 ${i}`, createdAt: new Date().toISOString() });
+      c.messages.push({ id: `la${i}`, role: "assistant", content: `답변 ${i}`, createdAt: new Date().toISOString() });
+    }
+    return c;
+  });
+  const fuller = await (await fetch(`${base}/conversations/${long.id}/context`)).json();
+  check("80% 를 넘으면 다음 질문에서 요약한다고 알린다", fuller.willSummarize === true && fuller.tokens === 85_000, JSON.stringify(fuller));
 }
 
 {

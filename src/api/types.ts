@@ -418,6 +418,8 @@ export type ServerEvent =
   /** 사용자의 크롬에서 실행할 명령. 확장 프로그램이 실행하고, 결과는 browser-actions 로 돌려준다. */
   | { type: "browser_action"; callId: string; toolCallId: string; name: string; arguments: unknown }
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
+  /** 이 라운드가 실제로 보내는 요청의 크기 — 입력창 사용률을 답변 중에도 바로 바꾼다. */
+  | { type: "context"; tokens: number; contextWindow: number | null; summaryRatio: number; toolStopRatio: number }
   | { type: "notice"; message: string }
   /** 컨텍스트 압축 진행률. 시작부터 끝까지 입력을 막는다. */
   | { type: "compaction"; kind: CompactionKind; phase: "start" | "progress" | "end"; progress: number; ok?: boolean }

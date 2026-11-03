@@ -55,6 +55,8 @@ export type ChatEvent =
   // 결과를 /conversations/:id/browser-actions/:callId 로 돌려준다.
   | { type: "browser_action"; callId: string; toolCallId: string; name: string; arguments: unknown }
   | { type: "usage"; promptTokens: number; completionTokens: number; totalTokens: number }
+  /** What this round actually sends, for the composer's live context meter. */
+  | { type: "context"; tokens: number; contextWindow: number | null; summaryRatio: number; toolStopRatio: number }
   // Informational, not a failure: the turn continues in a degraded form.
   | { type: "notice"; message: string }
   // 컨텍스트 압축 진행률(chat/compactionProgress.ts). 그동안 화면은 입력을 막는다.
@@ -285,6 +287,8 @@ export async function* runConversationTurn(
   // failure, but giving up after one meant a single over-long report stopped
   // tools for the rest of the turn (production, 2026-10-16).
   let compactionAvailable = config.contextCompactRatio > 0;
+  // Whether the last finished round ended by calling tools, i.e. the turn is still researching.
+  let lastRoundCalledTools = false;
   let compactionFailures = 0;
   const missingKeyNoticed = new Set<string>();
   let extraReserve = 0;
@@ -364,13 +368,17 @@ export async function* runConversationTurn(
     // space and keeps the findings (chat/contextCompaction.ts).
     // Skipped once the model has started writing its answer: replacing the
     // context underneath it makes it start the answer over, and the user would
-    // see two half-answers concatenated.
+    // see two half-answers concatenated. A line written before a tool call
+    // ("확인해 보겠습니다") is not that answer: when the previous round ended in
+    // tool calls the turn is still researching. Gating on the text alone switched
+    // compaction off for the whole turn on models that narrate (DeepSeek), and a
+    // turn of large pages went straight from 70% to tools stopped (2026-11-03).
     if (
       compactionAvailable &&
       compactions < config.contextMaxCompactions &&
       !toolsStopped &&
       tools &&
-      content.trim().length === 0 &&
+      (content.trim().length === 0 || lastRoundCalledTools) &&
       // Nothing to compact below two tool results — a summary of one result is
       // not smaller than the result. Counted on this turn's own results, not on
       // workingMessages: when the bulk comes from earlier turns instead, the
@@ -462,6 +470,13 @@ export async function* runConversationTurn(
     }
     workingMessages = fit.messages;
     if (fit.toolsStopped) toolsStopped = true;
+    yield {
+      type: "context",
+      tokens: fit.promptTokens,
+      contextWindow: maxModelLen,
+      summaryRatio: Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio),
+      toolStopRatio: config.contextToolStopRatio,
+    };
     for (const message of fit.notices) yield* noticeEvent(message);
     if (compactionLog) {
       const { beforeTokens, messagesBefore, compacted, startedAt } = compactionLog;
@@ -613,12 +628,14 @@ export async function* runConversationTurn(
     if (!toolsOffered) {
       if (finalAnswerForced || content.trim().length > 0) break;
       finalAnswerForced = true;
+      lastRoundCalledTools = false;
       workingMessages = [...workingMessages, { role: "user", content: FINAL_ANSWER_INSTRUCTION }];
       continue;
     }
 
     const roundToolCalls: ToolCallRecord[] = [];
     const roundToolResults: ToolResultRecord[] = [];
+    lastRoundCalledTools = true;
     for (const [index, pending] of [...pendingToolCalls.entries()].sort((a, b) => a[0] - b[0])) {
       const id = pending.id ?? `call_${index}`;
       const name = pending.name ?? "unknown";

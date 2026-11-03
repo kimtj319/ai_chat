@@ -262,11 +262,14 @@ export const config = {
    * When a turn's starting history (system + earlier turns, earlier turns' tool
    * results included) passes this fraction of the window, earlier turns are
    * folded into the stored conversation summary before the turn runs
-   * (chat/historySummary.ts). Half the window, so the turn opens with room for
-   * its own tool results: at the old trigger (contextToolStopRatio, 0.8) a long
-   * research conversation opened every turn with tools already stopped.
+   * (chat/historySummary.ts). 0.8 of each model's own window, the same line as
+   * contextToolStopRatio (decided 2026-11-03). It was 0.5 because a summary at
+   * 0.8 left the last turns' full tool results behind, so a research
+   * conversation reopened every turn with tools already stopped; past turns'
+   * results are now capped when replayed (chat/pastToolResults.ts), so the
+   * history a summary leaves is small and 0.8 no longer starves the next turn.
    */
-  contextHistorySummaryRatio: toRatio(process.env.CONTEXT_HISTORY_SUMMARY_RATIO, 0.5),
+  contextHistorySummaryRatio: toRatio(process.env.CONTEXT_HISTORY_SUMMARY_RATIO, 0.8),
   /**
    * "Normal" reasoning mode's SAFETY NET: past this, the turn is stopped and
    * asked to write its answer from the reasoning it already produced

@@ -9,6 +9,7 @@ import { friendlyError, isUserStop } from "../state/friendlyError";
 import { setGeneratingConversations } from "../state/generatingConversations";
 import { useStore } from "../state/StoreContext";
 import type { ClientChatMessage, LiveToolResult } from "../state/types";
+import type { LiveContext } from "../state/contextMeter";
 
 /**
  * turn_started 가 도착하기 전까지 쓰는 기본값 — 서버 설정(ANSWER_NOW_THRESHOLD_MS)
@@ -45,6 +46,8 @@ export interface TurnState {
   answerStreaming: boolean;
   /** 컨텍스트를 압축하는 중. 그동안 그 대화의 입력창을 막는다(Composer). */
   compacting: boolean;
+  /** 이 턴이 방금 보낸 요청의 크기(라운드마다). 입력창 사용률이 답변 중에 이것을 보인다. */
+  liveContext: LiveContext | null;
 }
 
 const NEW_TURN: TurnState = {
@@ -53,6 +56,7 @@ const NEW_TURN: TurnState = {
   answerNowState: "idle",
   answerStreaming: false,
   compacting: false,
+  liveContext: null,
 };
 
 const BUSY_NOTE = "이 대화에서 답변이 진행 중이라 보내지 못했습니다.";
@@ -283,6 +287,17 @@ export function useChatStream() {
                 updateTurn(conversationId, { compacting: true });
                 patchLive({ compaction: { kind: event.kind, progress: event.progress } });
               }
+              break;
+
+            case "context":
+              updateTurn(conversationId, {
+                liveContext: {
+                  tokens: event.tokens,
+                  contextWindow: event.contextWindow,
+                  summaryRatio: event.summaryRatio,
+                  toolStopRatio: event.toolStopRatio,
+                },
+              });
               break;
 
             case "usage":
