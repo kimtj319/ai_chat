@@ -807,3 +807,17 @@ export interface ScheduledTask {
   finishedAt?: string;
   note?: string;
 }
+
+/** `GET /api/conversations/:id/context` — server/chat/contextUsage.ts. */
+export interface ContextUsageResponse {
+  model: string;
+  tokens: number;
+  /** Null when the model reports no window and none is configured. */
+  contextWindow: number | null;
+  /** False when `tokens` is a character estimate. */
+  exact: boolean;
+  /** The next question will summarise the earlier conversation first (the server's own decision). */
+  willSummarize: boolean;
+  summaryRatio: number;
+  toolStopRatio: number;
+}

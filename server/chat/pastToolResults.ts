@@ -16,11 +16,15 @@
  */
 export const PAST_TURN_TOOL_RESULT_CHARS = 16_000;
 
-/** Below this, a string is a title, URL, id or number — kept whole. */
-const MIN_STRING_CHARS = 40;
+/**
+ * Strings up to this long are titles, URLs, ids and the like — never cut. A
+ * 40-character floor cut every URL in a turn of 12 searches and every
+ * reference the previous answer's "[n]" pointed at.
+ */
+const KEEP_WHOLE_CHARS = 300;
 
 function note(original: number): string {
-  return `[이전 턴의 도구 결과 — 다시 보내면서 길이를 줄였습니다(원래 ${original.toLocaleString()}자). 제목·주소·번호는 그대로이고 본문만 줄였으니, 세부 내용이 필요하면 도구를 다시 호출하세요.]`;
+  return `[이전 턴의 도구 결과 — 다시 보내면서 길이를 줄였습니다(원래 ${original.toLocaleString()}자). 짧은 값(제목·주소·번호 등)은 그대로이고 긴 본문만 줄였으니, 세부 내용이 필요하면 도구를 다시 호출하세요.]`;
 }
 
 /** Shares of `budget` for items of these sizes: small items whole, the rest split evenly. */
@@ -36,9 +40,9 @@ function shares(sizes: number[], budget: number): number[] {
   return out;
 }
 
-/** Every string longer than `max` cut to `max` characters, structure and short values untouched. */
+/** Every long string cut to `max` characters; structure and short values untouched. */
 function clipStrings(value: unknown, max: number): unknown {
-  if (typeof value === "string") return value.length > max ? `${value.slice(0, max)}…` : value;
+  if (typeof value === "string") return value.length > KEEP_WHOLE_CHARS && value.length > max ? `${value.slice(0, max)}…` : value;
   if (Array.isArray(value)) return value.map((v) => clipStrings(v, max));
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, clipStrings(v, max)]));
@@ -72,7 +76,12 @@ function parsed(content: string): unknown {
   return value;
 }
 
-/** One tool message's content cut to `limit` characters, cutting the longest strings first. */
+/**
+ * One tool message's content cut toward `limit` characters by shortening its
+ * long strings evenly. It stays valid JSON with every short value in place, so
+ * when even that skeleton is over `limit` (dozens of calls in one turn) it is
+ * sent over the limit rather than cut mid-structure.
+ */
 function shrink(content: string, limit: number): string {
   const head = note(content.length);
   // The newline after the note and a closing "…" are counted too.
@@ -87,8 +96,7 @@ function shrink(content: string, limit: number): string {
     if (JSON.stringify(clipStrings(value, mid)).length <= room) lo = mid;
     else hi = mid - 1;
   }
-  const body = JSON.stringify(clipStrings(value, Math.max(lo, MIN_STRING_CHARS)));
-  return `${head}\n${body.length <= room ? body : `${body.slice(0, room)}…`}`;
+  return `${head}\n${JSON.stringify(clipStrings(value, lo))}`;
 }
 
 /**

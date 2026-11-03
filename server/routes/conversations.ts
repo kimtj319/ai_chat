@@ -12,6 +12,7 @@ import { isValidId } from "../storage/paths.js";
 import { modelAccessFor, modelIsForbidden } from "../vllm/access.js";
 import { resolveModel } from "../vllm/client.js";
 import { compactionStatus } from "../chat/compactionProgress.js";
+import { contextUsage } from "../chat/contextUsage.js";
 import type { Conversation, ConversationSettings, ConversationKind, MessageFeedback } from "../types.js";
 import { checkEnabledTools, checkSettings, checkTextField } from "./conversationFields.js";
 import { postMessage } from "./conversationTurn.js";
@@ -93,6 +94,21 @@ conversationsRouter.get("/conversations/:id/compaction", async (req, res, next) 
     if (!isValidId(req.params.id)) return res.status(404).json({ error: "Not found" });
     const status = compactionStatus(req.ownerId, req.params.id);
     res.json(status ? { active: true, ...status } : { active: false });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /conversations/:id/context?model=<id> — how full this conversation's
+ * context is for that model (the conversation's own model when omitted).
+ */
+conversationsRouter.get("/conversations/:id/context", async (req, res, next) => {
+  try {
+    const conv = await ownConversationOr404(req, res);
+    if (!conv) return;
+    const model = typeof req.query.model === "string" ? req.query.model : undefined;
+    res.json(await contextUsage(conv, req.ownerId, model));
   } catch (err) {
     next(err);
   }

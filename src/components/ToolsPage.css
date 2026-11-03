@@ -21,56 +21,84 @@
   overflow: hidden;
 }
 
-/* 본문은 머리(PageHeader)와 같은 폭(1120px)으로 가운데에 선다. */
+/* 본문이 통째로 스크롤된다 — 목록 안의 작은 스크롤 칸이 따로 없다. 폭 제한도 두지
+   않고, 카드가 칸을 채운다. */
 .tools-page-body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  overflow-y: auto;
   width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
   padding: 0 var(--space-10) var(--space-10);
-}
-
-.tools-master-detail {
-  flex: 1;
-}
-
-.tool-row-name {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-
-/* 한 줄이 너무 길면 눈이 다음 줄 첫머리를 놓친다. 칸이 넓어도 글은 이 폭에서 접힌다. */
-.tool-detail {
   display: flex;
   flex-direction: column;
-  max-width: 68ch;
+  gap: var(--space-9);
 }
 
-.tool-detail-head {
+.tools-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-5);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--on-surface);
+}
+
+.tools-section-count {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 칸 폭에 맞춰 열 수가 정해진다. 카드 높이는 내용대로 — 긴 설명도 잘리지 않는다. */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--space-6) var(--space-7);
+  /* 채움·테두리는 다른 본문 카드와 같은 유리(styles/glass.css). */
+  border-radius: var(--radius-md);
+}
+
+/* 꺼진 도구는 한발 물러선다 — 켠 것이 눈에 먼저 들어온다. */
+.tool-card:not([data-on]) {
+  opacity: 0.72;
+}
+
+.tool-card-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-4);
 }
 
-.tool-detail-name {
+.tool-card-head .toggle-switch,
+.tool-card-head > :last-child {
+  margin-left: auto;
+}
+
+.tool-card-name {
   font-family: var(--font-mono);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   overflow-wrap: anywhere;
 }
 
-.tool-detail-short {
-  margin: var(--space-3) 0 var(--space-6);
+.tool-card-short {
+  margin: var(--space-3) 0 0;
   font-size: var(--text-sm);
   color: var(--on-surface);
 }
 
-.tool-detail-warning {
-  margin: 0 0 var(--space-6);
+.tool-card-warning {
+  margin: var(--space-4) 0 0;
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -79,27 +107,35 @@
   background: var(--warning-bg);
 }
 
-.tool-detail-long {
-  margin: 0 0 var(--space-7);
-  font-size: var(--text-sm);
-  line-height: 1.75;
+.tool-card-long {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.7;
   color: var(--on-surface-variant);
 }
 
-@media (max-width: 860px) {
-  .tools-page-body {
-    display: block;
-    overflow-y: auto;
-  }
+.tool-card-params {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--outline-variant);
 }
 
-.tool-schema-heading {
-  margin: 0 0 var(--space-2);
+.tool-card-params > summary {
+  cursor: pointer;
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   color: var(--on-surface-variant);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+}
+
+.tool-card-params[open] > summary {
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .tools-page-body {
+    padding: 0 var(--space-6) var(--space-8);
+  }
 }
 
 .tool-schema-empty {

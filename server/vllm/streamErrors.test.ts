@@ -43,6 +43,10 @@ globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) =
   if (body.model === "broken") {
     return sse([{ error: { message: "something exploded", type: "InternalServerError", code: 500 } }]);
   }
+  if (body.model === "echo-400") {
+    // 검증 오류가 요청 본문을 그대로 되돌려 주는 400 — 상한 거절이 아니다.
+    return new Response(JSON.stringify({ detail: [{ msg: "bad temperature", input: body }] }), { status: 400 });
+  }
   const how = refuses.get(body.model);
   if (budget && how === "stream") return sse([{ error: { message: REFUSAL, type: "BadRequestError", code: 400 } }]);
   if (budget && how === "http") {
@@ -104,6 +108,20 @@ for (const model of ["refuse-stream", "refuse-http"]) {
   sent.length = 0;
   await ask("accepts-budget");
   check("다른 모델에는 상한을 그대로 보낸다", JSON.stringify(sent) === JSON.stringify([{ model: "accepts-budget", budget: true }]), JSON.stringify(sent));
+}
+
+{
+  sent.length = 0;
+  let error: unknown = null;
+  try {
+    await ask("echo-400");
+  } catch (err) {
+    error = err;
+  }
+  check("본문을 되돌려 주는 400 은 상한 거절로 보지 않는다(다시 보내지 않음)", error instanceof Error && sent.length === 1, JSON.stringify(sent));
+  sent.length = 0;
+  await ask("echo-400").catch(() => {});
+  check("…그 뒤에도 상한을 계속 보낸다", sent.length === 1 && sent[0]!.budget === true, JSON.stringify(sent));
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

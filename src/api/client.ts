@@ -19,6 +19,7 @@ import type {
   ModelEndpointsResponse,
   ModelsResponse,
   CompactionStatusResponse,
+  ContextUsageResponse,
   MyAccess,
   PersonalKeyName,
   PatchConversationRequest,
@@ -341,6 +342,12 @@ export function setModelEndpointModels(baseUrl: string, models: string[]): Promi
 
 export async function deleteModelEndpoint(baseUrl: string): Promise<void> {
   await endpointMutation<void>({ method: "DELETE", body: JSON.stringify({ baseUrl }) });
+}
+
+/** 이 대화의 컨텍스트가 그 모델 기준으로 얼마나 찼는가(입력창 옆 사용률). */
+export function getContextUsage(conversationId: string, model: string): Promise<ContextUsageResponse> {
+  const query = model ? `?model=${encodeURIComponent(model)}` : "";
+  return request<ContextUsageResponse>(`/conversations/${encodeURIComponent(conversationId)}/context${query}`);
 }
 
 /** 이 대화에서 진행 중인 컨텍스트 압축(새로 열었거나 새로 고친 페이지가 확인한다). */

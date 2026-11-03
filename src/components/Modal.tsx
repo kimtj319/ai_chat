@@ -34,6 +34,12 @@ function focusableIn(root: HTMLElement): HTMLElement[] {
 
 export function Modal({ title, onClose, children, width, size, dismissOnBackdrop = true }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // 키 처리기는 한 번만 단다. onClose 가 바뀔 때마다 떼었다 붙이면, 같은 키 입력 중에
+  // 앞선 처리기가 일으킨 다시 그리기(폰 서랍이 Esc 로 닫히는 것)에 떼여 그 Esc 를 놓쳤다.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -44,7 +50,7 @@ export function Modal({ title, onClose, children, width, size, dismissOnBackdrop
       const modals = document.querySelectorAll('[aria-modal="true"]');
       if (modals[modals.length - 1] !== dialogRef.current) return;
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -77,7 +83,7 @@ export function Modal({ title, onClose, children, width, size, dismissOnBackdrop
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   // 떠 있는 동안은 Esc 가 이쪽 몫이다. 전역 Esc(생성 중단)가 함께 터지지
   // 않도록 알려 둔다.

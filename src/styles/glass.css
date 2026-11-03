@@ -17,6 +17,7 @@
 /* ---- card ---- */
 :is(
     .md-group-rows,
+    .tool-card,
     .conv-settings-card,
     .admin-model-card,
     .admin-notice-form,
@@ -52,7 +53,7 @@
 }
 
 /* Notices are cards tinted with their own meaning, not slabs of colour. */
-:is(.endpoint-warning, .library-warning, .tool-detail-warning) {
+:is(.library-warning, .tool-card-warning) {
   border: 1px solid color-mix(in srgb, var(--warning) 22%, transparent);
   box-shadow: inset 0 1px 0 var(--glass-card-highlight);
 }
@@ -69,6 +70,7 @@
     .chat-download-menu,
     .notice-popover,
     .source-picker-menu,
+    .context-meter-panel,
     .chat-jump-bottom,
     .chat-drop-card,
     .source-panel-inner,

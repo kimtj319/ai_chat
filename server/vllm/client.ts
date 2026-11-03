@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
 import { endpointsRevision, listEndpoints, reportedWindow, requestHeaders } from "./endpoints.js";
+import { configuredContextLength } from "./contextLengths.js";
 import { probeModels, type ModelCapability } from "./capability.js";
 import { acquireModelSlot, waitingAhead, type SlotPriority } from "./concurrency.js";
 
@@ -86,7 +87,7 @@ async function fetchEndpointModels(endpoint: VllmEndpoint, signal?: AbortSignal)
       id: m.id,
       label: endpoint.label,
       baseUrl: endpoint.baseUrl,
-      maxModelLen: reportedWindow(m),
+      maxModelLen: reportedWindow(m) ?? configuredContextLength(m.id),
       reachable: true,
       capability: verdict?.capability ?? "chat",
     });
@@ -522,7 +523,9 @@ function modelSlotKey(endpoint: VllmEndpoint, model: string): string {
  * cap is left off from then on, as the /tokenize fallback does.
  */
 const thinkingBudgetRefusedBy = new Set<string>();
-const THINKING_BUDGET_REFUSAL = /thinking_token_budget/i;
+// The server's own sentence, not just the field name: a 400 that merely echoes the
+// request body (a validation error) would otherwise switch the cap off for good.
+const THINKING_BUDGET_REFUSAL = /thinking_token_budget is set but reasoning_config/i;
 
 /** Whether this model's server has refused thinking_token_budget (it then runs uncapped). */
 export function thinkingBudgetRefused(endpoint: VllmEndpoint, model: string): boolean {
@@ -577,10 +580,12 @@ export async function streamChatCompletion(
     });
   } catch (err) {
     release();
+    signal.removeEventListener("abort", release);
     throw err;
   }
   if (!res.ok || !res.body) {
     release();
+    signal.removeEventListener("abort", release);
     const text = await res.text().catch(() => "");
     if (res.status === 400 && refusedThinkingBudget(body, endpoint, text)) {
       return streamChatCompletion(withoutThinkingBudget(body), signal, endpoint, priority);

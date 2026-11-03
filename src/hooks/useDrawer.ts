@@ -100,7 +100,12 @@ export function useDrawer({ view, activeConversationId, sidebarCollapsed, naviga
   useEffect(() => {
     if (!drawerOpen) return;
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setDrawerOpen(false);
+      if (event.key !== "Escape") return;
+      // 서랍 위에 대화상자가 떠 있으면 Esc 는 그 대화상자의 몫이다 — 한 번에 맨 위 하나만 닫는다.
+      const modals = document.querySelectorAll('[aria-modal="true"]');
+      const aside = shellRef.current?.querySelector(":scope > aside.sidebar");
+      if (modals.length > 0 && modals[modals.length - 1] !== aside) return;
+      setDrawerOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

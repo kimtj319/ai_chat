@@ -13,6 +13,7 @@ import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentPreview, type PreviewTarget } from "./AttachmentPreview";
 import { McpPicker } from "./McpPicker";
 import { ReasoningControl } from "./ReasoningControl";
+import { ContextMeter } from "./ContextMeter";
 import { BrowserControlToggle, useBrowserControlActive } from "./BrowserControlToggle";
 import { PaperclipIcon } from "./icons";
 import "./Composer.css";
@@ -364,6 +365,15 @@ export function Composer({
                 it). Drag-and-drop and paste cannot be filtered either, so this
                 keeps all three paths behaving identically. */}
             <input ref={fileInputRef} type="file" multiple hidden onChange={handlePicked} />
+            {/* 대화가 시작된 뒤에만 — 빈 대화의 사용률은 시스템 프롬프트뿐이다. */}
+            {!isEmbedding && conversation.messages.length > 0 && (
+              <ContextMeter
+                conversationId={conversation.id}
+                model={conversation.model ?? ""}
+                revision={`${conversation.messages.length}:${conversation.messages[conversation.messages.length - 1]?.id ?? ""}`}
+                paused={isStreaming || compacting}
+              />
+            )}
             {/* An embedding model does not reason — the control would only
                 offer a setting that changes nothing. */}
             {!isEmbedding && (

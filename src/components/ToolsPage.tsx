@@ -6,7 +6,6 @@ import { useTools } from "../hooks/useTools";
 import { useActiveConversation, useStore } from "../state/StoreContext";
 import type { ActiveConversation } from "../state/StoreContext";
 import { categoryLabel, paramCopy, toolCopy, TYPE_LABELS } from "../state/toolCopy";
-import { MasterDetail } from "./MasterDetail";
 import { PageHeader } from "./PageHeader";
 import { ToggleSwitch } from "./ToggleSwitch";
 import "./ToolsPage.css";
@@ -92,7 +91,6 @@ function ToolsPageBody({ conversation, onBack }: { conversation: ActiveConversat
   const { tools, loading, error } = useTools();
   const access = useMyAccess();
   const [enabledTools, setEnabledTools] = useState<string[]>(conversation.enabledTools);
-  const [selected, setSelected] = useState<string | null>(null);
   const saveStatus = useDebouncedSave(enabledTools, updateEnabledTools, 400);
 
   function toggle(name: string) {
@@ -105,8 +103,6 @@ function ToolsPageBody({ conversation, onBack }: { conversation: ActiveConversat
     list.push(tool);
     categories.set(tool.category, list);
   }
-  // 처음 열면 첫 도구의 설명이 오른쪽에 보인다 — 빈 칸으로 시작하지 않는다.
-  const shown = selected ?? tools[0]?.name ?? null;
   const onCount = tools.filter((t) => enabledTools.includes(t.name)).length;
 
   return (
@@ -116,59 +112,63 @@ function ToolsPageBody({ conversation, onBack }: { conversation: ActiveConversat
         subtitle={loading ? "불러오는 중…" : `「${conversation.title || "새 대화"}」에서 켠 도구 ${onCount}개 / ${tools.length}개`}
         status={saveStatus}
       />
+      {/* 도구마다 설명 전체를 한 번에 보인다 — 하나씩 눌러 옆 칸에서 읽던 것을, 분류별 카드로. */}
       <div className="tools-page-body">
         {error && <p className="message-error">{error}</p>}
-        {tools.length > 0 && (
-          <MasterDetail
-            className="tools-master-detail"
-            groups={[...categories.entries()].map(([category, items]) => ({ key: category, title: categoryLabel(category), items }))}
-            idOf={(tool) => tool.name}
-            selectedId={shown}
-            onSelect={setSelected}
-            renderRow={(tool) => (
-              <>
-                <span className="md-row-name">
-                  <code className="tool-row-name">{tool.name}</code>
-                  {missingKey(access, { tool: tool.name }) && (
-                    <span className="md-badge" data-tone="warning">
-                      키 필요
-                    </span>
-                  )}
+        {[...categories.entries()].map(([category, items]) => {
+          const on = items.filter((t) => enabledTools.includes(t.name)).length;
+          return (
+            <section key={category} className="tools-section" aria-labelledby={`tools-section-${category}`}>
+              <h2 className="tools-section-title" id={`tools-section-${category}`}>
+                {categoryLabel(category)}
+                <span className="tools-section-count">
+                  {on} / {items.length} 켬
                 </span>
-                <span className="md-row-desc">{toolCopy(tool).short}</span>
-              </>
-            )}
-            renderTrailing={(tool) => (
-              <ToggleSwitch on={enabledTools.includes(tool.name)} label={`${tool.name} 사용`} onToggle={() => toggle(tool.name)} />
-            )}
-            renderDetail={(tool) => (
-              <ToolDetail tool={tool} keyMissing={missingKey(access, { tool: tool.name }) !== null} enabled={enabledTools.includes(tool.name)} />
-            )}
-            placeholder="왼쪽에서 도구를 고르면 자세한 설명이 여기에 보입니다."
-          />
-        )}
+              </h2>
+              <div className="tools-grid">
+                {items.map((tool) => (
+                  <ToolCard
+                    key={tool.name}
+                    tool={tool}
+                    enabled={enabledTools.includes(tool.name)}
+                    keyMissing={missingKey(access, { tool: tool.name }) !== null}
+                    onToggle={() => toggle(tool.name)}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </>
   );
 }
 
-function ToolDetail({ tool, keyMissing, enabled }: { tool: ToolDefinition; keyMissing: boolean; enabled: boolean }) {
+function ToolCard({ tool, enabled, keyMissing, onToggle }: { tool: ToolDefinition; enabled: boolean; keyMissing: boolean; onToggle: () => void }) {
   const copy = toolCopy(tool);
+  const paramCount = Object.keys(tool.parameters.properties ?? {}).length;
   return (
-    <div className="tool-detail">
-      <div className="tool-detail-head">
-        <code className="tool-detail-name">{tool.name}</code>
-        <span className="md-badge">{enabled ? "이 대화에서 켜짐" : "꺼짐"}</span>
+    <article className="tool-card" data-on={enabled ? "" : undefined}>
+      <div className="tool-card-head">
+        <code className="tool-card-name">{tool.name}</code>
+        {keyMissing && (
+          <span className="md-badge" data-tone="warning">
+            키 필요
+          </span>
+        )}
+        <ToggleSwitch on={enabled} label={`${tool.name} 사용`} onToggle={onToggle} />
       </div>
-      <p className="tool-detail-short">{copy.short}</p>
+      <p className="tool-card-short">{copy.short}</p>
       {keyMissing && (
-        <p className="tool-detail-warning" role="note">
+        <p className="tool-card-warning" role="note">
           {MISSING_KEY_NOTICE}
         </p>
       )}
-      <p className="tool-detail-long">{copy.long}</p>
-      <p className="tool-schema-heading">매개변수</p>
-      <SchemaFields tool={tool.name} node={tool.parameters} />
-    </div>
+      <p className="tool-card-long">{copy.long}</p>
+      <details className="tool-card-params">
+        <summary>{paramCount > 0 ? `매개변수 ${paramCount}개` : "매개변수 없음"}</summary>
+        <SchemaFields tool={tool.name} node={tool.parameters} />
+      </details>
+    </article>
   );
 }

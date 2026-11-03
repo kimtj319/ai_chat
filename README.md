@@ -86,6 +86,7 @@ VLLM_ENDPOINTS=OpenRouter|https://openrouter.ai/api/v1|sk-or-...|anthropic/claud
 | 키 | 무엇 |
 |---|---|
 | `REASONING_PROFILES` | `패턴=fixed` 또는 `패턴=budget[:최소값]` 을 쉼표로 이은 것 |
+| `MODEL_CONTEXT_LENGTHS` | 길이를 알려 주지 않는 모델의 컨텍스트 길이, `패턴=토큰수` (기본 `wise-lloa-ultra=262144,wise-lloa-max=131072`) |
 
 모델마다 추론 관련 필드를 대하는 태도가 다르다. 어떤 게이트웨이는 모르는
 필드에 400 을 내고, 어떤 모델은 받아들이고 무시한다. 그것은 **서빙하는 쪽
@@ -269,6 +270,7 @@ breakdown are returned only to a signed-in account.
 - `POST /api/conversations/:id/attachments?name=<percent-encoded filename>` — raw file bytes as the body (the file's own Content-Type is a hint only; the magic bytes decide). `201 { id, kind, name, mime, bytes, width?, height?, estimatedTokens?, chars?, inlined?, createdAt }`
 - `GET/DELETE /api/conversations/:id/attachments/:aid` — the bytes / `204`
 - `GET /api/models` — `{ models, current, catalog[] }`, proxied from `GET /v1/models` (the real model id is always fetched here, never hardcoded). Each catalog entry: `{ id, endpoint, baseUrl, reachable, capability, maxModelLen, attachments: { maxMessageTokens, maxFileTokens, maxFileBytes, maxImageWidth, maxImageHeight } }` — the same limits the server enforces, so the UI can gate an upload before it is sent. `capability` is `"chat" | "embedding" | "rerank" | "unusable"`, measured rather than declared; `current` is always a chat model
+- `GET /api/conversations/:id/context?model=<id>` — `{ model, tokens, contextWindow, exact, willSummarize, summaryRatio, toolStopRatio }`: how full the next turn's context would be for that model (the composer's meter), measured with that model's tokenizer — history after summary/past-tool-result caps plus tool definitions; `willSummarize` is the summary decision itself
 - `GET /api/models/endpoints` — `{ privileged, endpoints: [{ label, baseUrl, source: "file"|"env", mine, shared, deletable, reachable, models, maxModelLen, latencyMs }] }` — only the endpoints this account may use (its own, its group's, the deployment's; all of them for privileged accounts)
 - `POST /api/models/endpoints` `{ label?, baseUrl, apiKey? }` — validate and register a serving endpoint; `DELETE` with `{ baseUrl }` removes one (`409` for an entry that came from `VLLM_ENDPOINTS`)
 - `GET /api/health` — `{ backend, vllm, model?, latencyMs? }`

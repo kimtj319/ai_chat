@@ -174,6 +174,11 @@ export const config = {
    * 배포가 안다 — 해석과 근거는 chat/reasoningProfiles.ts 에 있다.
    */
   reasoningProfiles: (process.env.REASONING_PROFILES || "").trim(),
+  /**
+   * 길이를 알려 주지 않는 모델(WiseLLoA 게이트웨이 등)의 컨텍스트 길이. "패턴=토큰수" 를
+   * 쉼표로 잇는다 — 해석은 vllm/contextLengths.ts. 서버가 알려 준 길이가 늘 먼저다.
+   */
+  modelContextLengths: (process.env.MODEL_CONTEXT_LENGTHS ?? "wise-lloa-ultra=262144,wise-lloa-max=131072").trim(),
   dataDir: path.resolve(cwd, process.env.DATA_DIR || "./data"),
   tavilyApiKey: process.env.TAVILY_API_KEY || "",
   /**

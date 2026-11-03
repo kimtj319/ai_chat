@@ -56,6 +56,41 @@ const small = JSON.stringify({ result: 42 });
 }
 
 {
+  // 검색을 12번 한 턴: 주소는 하나도 잘리지 않아야 한다.
+  const searches = Array.from({ length: 12 }, (_, i) =>
+    JSON.stringify({ results: Array.from({ length: 10 }, (_, j) => ({ title: `기사 ${i}-${j}`, url: `https://news.example.com/articles/2026/11/03/item-${i}-${j}.html`, content: "마".repeat(500) })) }),
+  );
+  const out = fitPastTurnToolResults(searches);
+  const urls = Array.from({ length: 12 }, (_, i) => Array.from({ length: 10 }, (_, j) => `https://news.example.com/articles/2026/11/03/item-${i}-${j}.html`)).flat();
+  const kept = urls.filter((u) => out.some((c) => c.includes(u))).length;
+  check("도구를 많이 부른 턴에서도 주소 120개가 모두 그대로", kept === 120, `${kept}/120`);
+}
+
+{
+  // 문서 검색을 30번 한 턴: ref 300개가 모두 남고, 결과마다 JSON 이 깨지지 않는다.
+  let n = 0;
+  const calls = Array.from({ length: 30 }, () =>
+    JSON.stringify(JSON.stringify({ passages: Array.from({ length: 10 }, () => ({ ref: ++n, doc_id: `doc_y#${n}`, title: `문서 ${n}`, text: "바".repeat(1_500) })) })),
+  );
+  const out = fitPastTurnToolResults(calls);
+  const refs = Array.from({ length: 300 }, (_, i) => `"ref":${i + 1},`).filter((r) => out.some((c) => c.includes(r))).length;
+  const valid = out.filter((c) => {
+    const body = c.includes("\n") ? c.slice(c.indexOf("\n") + 1) : c;
+    try {
+      JSON.parse(body);
+      return true;
+    } catch {
+      return false;
+    }
+  }).length;
+  check("문서 검색이 많아도 ref 300개가 모두 남는다", refs === 300, `${refs}/300`);
+  check("줄인 결과도 JSON 으로 읽힌다", valid === 30, `${valid}/30`);
+  const before = calls.reduce((s, c) => s + c.length, 0);
+  const after = out.reduce((s, c) => s + c.length, 0);
+  check("뼈대만으로 상한을 넘더라도 크게 줄어든다", after < before / 4, `${before} → ${after}`);
+}
+
+{
   const plain = JSON.stringify("다".repeat(50_000));
   const [out] = fitPastTurnToolResults([plain]);
   check("JSON 이 아닌 긴 글도 상한 안으로 자른다", out!.length <= PAST_TURN_TOOL_RESULT_CHARS, String(out!.length));

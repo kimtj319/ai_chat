@@ -615,6 +615,7 @@ export function Sidebar({
           message="메시지와 첨부 파일이 함께 삭제되며 되돌릴 수 없습니다."
           confirmLabel="삭제"
           danger
+          width={480}
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
             const { id, title } = pendingDelete;
