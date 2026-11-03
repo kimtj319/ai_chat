@@ -114,31 +114,33 @@ function ToolsPageBody({ conversation, onBack }: { conversation: ActiveConversat
       />
       {/* 도구마다 설명 전체를 한 번에 보인다 — 하나씩 눌러 옆 칸에서 읽던 것을, 분류별 카드로. */}
       <div className="tools-page-body">
-        {error && <p className="message-error">{error}</p>}
-        {[...categories.entries()].map(([category, items]) => {
-          const on = items.filter((t) => enabledTools.includes(t.name)).length;
-          return (
-            <section key={category} className="tools-section" aria-labelledby={`tools-section-${category}`}>
-              <h2 className="tools-section-title" id={`tools-section-${category}`}>
-                {categoryLabel(category)}
-                <span className="tools-section-count">
-                  {on} / {items.length} 켬
-                </span>
-              </h2>
-              <div className="tools-grid">
-                {items.map((tool) => (
-                  <ToolCard
-                    key={tool.name}
-                    tool={tool}
-                    enabled={enabledTools.includes(tool.name)}
-                    keyMissing={missingKey(access, { tool: tool.name }) !== null}
-                    onToggle={() => toggle(tool.name)}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
+        <div className="tools-page-column">
+          {error && <p className="message-error">{error}</p>}
+          {[...categories.entries()].map(([category, items]) => {
+            const on = items.filter((t) => enabledTools.includes(t.name)).length;
+            return (
+              <section key={category} className="tools-section" aria-labelledby={`tools-section-${category}`}>
+                <h2 className="tools-section-title" id={`tools-section-${category}`}>
+                  {categoryLabel(category)}
+                  <span className="tools-section-count">
+                    {on} / {items.length} 켬
+                  </span>
+                </h2>
+                <div className="tools-grid">
+                  {items.map((tool) => (
+                    <ToolCard
+                      key={tool.name}
+                      tool={tool}
+                      enabled={enabledTools.includes(tool.name)}
+                      keyMissing={missingKey(access, { tool: tool.name }) !== null}
+                      onToggle={() => toggle(tool.name)}
+                    />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </>
   );
