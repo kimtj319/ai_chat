@@ -25,9 +25,20 @@ export interface McpServerDraft {
   authMode: McpAuthMode;
   authHeaderName: string;
   credential: string;
+  /** Atlassian 주소일 때만 쓴다(계정 이메일). */
+  atlassianEmail: string;
 }
 
-export type McpDraftField = "name" | "slug" | "description" | "url" | "authHeaderName" | "credential";
+export type McpDraftField = "name" | "slug" | "description" | "url" | "authHeaderName" | "credential" | "atlassianEmail";
+
+/** Atlassian 의 원격 MCP 서버 — 이메일과 API 토큰을 받아 서버가 Basic 인증을 만든다(server/mcp/atlassian.ts). */
+export function isAtlassianMcpUrl(url: string): boolean {
+  try {
+    return new URL(url.trim()).host.toLowerCase() === "mcp.atlassian.com";
+  } catch {
+    return false;
+  }
+}
 export type McpDraftErrors = Partial<Record<McpDraftField, string>>;
 
 /**
@@ -70,7 +81,11 @@ export function validateDraft(draft: McpServerDraft, hasStoredCredential = false
     else if (parsed.protocol !== "https:") errors.url = "주소는 https:// 로 시작해야 합니다.";
   }
 
-  if (draft.authMode === "header") {
+  if (isAtlassianMcpUrl(url)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.atlassianEmail.trim())) errors.atlassianEmail = "Atlassian 계정 이메일을 입력해 주세요.";
+    if (draft.credential.trim().length === 0 && !hasStoredCredential) errors.credential = "Atlassian API 토큰을 입력해 주세요.";
+    else if (/\s/.test(draft.credential.trim())) errors.credential = "API 토큰에는 공백이 들어갈 수 없습니다.";
+  } else if (draft.authMode === "header") {
     const header = draft.authHeaderName.trim();
     if (header.length === 0) errors.authHeaderName = "헤더 이름을 입력해주세요 (예: Authorization).";
     else if (!HEADER_NAME_PATTERN.test(header)) errors.authHeaderName = "헤더 이름에는 영문·숫자·하이픈만 쓸 수 있습니다.";

@@ -10,6 +10,7 @@ import { missingKeyMessage } from "../tools/missingKey.js";
 import { MCP_TOOL_PREFIX, type ToolDefinition } from "../tools/types.js";
 import { cleanText, isPlainObject, sanitizeInputSchema } from "./schemaSanitize.js";
 import type { McpServerRecord, McpToolSummary } from "../types.js";
+import { ATLASSIAN_RECOMMENDED_TOOLS, isAtlassianMcpUrl } from "./atlassian.js";
 
 /**
  * MCP tools, adapted to this app's own ToolDefinition contract so that
@@ -34,6 +35,24 @@ const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /** Per SERVER, not per tool: one server may not crowd out the rest of the prompt. */
 const MAX_SCHEMA_BLOCK_BYTES = 8 * 1024;
+/**
+ * When someone chose the tools (or a known server's recommended set applies)
+ * the list is deliberate, so it gets more room: Atlassian's recommended ten are
+ * ~20KB, and at 8KB alphabetical order kept six tools that could not run anything.
+ */
+const MAX_SELECTED_SCHEMA_BLOCK_BYTES = 32 * 1024;
+
+/** The tools offered from this server: its own choice, a known server's default, or null for all. */
+export function effectiveToolSelection(server: McpServerRecord): ReadonlySet<string> | null {
+  if (server.toolSelection) return new Set(server.toolSelection);
+  const fallback = defaultToolSelection(server);
+  return fallback ? new Set(fallback) : null;
+}
+
+/** What is checked when nobody has chosen. */
+export function defaultToolSelection(server: McpServerRecord): readonly string[] | null {
+  return isAtlassianMcpUrl(server.url) ? ATLASSIAN_RECOMMENDED_TOOLS : null;
+}
 /** The assembled text handed back to the model; the raw body is capped at 1MB in client.ts. */
 const MAX_RESULT_CHARS = 64 * 1024;
 
@@ -263,6 +282,8 @@ export interface AdaptedTools {
   definitions: ToolDefinition[];
   /** What the API reports as the server's tools — name and description only. */
   summaries: McpToolSummary[];
+  /** Every tool that could be offered, chosen or not — what the connector screen ticks. */
+  choices: McpToolSummary[];
   dropped: string[];
 }
 
@@ -278,8 +299,12 @@ export function definitionsFor(server: McpServerRecord, tools: McpToolDescriptor
   const ordered = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const definitions: ToolDefinition[] = [];
   const summaries: McpToolSummary[] = [];
+  const choices: McpToolSummary[] = [];
   const dropped: string[] = [];
   let blockBytes = 0;
+  const selection = effectiveToolSelection(server);
+  const recommended = new Set(defaultToolSelection(server) ?? []);
+  const budget = selection ? MAX_SELECTED_SCHEMA_BLOCK_BYTES : MAX_SCHEMA_BLOCK_BYTES;
 
   for (const tool of ordered) {
     const name = mcpToolName(server.slug, tool.name);
@@ -292,15 +317,25 @@ export function definitionsFor(server: McpServerRecord, tools: McpToolDescriptor
       continue;
     }
     const definition = toDefinition(server, tool, ownerId);
+    const choice: McpToolSummary = {
+      name: definition.name,
+      description: definition.description,
+      selected: false,
+      ...(recommended.has(tool.name) ? { recommended: true } : {}),
+    };
+    choices.push(choice);
+    // Not chosen: simply not offered — no warning, it is what someone asked for.
+    if (selection && !selection.has(tool.name)) continue;
     const cost = Buffer.byteLength(
       JSON.stringify({ name: definition.name, description: definition.description, parameters: definition.parameters }),
       "utf8",
     );
-    if (blockBytes + cost > MAX_SCHEMA_BLOCK_BYTES) {
-      dropped.push(`${tool.name} (스키마 ${MAX_SCHEMA_BLOCK_BYTES / 1024}KB 예산 초과)`);
+    if (blockBytes + cost > budget) {
+      dropped.push(`${tool.name} (스키마 ${budget / 1024}KB 예산 초과)`);
       continue;
     }
     blockBytes += cost;
+    choice.selected = true;
     definitions.push(definition);
     summaries.push({ name: definition.name, description: definition.description });
   }
@@ -308,10 +343,10 @@ export function definitionsFor(server: McpServerRecord, tools: McpToolDescriptor
   if (dropped.length > 0) {
     console.warn(`[mcp] ${server.slug}: dropped ${dropped.length} tool(s) — ${dropped.join("; ")}`);
   }
-  return { definitions, summaries, dropped };
+  return { definitions, summaries, choices, dropped };
 }
 
 /** The tool list for one server as GET /api/mcp/servers reports it. */
 export function toolSummaries(server: McpServerRecord, tools: McpToolDescriptor[]): McpToolSummary[] {
-  return definitionsFor(server, tools, server.createdBy).summaries;
+  return definitionsFor(server, tools, server.createdBy).choices;
 }

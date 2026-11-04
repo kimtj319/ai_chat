@@ -4,7 +4,7 @@ import { McpError } from "../api/client";
 import type { McpServerSummary } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useMcpLibrary } from "../hooks/useMcpLibrary";
-import { healthIsBad, healthLabel, myLibrary, sharedByOthers, type McpServerDraft } from "../mcp/rules";
+import { healthIsBad, healthLabel, isAtlassianMcpUrl, myLibrary, sharedByOthers, type McpServerDraft } from "../mcp/rules";
 import { missingKey, useMyAccess } from "../hooks/useMyAccess";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Accordion } from "./Accordion";
@@ -76,15 +76,19 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
 
   async function submitDraft(draft: McpServerDraft): Promise<void> {
     const editing = formFor !== "new" && formFor !== null ? formFor : null;
+    // Atlassian 은 이메일과 API 토큰을 보내고, 서버가 Authorization: Basic 을 만든다.
+    const atlassian = isAtlassianMcpUrl(draft.url);
+    const authMode = atlassian ? "header" : draft.authMode;
     const body = {
       name: draft.name.trim(),
       slug: draft.slug.trim(),
       description: draft.description.trim(),
       url: draft.url.trim(),
-      authMode: draft.authMode,
-      ...(draft.authMode === "header" ? { authHeaderName: draft.authHeaderName.trim() } : {}),
+      authMode,
+      ...(authMode === "header" ? { authHeaderName: atlassian ? "Authorization" : draft.authHeaderName.trim() } : {}),
       // An edit that leaves the field blank keeps whatever is stored.
       ...(draft.credential.trim().length > 0 ? { credential: draft.credential.trim() } : {}),
+      ...(atlassian && draft.credential.trim().length > 0 ? { atlassianEmail: draft.atlassianEmail.trim() } : {}),
     };
 
     // Deliberately not inside `run`: the form shows the refusal itself (it is
@@ -253,12 +257,22 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                                 )
                             : null
                         }
-                        onSaveCredential={(credential) =>
+                        onSaveCredential={(credential, atlassianEmail) =>
                           void run(
                             server.id,
                             credential === null ? "개인 키를 삭제했습니다." : "개인 키를 저장했습니다.",
-                            () => api.setMcpCredential(server.id, credential),
+                            () => api.setMcpCredential(server.id, credential, atlassianEmail),
                           )
+                        }
+                        onSaveToolSelection={
+                          server.origin === "user" && (owned || me?.role === "admin")
+                            ? (selection) =>
+                                void run(
+                                  server.id,
+                                  selection === null ? "권장 도구로 되돌렸습니다." : `도구 ${selection.length}개를 쓰도록 저장했습니다.`,
+                                  () => api.updateMcpServer(server.id, { toolSelection: selection }),
+                                )
+                            : null
                         }
                         onAdminSetStatus={adminSetStatusFor(server)}
                       />

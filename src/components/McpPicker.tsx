@@ -154,8 +154,8 @@ export function McpPicker({ onOpenLibrary, onOpenTools, onAttach, extraRows }: M
                 {mine.map((server) => (
                   <li key={server.id} className="mcp-picker-connector" title={server.description || undefined}>
                     <span className="mcp-picker-server-name">{server.name}</span>
-                    <span className="mcp-picker-server-count" aria-label={`도구 ${server.tools.length}개`}>
-                      {server.tools.length}
+                    <span className="mcp-picker-server-count" aria-label={`도구 ${server.tools.filter((t) => t.selected !== false).length}개`}>
+                      {server.tools.filter((t) => t.selected !== false).length}
                     </span>
                     {server.requiresCredential && !server.hasCredential && (
                       <span className="mcp-picker-note">자격 증명 필요</span>

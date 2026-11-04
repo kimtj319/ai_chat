@@ -14,6 +14,7 @@ import {
 } from "../mcp/ownerPrefs.js";
 import { summarize, summaryContext } from "../mcp/serverSummary.js";
 import { toolSummaries } from "../mcp/toolAdapter.js";
+import { atlassianCredential, isAtlassianMcpUrl } from "../mcp/atlassian.js";
 import {
   clampTimeoutMs,
   createServer,
@@ -90,6 +91,14 @@ async function loadServerOr404(req: Request, res: Response): Promise<{ id: strin
  * A stale entry only SCHEDULES a refresh: the response is answered from cache
  * so that opening the page never waits on someone else's server.
  */
+/** null = back to the default; a list of tool names = that choice. Anything else is undefined (invalid). */
+function normalizeToolSelection(raw: unknown): string[] | null | undefined {
+  if (raw === null) return null;
+  if (!Array.isArray(raw) || raw.length > 200) return undefined;
+  const names = raw.filter((n): n is string => typeof n === "string" && n.length > 0 && n.length <= 128);
+  return names.length === raw.length ? [...new Set(names)] : undefined;
+}
+
 mcpRouter.get("/mcp/servers", async (req, res, next) => {
   try {
     const servers = await listServers();
@@ -134,12 +143,9 @@ mcpRouter.post("/mcp/servers", async (req, res, next) => {
       if (!headerName) return fail(res, 400, "invalid_input", "인증 헤더 이름이 올바르지 않습니다.");
       authHeaderName = headerName;
     }
-    const credential = typeof body.credential === "string" ? body.credential.trim() : "";
+    let credential = typeof body.credential === "string" ? body.credential.trim() : "";
     if (credential.length > CREDENTIAL_MAX_CHARS) {
       return fail(res, 400, "invalid_input", "인증 값이 너무 깁니다.");
-    }
-    if (authMode === "header" && !credential) {
-      return fail(res, 400, "invalid_input", "인증 방식이 header이면 인증 값을 함께 보내야 합니다.");
     }
 
     let url: URL;
@@ -147,6 +153,19 @@ mcpRouter.post("/mcp/servers", async (req, res, next) => {
       url = await assertRegisterableUrl(typeof body.url === "string" ? body.url.trim() : "");
     } catch (err) {
       return fail(res, 400, "invalid_input", err instanceof Error ? err.message : "주소를 확인할 수 없습니다.");
+    }
+    // Atlassian: the form sends the account email and the API token, and the
+    // header is made here (mcp/atlassian.ts) — always Authorization: Basic.
+    let effectiveAuthMode = authMode;
+    if (isAtlassianMcpUrl(url.toString()) && body.atlassianEmail !== undefined) {
+      const made = atlassianCredential(body.atlassianEmail, credential);
+      if (!made.ok) return fail(res, 400, "invalid_input", made.error);
+      credential = made.value;
+      effectiveAuthMode = "header";
+      authHeaderName = "Authorization";
+    }
+    if (effectiveAuthMode === "header" && !credential) {
+      return fail(res, 400, "invalid_input", "인증 방식이 header이면 인증 값을 함께 보내야 합니다.");
     }
 
     const probe = await probeMcpServer(
@@ -172,7 +191,7 @@ mcpRouter.post("/mcp/servers", async (req, res, next) => {
       slug,
       description,
       url: url.toString(),
-      authMode,
+      authMode: effectiveAuthMode,
       ...(authHeaderName ? { authHeaderName } : {}),
       ...(typeof body.timeoutMs === "number" ? { timeoutMs: clampTimeoutMs(body.timeoutMs) } : {}),
       createdBy: req.ownerId,
@@ -260,6 +279,16 @@ mcpRouter.patch("/mcp/servers/:id", async (req, res, next) => {
       }
     }
     if (body.timeoutMs !== undefined) patch.timeoutMs = clampTimeoutMs(body.timeoutMs);
+    if (body.toolSelection !== undefined) {
+      const selection = normalizeToolSelection(body.toolSelection);
+      if (selection === undefined) return fail(res, 400, "invalid_input", "toolSelection은 도구 이름 목록 또는 null이어야 합니다.");
+      patch.toolSelection = selection;
+    }
+    const atlassian = isAtlassianMcpUrl(patch.url ?? server.url) && body.atlassianEmail !== undefined;
+    if (atlassian) {
+      patch.authMode = "header";
+      patch.authHeaderName = "Authorization";
+    }
     const effectiveAuthMode = patch.authMode ?? server.authMode;
     const effectiveHeader = patch.authHeaderName === undefined ? server.authHeaderName : patch.authHeaderName;
     if (effectiveAuthMode === "header" && !effectiveHeader) {
@@ -269,9 +298,15 @@ mcpRouter.patch("/mcp/servers/:id", async (req, res, next) => {
     // The edit form carries the credential field too, and a blank one means
     // "keep what is stored" — so only a non-empty value writes, and it writes to
     // the CALLING owner's file, never to the shared record.
-    const credential = typeof body.credential === "string" ? body.credential.trim() : "";
+    let credential = typeof body.credential === "string" ? body.credential.trim() : "";
     if (credential.length > CREDENTIAL_MAX_CHARS) {
       return fail(res, 400, "invalid_input", "인증 값이 너무 깁니다.");
+    }
+    // A blank token keeps what is stored, as for any credential.
+    if (atlassian && credential) {
+      const made = atlassianCredential(body.atlassianEmail, credential);
+      if (!made.ok) return fail(res, 400, "invalid_input", made.error);
+      credential = made.value;
     }
 
     const updated = await updateServer(id, patch);
@@ -395,7 +430,13 @@ mcpRouter.put("/mcp/servers/:id/credential", async (req, res, next) => {
     if (typeof raw === "string" && raw.length > CREDENTIAL_MAX_CHARS) {
       return fail(res, 400, "invalid_input", "인증 값이 너무 깁니다.");
     }
-    const hasCredential = await setCredential(req.ownerId, id, raw === null ? null : raw.trim());
+    let value = raw === null ? null : raw.trim();
+    if (value && isAtlassianMcpUrl(server.url) && (req.body ?? {}).atlassianEmail !== undefined) {
+      const made = atlassianCredential((req.body ?? {}).atlassianEmail, value);
+      if (!made.ok) return fail(res, 400, "invalid_input", made.error);
+      value = made.value;
+    }
+    const hasCredential = await setCredential(req.ownerId, id, value);
     // The cached tool list may have been discovered with the old credential.
     invalidate(id);
     console.log(`[mcp] ${req.ownerId} ${hasCredential ? "set" : "cleared"} the credential for ${server.slug}`);

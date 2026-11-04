@@ -75,7 +75,10 @@ interface LibraryCardProps {
    *  builtin or a server this user registered — for those, the switch above
    *  is the only on/off there is; there is no "out of the library" for them. */
   onRemove: (() => void) | null;
-  onSaveCredential: (credential: string | null) => void;
+  /** Atlassian 은 이메일을 함께 보낸다(서버가 Basic 인증을 만든다). */
+  onSaveCredential: (credential: string | null, atlassianEmail?: string) => void;
+  /** 등록한 사람·관리자만. 도구 이름(원래 이름) 목록, null 은 기본값으로. */
+  onSaveToolSelection: ((selection: string[] | null) => void) | null;
   /** Null for everyone who is not an administrator. */
   onAdminSetStatus: ((disabled: boolean) => void) | null;
 }
@@ -90,10 +93,12 @@ export function LibraryCard({
   onProbe,
   onRemove,
   onSaveCredential,
+  onSaveToolSelection,
   onAdminSetStatus,
 }: LibraryCardProps) {
   const [credentialOpen, setCredentialOpen] = useState(false);
   const [credential, setCredential] = useState("");
+  const [atlassianEmail, setAtlassianEmail] = useState("");
   const [toolsShown, setToolsShown] = useState(false);
   // 개인 키 삭제는 한 번 묻는다. 저장한 키는 다시 보이지 않아 잘못 누르면 새로 받아 와야 한다.
   const [confirmCredentialDelete, setConfirmCredentialDelete] = useState(false);
@@ -123,14 +128,21 @@ export function LibraryCard({
           aria-expanded={toolsShown}
           onClick={() => setToolsShown((shown) => !shown)}
         >
-          {toolsShown ? "도구 목록 접기" : `도구 ${server.tools.length}개 보기`}
+          {toolsShown
+            ? "도구 목록 접기"
+            : `도구 ${server.tools.length}개 보기 · ${server.tools.filter((tool) => tool.selected !== false).length}개 사용`}
         </button>
       )}
-      {server.tools.length > 0 && toolsShown && (
+      {server.tools.length > 0 && toolsShown && onSaveToolSelection && (
+        <ToolChooser server={server} busy={busy} onSave={onSaveToolSelection} />
+      )}
+      {server.tools.length > 0 && toolsShown && !onSaveToolSelection && (
         <ul className="library-tool-chips">
           {server.tools.map((tool) => (
-            <li key={tool.name}>
-              <code data-tooltip={tool.description}>{shortToolName(tool.name)}</code>
+            <li key={tool.name} data-off={tool.selected === false ? "" : undefined}>
+              <code data-tooltip={tool.selected === false ? `${tool.description} (사용하지 않음)` : tool.description}>
+                {shortToolName(tool.name)}
+              </code>
             </li>
           ))}
         </ul>
@@ -138,19 +150,30 @@ export function LibraryCard({
 
       {credentialOpen && (
         <div className="library-credential">
+          {server.atlassian && (
+            <input
+              type="email"
+              autoComplete="off"
+              placeholder="Atlassian 계정 이메일"
+              aria-label={`${server.name} Atlassian 계정 이메일`}
+              value={atlassianEmail}
+              onChange={(event) => setAtlassianEmail(event.target.value)}
+            />
+          )}
           <input
             type="password"
             autoComplete="off"
-            aria-label={`${server.name} 개인 키`}
+            placeholder={server.atlassian ? "API 토큰" : undefined}
+            aria-label={server.atlassian ? `${server.name} API 토큰` : `${server.name} 개인 키`}
             value={credential}
             onChange={(event) => setCredential(event.target.value)}
           />
           <button
             type="button"
             className="btn btn-sm"
-            disabled={busy || credential.trim().length === 0}
+            disabled={busy || credential.trim().length === 0 || (server.atlassian && atlassianEmail.trim().length === 0)}
             onClick={() => {
-              onSaveCredential(credential.trim());
+              onSaveCredential(credential.trim(), server.atlassian ? atlassianEmail.trim() : undefined);
               setCredential("");
               setCredentialOpen(false);
             }}
@@ -282,6 +305,60 @@ export function SharedCard({ server, busy, onAdminSetStatus }: SharedCardProps) 
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 등록한 사람(또는 관리자)이 모델에 넘길 도구를 고른다. 도구가 많고 설명이 긴 서버
+ * (Atlassian 26개, 70KB)는 전부 넘기면 질문마다 프롬프트가 크게 늘고, 앞에서부터 한도까지만
+ * 담으면 정작 실행 도구가 빠졌다 — 그래서 권장 도구를 기본으로 체크해 두고 고르게 한다.
+ */
+function ToolChooser({ server, busy, onSave }: { server: McpServerSummary; busy: boolean; onSave: (selection: string[] | null) => void }) {
+  const initial = server.tools.filter((tool) => tool.selected !== false).map((tool) => shortToolName(tool.name));
+  const [checked, setChecked] = useState<string[]>(initial);
+  const changed = checked.length !== initial.length || checked.some((name) => !initial.includes(name));
+  const hasRecommended = server.tools.some((tool) => tool.recommended);
+
+  function toggle(name: string) {
+    setChecked((current) => (current.includes(name) ? current.filter((n) => n !== name) : [...current, name]));
+  }
+
+  return (
+    <div className="library-tool-chooser">
+      <p className="library-tool-chooser-hint">
+        체크한 도구만 대화에서 씁니다.{" "}
+        {server.toolSelectionCustom
+          ? "직접 고른 목록입니다."
+          : hasRecommended
+            ? "권장 도구가 기본으로 체크되어 있습니다."
+            : "기본은 전부입니다."}
+      </p>
+      <ul className="library-tool-chooser-list">
+        {server.tools.map((tool) => {
+          const name = shortToolName(tool.name);
+          const id = `tool-${server.id}-${name}`;
+          return (
+            <li key={tool.name}>
+              <input id={id} type="checkbox" checked={checked.includes(name)} disabled={busy} onChange={() => toggle(name)} />
+              <label htmlFor={id} data-tooltip={tool.description}>
+                <code>{name}</code>
+                {tool.recommended && <span className="md-badge">권장</span>}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="library-tool-chooser-actions">
+        {server.toolSelectionCustom && (
+          <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => onSave(null)}>
+            {hasRecommended ? "권장 도구로 되돌리기" : "전부 쓰기로 되돌리기"}
+          </button>
+        )}
+        <button type="button" className="btn btn-sm" disabled={busy || !changed} onClick={() => onSave(checked)}>
+          도구 선택 저장
+        </button>
       </div>
     </div>
   );

@@ -82,6 +82,13 @@ export interface McpServerRecord {
    * form cannot.
    */
   sendUserIdentity?: boolean;
+  /**
+   * The tools the registrant (or an admin) chose to offer, set through PATCH.
+   * Unlike toolAllowlist it is applied when the prompt is built, not at
+   * discovery, so every tool the server lists stays visible to choose from.
+   * Absent: a known server's recommended set (mcp/atlassian.ts), else all.
+   */
+  toolSelection?: string[];
   /** Clamped to 1000..9000 on write, so it always stays under TOOL_TIMEOUT_MS. */
   timeoutMs: number;
   createdBy: string;
@@ -96,6 +103,10 @@ export interface McpServerRecord {
 export interface McpToolSummary {
   name: string;
   description: string;
+  /** Offered to the model (the server's selection, or its default). */
+  selected?: boolean;
+  /** In the default set for this kind of server. */
+  recommended?: boolean;
 }
 
 /** What GET /api/mcp/servers returns per server, for the CALLING owner. */
@@ -121,6 +132,10 @@ export interface McpServerSummary {
   hasCredential: boolean;
   health: McpHealth;
   tools: McpToolSummary[];
+  /** Atlassian's MCP server: its credential is an account email plus an API token (mcp/atlassian.ts). */
+  atlassian: boolean;
+  /** The tools were chosen by someone; false means the default (recommended or all). */
+  toolSelectionCustom: boolean;
   disabledReason?: string;
 }
 

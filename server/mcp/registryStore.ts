@@ -199,6 +199,8 @@ export interface UpdateServerInput {
   timeoutMs?: number;
   /** Not reachable from PATCH: the route builds its patch field by field. */
   toolAllowlist?: string[];
+  /** The registrant's choice of tools; null goes back to the default. */
+  toolSelection?: string[] | null;
   /** Not reachable from PATCH either, and for a stronger reason — see McpServerRecord.sendUserIdentity. */
   sendUserIdentity?: boolean;
   /**
@@ -239,6 +241,11 @@ export async function updateServer(id: string, patch: UpdateServerInput): Promis
     if (patch.toolAllowlist !== undefined) {
       if (patch.toolAllowlist.length > 0) updated.toolAllowlist = patch.toolAllowlist;
       else delete updated.toolAllowlist;
+    }
+    // null goes back to the default; an empty list is a real choice (no tools).
+    if (patch.toolSelection !== undefined) {
+      if (patch.toolSelection === null) delete updated.toolSelection;
+      else updated.toolSelection = patch.toolSelection;
     }
     // Same shape, and the false case must REMOVE it: this is the switch that
     // decides whether every user's name leaves the building, so a record the

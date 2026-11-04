@@ -352,3 +352,59 @@
   justify-content: flex-end;
   gap: var(--space-4);
 }
+
+/* 쓰지 않는 도구(등록한 사람이 고르지 않은 것)는 한발 물러선다. */
+.library-tool-chips li[data-off] code {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+/* 도구 고르기 — 등록한 사람·관리자만 보인다. */
+.library-tool-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.library-tool-chooser-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--on-surface-variant);
+}
+
+.library-tool-chooser-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: var(--space-2) var(--space-5);
+}
+
+.library-tool-chooser-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.library-tool-chooser-list label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  cursor: pointer;
+}
+
+.library-tool-chooser-list code {
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.library-tool-chooser-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}

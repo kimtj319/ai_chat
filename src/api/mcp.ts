@@ -80,10 +80,10 @@ export function setMcpHidden(id: string, hidden: boolean): Promise<{ hidden: str
 }
 
 /** `null` clears it. The value is passed straight through and never stored here. */
-export function setMcpCredential(id: string, credential: string | null): Promise<{ hasCredential: boolean }> {
+export function setMcpCredential(id: string, credential: string | null, atlassianEmail?: string): Promise<{ hasCredential: boolean }> {
   return mcpRequest<{ hasCredential: boolean }>(`/mcp/servers/${encodeURIComponent(id)}/credential`, {
     method: "PUT",
-    body: JSON.stringify({ credential }),
+    body: JSON.stringify({ credential, ...(atlassianEmail !== undefined ? { atlassianEmail } : {}) }),
   });
 }
 

@@ -4,6 +4,7 @@ import { toolSummaries } from "./toolAdapter.js";
 import type { McpToolDescriptor } from "./client.js";
 import { listUsers } from "../storage/userStore.js";
 import type { McpServerRecord, McpServerSummary, OwnerMcpPrefs } from "../types.js";
+import { isAtlassianMcpUrl } from "./atlassian.js";
 
 // What the /api/mcp routes return per server (routes/mcp.ts), built for the
 // CALLING owner: their credential flag, their adoption counts.
@@ -60,6 +61,8 @@ export function summarize(
     // The same adapter the prompt uses, so the list never advertises a tool the
     // model was not actually given (a dropped name, a schema over budget).
     tools: toolSummaries(server, tools),
+    atlassian: isAtlassianMcpUrl(server.url),
+    toolSelectionCustom: server.toolSelection !== undefined,
     ...(server.disabledReason ? { disabledReason: server.disabledReason } : {}),
   };
 }

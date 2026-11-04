@@ -546,6 +546,10 @@ export interface McpToolSummary {
    * shows it in full rather than behind a disclosure.
    */
   description: string;
+  /** 모델에 넘기는 도구인가(고른 것, 또는 기본값). */
+  selected?: boolean;
+  /** 이 서버의 권장 도구(기본으로 체크). */
+  recommended?: boolean;
 }
 
 /**
@@ -643,6 +647,10 @@ export interface McpServerSummary {
   hasCredential: boolean;
   health: McpHealth;
   tools: McpToolSummary[];
+  /** Atlassian MCP 서버 — 개인 키 대신 계정 이메일과 API 토큰을 받는다. */
+  atlassian: boolean;
+  /** 등록한 사람이 도구를 직접 골랐는가. 아니면 기본값(Atlassian 은 권장 도구, 그 밖은 전부). */
+  toolSelectionCustom: boolean;
   /** 관리자가 끌 때 남긴 이유. 없을 수 있다. */
   disabledReason?: string;
 }
@@ -663,9 +671,14 @@ export interface CreateMcpServerRequest {
   authMode: McpAuthMode;
   authHeaderName?: string;
   credential?: string;
+  /** Atlassian 주소일 때: 서버가 credential(API 토큰)과 묶어 Basic 인증을 만든다. */
+  atlassianEmail?: string;
 }
 
-export type PatchMcpServerRequest = Partial<CreateMcpServerRequest>;
+export type PatchMcpServerRequest = Partial<CreateMcpServerRequest> & {
+  /** 모델에 넘길 도구(원래 이름). null 이면 기본값으로. */
+  toolSelection?: string[] | null;
+};
 
 
 /* --------------------------------------------------------------- 문의 게시판 */
