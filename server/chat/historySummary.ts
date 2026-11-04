@@ -110,6 +110,14 @@ const MIN_MESSAGE_CHARS = 300;
  * count and the cache hit rate from a second fold — 10 of 14 planted facts kept,
  * against 14 of 14 when it was told to carry section 2 over intact and compress
  * section 3 instead (measured 2026-09-12, same corpus).
+ *
+ * The line about reasons: without it the summary kept what changed but not
+ * why, and "why was the opening moved?" was answered wrong 3 times out of 3.
+ * Measured 2026-11-04 on a synthetic 60-exchange conversation folded 6 times
+ * (Qwen3.8-Flash-Next, 3 runs each): facts 19.0 -> 20.3 of 21, flow questions
+ * 3.7 -> 6.0 of 6, same summary length. Splitting the summary into a separate
+ * "key memory" and "flow summary" was tried in the same run and did worse on
+ * facts (13.7 of 21): the minor details crowded the memory list.
  */
 const SUMMARY_INSTRUCTION = `아래는 한 대화의 앞부분 기록입니다. 이 대화를 이어서 진행할 수 있도록 "이전 대화 요약"을 작성하세요. 이 요약은 원본 대화를 대신하게 되며, 원문은 더 이상 남지 않습니다.
 
@@ -122,6 +130,7 @@ const SUMMARY_INSTRUCTION = `아래는 한 대화의 앞부분 기록입니다. 
 - 한국어로 쓰세요.
 - 기록에 없는 내용을 추측해서 채우지 마세요. 해당 항목에 적을 것이 없으면 "없음"이라고 쓰세요.
 - 숫자·날짜·이름·파일 경로·URL·설정값·오류 메시지는 원문 그대로 옮기세요. 반올림, 단위 변환, 축약 금지.
+- 값이 바뀐 것은 옛 값 없이 새 값만 적고, 바뀐 이유를 괄호로 짧게 덧붙이세요. 결정도 그렇게 정한 이유가 기록에 있으면 짧게 남기세요.
 - 대화를 평가하거나 감상을 덧붙이지 말고, 뒤에서 다시 필요할 내용만 남기세요.
 - 원문을 그대로 옮겨 적지 말고 요약하세요. 같은 내용이 반복되면 한 번만 쓰세요.
 - 기록 맨 앞에 "[이전 요약]"이 있으면, 그 내용과 이후 대화를 하나의 요약으로 합치세요. 이전 요약의 2번 항목에 있는 수치·이름·경로·오류 코드·결정은 하나도 빠뜨리지 말고 그대로 옮긴 뒤, 새로 확정된 것을 덧붙이세요. 분량을 줄여야 하면 2번이 아니라 3번 항목을 줄이세요.
