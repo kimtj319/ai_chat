@@ -269,7 +269,7 @@ function AtlassianFields({
   return (
     <>
       <div className="field">
-        <label htmlFor="mcp-atlassian-email">Atlassian 계정 이메일</label>
+        <label htmlFor="mcp-atlassian-email">Atlassian 계정 이메일 (API 토큰을 쓸 때)</label>
         <input
           id="mcp-atlassian-email"
           type="email"
@@ -287,7 +287,7 @@ function AtlassianFields({
         )}
       </div>
       <div className="field">
-        <label htmlFor="mcp-atlassian-token">API 토큰</label>
+        <label htmlFor="mcp-atlassian-token">API 토큰 (선택)</label>
         <input
           id="mcp-atlassian-token"
           type="password"
@@ -298,7 +298,7 @@ function AtlassianFields({
           aria-describedby={errors.credential ? "mcp-credential-error" : "mcp-atlassian-hint"}
         />
         <span id="mcp-atlassian-hint" className="field-hint">
-          id.atlassian.com › 보안 › API 토큰에서 발급한 토큰입니다. 이메일:토큰을 base64 로 묶어 Basic 인증으로 보냅니다.
+          비워 두고 등록한 뒤 카드의 "Atlassian 로그인"으로 연결하는 것을 권장합니다. API 토큰은 조직 관리자가 API 토큰 접속을 허용해야 동작하며, id.atlassian.com › 보안 › API 토큰에서 "범위가 있는 API 토큰 만들기"로 발급합니다.
           {hasStored ? " 비워 두면 저장된 값을 그대로 둡니다." : " 서버에 저장되며 다시 보이지 않습니다."}
         </span>
         {errors.credential && (

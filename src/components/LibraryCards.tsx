@@ -77,6 +77,10 @@ interface LibraryCardProps {
   onRemove: (() => void) | null;
   /** Atlassian 은 이메일을 함께 보낸다(서버가 Basic 인증을 만든다). */
   onSaveCredential: (credential: string | null, atlassianEmail?: string) => void;
+  /** Atlassian 로그인 시작 — 승인 페이지 주소, 실패하면 null(오류는 페이지가 보여 준다). */
+  onStartAtlassianLogin: () => Promise<string | null>;
+  /** 승인 뒤 이동한 주소로 로그인을 마친다. 성공하면 true. */
+  onFinishAtlassianLogin: (url: string) => Promise<boolean>;
   /** 등록한 사람·관리자만. 도구 이름(원래 이름) 목록, null 은 기본값으로. */
   onSaveToolSelection: ((selection: string[] | null) => void) | null;
   /** Null for everyone who is not an administrator. */
@@ -93,6 +97,8 @@ export function LibraryCard({
   onProbe,
   onRemove,
   onSaveCredential,
+  onStartAtlassianLogin,
+  onFinishAtlassianLogin,
   onSaveToolSelection,
   onAdminSetStatus,
 }: LibraryCardProps) {
@@ -103,6 +109,30 @@ export function LibraryCard({
   // 개인 키 삭제는 한 번 묻는다. 저장한 키는 다시 보이지 않아 잘못 누르면 새로 받아 와야 한다.
   const [confirmCredentialDelete, setConfirmCredentialDelete] = useState(false);
   const needsCredential = server.requiresCredential && !server.hasCredential;
+  // Atlassian 로그인: 승인 창을 연 뒤, 이동한 주소를 붙여 넣어 마친다(server/mcp/atlassianOAuth.ts).
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  const [pastedUrl, setPastedUrl] = useState("");
+
+  async function beginAtlassianLogin() {
+    // 클릭 직후 창을 먼저 연다 — 주소를 받은 뒤에 열면 팝업 차단에 걸린다.
+    const popup = window.open("", "_blank");
+    setLoginOpen(true);
+    setLoginUrl(null);
+    setPastedUrl("");
+    setCredentialOpen(false);
+    const url = await onStartAtlassianLogin();
+    if (!url) {
+      popup?.close();
+      setLoginOpen(false);
+      return;
+    }
+    setLoginUrl(url);
+    if (popup) {
+      popup.opener = null;
+      popup.location.href = url;
+    }
+  }
 
   return (
     <div className="library-detail">
@@ -116,7 +146,68 @@ export function LibraryCard({
       <HealthLine health={server.health} />
 
       {needsCredential && (
-        <p className="library-warning">이 서버는 개인 키가 필요합니다. 입력하기 전에는 도구가 실행되지 않습니다.</p>
+        <p className="library-warning">
+          {server.atlassian
+            ? "Atlassian 로그인이 필요합니다. 로그인하기 전에는 도구가 실행되지 않습니다."
+            : "이 서버는 개인 키가 필요합니다. 입력하기 전에는 도구가 실행되지 않습니다."}
+        </p>
+      )}
+      {server.atlassianAuth === "oauth" && <p className="library-connected">Atlassian 계정으로 로그인되어 있습니다.</p>}
+      {server.atlassianAuth === "token" && (
+        <p className="library-connected">
+          API 토큰으로 연결되어 있습니다. 조직에서 API 토큰 접속을 허용하지 않으면 도구 호출이 거절되니, 그때는 "Atlassian 로그인"을 쓰세요.
+        </p>
+      )}
+
+      {loginOpen && (
+        <div className="library-atlassian-login" role="group" aria-label="Atlassian 로그인">
+          <ol>
+            <li>
+              새 창의 Atlassian 화면에서 사이트를 고르고 <strong>Accept(허용)</strong>를 누릅니다.
+              {loginUrl ? (
+                <>
+                  {" "}창이 열리지 않았다면{" "}
+                  <a href={loginUrl} target="_blank" rel="noopener noreferrer">
+                    여기를 눌러 여세요
+                  </a>
+                  .
+                </>
+              ) : (
+                " 승인 주소를 준비하는 중…"
+              )}
+            </li>
+            <li>
+              허용 뒤 "연결할 수 없음" 같은 화면이 나오는 것이 정상입니다. 그 창 <strong>주소창의 주소 전체</strong>(127.0.0.1 로 시작)를 복사해 아래에 붙여 넣으세요.
+            </li>
+          </ol>
+          <div className="library-credential">
+            <input
+              id={`atlassian-login-url-${server.id}`}
+              type="text"
+              autoComplete="off"
+              placeholder="http://127.0.0.1:33418/atlassian/callback?code=…"
+              aria-label="승인 뒤 이동한 주소"
+              value={pastedUrl}
+              onChange={(event) => setPastedUrl(event.target.value)}
+            />
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={busy || !loginUrl || pastedUrl.trim().length === 0}
+              onClick={async () => {
+                if (await onFinishAtlassianLogin(pastedUrl.trim())) {
+                  setLoginOpen(false);
+                  setPastedUrl("");
+                }
+              }}
+            >
+              연결 완료
+            </button>
+            <button type="button" className="btn btn-sm btn-secondary" disabled={busy} onClick={() => setLoginOpen(false)}>
+              취소
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 도구 이름 칩은 접어 둔다. 펼친 카드 한 장에 칩이 서너 줄 깔리면 설명·상태·버튼을
@@ -197,14 +288,33 @@ export function LibraryCard({
         <button type="button" className="btn btn-sm" disabled={busy} onClick={onProbe}>
           연결 확인
         </button>
+        {server.atlassian && (
+          <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void beginAtlassianLogin()}>
+            {server.atlassianAuth === "oauth" ? "다시 로그인" : "Atlassian 로그인"}
+          </button>
+        )}
         {server.authMode === "header" && (
           <button
             type="button"
-            className="btn btn-sm"
+            className={server.atlassian ? "btn btn-sm btn-secondary" : "btn btn-sm"}
             disabled={busy}
-            onClick={() => setCredentialOpen((open) => !open)}
+            onClick={() => {
+              setLoginOpen(false);
+              setCredentialOpen((open) => !open);
+            }}
           >
-            {server.hasCredential ? "개인 키 변경" : "개인 키 입력"}
+            {server.atlassian
+              ? server.atlassianAuth === "token"
+                ? "API 토큰 변경"
+                : "API 토큰으로 연결"
+              : server.hasCredential
+                ? "개인 키 변경"
+                : "개인 키 입력"}
+          </button>
+        )}
+        {server.atlassianAuth === "oauth" && (
+          <button type="button" className="btn btn-sm btn-danger-quiet" disabled={busy} onClick={() => setConfirmCredentialDelete(true)}>
+            로그아웃
           </button>
         )}
         {owned && (
@@ -236,9 +346,13 @@ export function LibraryCard({
 
       {confirmCredentialDelete && (
         <ConfirmDialog
-          title={`${server.name} 개인 키를 삭제할까요?`}
-          message="키를 지우면 이 서버의 도구가 실행되지 않습니다. 저장한 키는 다시 보여 주지 않으므로, 다시 쓰려면 키를 새로 붙여 넣어야 합니다."
-          confirmLabel="삭제"
+          title={server.atlassianAuth === "oauth" ? `${server.name}에서 로그아웃할까요?` : `${server.name} 개인 키를 삭제할까요?`}
+          message={
+            server.atlassianAuth === "oauth"
+              ? "로그아웃하면 이 커넥터의 도구가 실행되지 않습니다. 다시 쓰려면 'Atlassian 로그인'을 다시 하면 됩니다."
+              : "키를 지우면 이 서버의 도구가 실행되지 않습니다. 저장한 키는 다시 보여 주지 않으므로, 다시 쓰려면 키를 새로 붙여 넣어야 합니다."
+          }
+          confirmLabel={server.atlassianAuth === "oauth" ? "로그아웃" : "삭제"}
           danger
           onCancel={() => setConfirmCredentialDelete(false)}
           onConfirm={() => {

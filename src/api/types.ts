@@ -645,6 +645,8 @@ export interface McpServerSummary {
   requiresCredential: boolean;
   /** Whether the signed-in user has one stored for it. */
   hasCredential: boolean;
+  /** Atlassian 서버에서 내 연결 방식: "oauth"(Atlassian 로그인) · "token"(API 토큰) · null(없음). */
+  atlassianAuth: "oauth" | "token" | null;
   health: McpHealth;
   tools: McpToolSummary[];
   /** Atlassian MCP 서버 — 개인 키 대신 계정 이메일과 API 토큰을 받는다. */

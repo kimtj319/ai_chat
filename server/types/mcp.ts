@@ -130,6 +130,8 @@ export interface McpServerSummary {
   requiresCredential: boolean;
   /** Whether THIS owner has stored a credential. Never the value. */
   hasCredential: boolean;
+  /** For an Atlassian server: how this owner's credential was made ("oauth" login or API "token"), null when none. */
+  atlassianAuth: "oauth" | "token" | null;
   health: McpHealth;
   tools: McpToolSummary[];
   /** Atlassian's MCP server: its credential is an account email plus an API token (mcp/atlassian.ts). */
@@ -159,6 +161,18 @@ export interface OwnerMcpPrefs {
   hidden: string[];
   /** serverId -> credential. The only place a credential is ever written. */
   credentials: Record<string, string>;
+  /**
+   * serverId -> how to renew the credential above when it came from an OAuth
+   * login (Atlassian). Same file, same secrecy; absent for typed-in keys.
+   */
+  oauth?: Record<string, OwnerOAuthSession>;
+}
+
+export interface OwnerOAuthSession {
+  clientId: string;
+  refreshToken: string;
+  /** Epoch ms the access token stops working; null when the server did not say. */
+  expiresAt: number | null;
 }
 
 /** Machine-readable refusal reason on the /api/mcp routes. */

@@ -87,6 +87,19 @@ export function setMcpCredential(id: string, credential: string | null, atlassia
   });
 }
 
+/** Atlassian 로그인 시작 — 열어야 할 Atlassian 승인 페이지 주소. */
+export function startAtlassianLogin(id: string): Promise<{ url: string }> {
+  return mcpRequest<{ url: string }>(`/mcp/servers/${encodeURIComponent(id)}/atlassian/login`, { method: "POST" });
+}
+
+/** 승인 뒤 브라우저가 이동한 주소(code·state 포함)를 넘겨 로그인을 마친다. */
+export function finishAtlassianLogin(id: string, url: string): Promise<{ hasCredential: boolean }> {
+  return mcpRequest<{ hasCredential: boolean }>(`/mcp/servers/${encodeURIComponent(id)}/atlassian/login/finish`, {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
 export function probeMcpServer(id: string): Promise<{ health: McpHealth; tools: McpToolSummary[] }> {
   return mcpRequest<{ health: McpHealth; tools: McpToolSummary[] }>(`/mcp/servers/${encodeURIComponent(id)}/probe`, {
     method: "POST",

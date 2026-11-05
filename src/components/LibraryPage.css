@@ -305,6 +305,35 @@
   margin-top: var(--space-7);
 }
 
+/* Atlassian 연결 상태 한 줄 — 경고와 같은 자리, 조용한 색. */
+.library-connected {
+  margin: var(--space-5) 0 0;
+  color: var(--on-surface-variant);
+  font-size: var(--text-xs);
+}
+
+/* Atlassian 로그인: 단계 안내 + 주소 붙여 넣기 */
+.library-atlassian-login {
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container);
+  font-size: var(--text-xs);
+}
+
+.library-atlassian-login ol {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: var(--space-3);
+  line-height: 1.55;
+}
+
+.library-atlassian-login .library-credential {
+  margin-top: var(--space-5);
+  flex-wrap: wrap;
+}
+
 .library-credential {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@ import net from "node:net";
 import { followGuarded, readBodyCapped, stripBrackets } from "../tools/net/guardedFetch.js";
 import { assertPublicAddresses, resolveAllAddresses } from "../tools/net/ssrf.js";
 import { listEndpoints } from "../vllm/endpoints.js";
+import { atlassianEndpoint } from "./atlassian.js";
 
 /**
  * A hand-written MCP client for the "streamable HTTP" transport, protocol
@@ -292,7 +293,7 @@ async function request(
 ): Promise<{ result: unknown; sessionId: string | null }> {
   const id = nextRequestId++;
   const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
-  const res = await postGuarded(target.url, baseHeaders(target, session), body, signal);
+  const res = await postGuarded(atlassianEndpoint(target.url, target.credential), baseHeaders(target, session), body, signal);
   const contentType = res.headers.get("content-type") || "";
   const text = await readBodyCapped(res, MAX_BODY_BYTES);
   if (!res.ok) {
@@ -314,7 +315,7 @@ async function request(
 /** A notification has no id, so there is no response to match — only a status to check. */
 async function notify(target: McpTarget, session: McpSession, method: string, signal: AbortSignal): Promise<void> {
   const body = JSON.stringify({ jsonrpc: "2.0", method, params: {} });
-  const res = await postGuarded(target.url, baseHeaders(target, session), body, signal);
+  const res = await postGuarded(atlassianEndpoint(target.url, target.credential), baseHeaders(target, session), body, signal);
   await res.body?.cancel().catch(() => {});
   if (!res.ok) throw new McpHttpError(`${method} 알림이 HTTP ${res.status}로 거부되었습니다.`, res.status);
 }

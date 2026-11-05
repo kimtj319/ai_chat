@@ -264,6 +264,21 @@ export function LibraryPage({ onBack, onAdminSetStatus }: LibraryPageProps) {
                             () => api.setMcpCredential(server.id, credential, atlassianEmail),
                           )
                         }
+                        onStartAtlassianLogin={async () => {
+                          setActionError(null);
+                          setNotice(null);
+                          try {
+                            return (await api.startAtlassianLogin(server.id)).url;
+                          } catch (err) {
+                            setActionError(failureMessage(err));
+                            return null;
+                          }
+                        }}
+                        onFinishAtlassianLogin={(url) =>
+                          run(server.id, "Atlassian 에 로그인했습니다. 이제 이 커넥터의 도구를 쓸 수 있습니다.", () =>
+                            api.finishAtlassianLogin(server.id, url),
+                          )
+                        }
                         onSaveToolSelection={
                           server.origin === "user" && (owned || me?.role === "admin")
                             ? (selection) =>

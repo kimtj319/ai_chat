@@ -10,7 +10,7 @@ process.env.DATA_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-atlassian-te
 const { mcpRouter } = await import("./mcp.js");
 const { createServer, setServerStatus, listServers } = await import("../mcp/registryStore.js");
 const { readOwnerPrefs } = await import("../mcp/ownerPrefs.js");
-const { atlassianCredential, ATLASSIAN_RECOMMENDED_TOOLS } = await import("../mcp/atlassian.js");
+const { atlassianCredential, atlassianEndpoint, ATLASSIAN_RECOMMENDED_TOOLS } = await import("../mcp/atlassian.js");
 const { definitionsFor } = await import("../mcp/toolAdapter.js");
 
 let passed = 0;
@@ -55,6 +55,16 @@ console.log("server/mcp/atlassian.ts + routes/mcp.ts — Atlassian 커넥터");
   check("이메일:토큰을 base64 로 묶은 Basic 값", made.ok && made.value === `Basic ${Buffer.from("kim@example.com:ATATT3xToken").toString("base64")}`, JSON.stringify(made));
   check("이메일이 아니면 거절", !atlassianCredential("kim", "tok").ok);
   check("토큰이 비었거나 공백이 섞이면 거절", !atlassianCredential("kim@example.com", "").ok && !atlassianCredential("kim@example.com", "a b").ok);
+}
+
+/* ------------------------------------- API 토큰(Basic)은 /v1/mcp 로 보낸다 */
+{
+  const basic = `Basic ${Buffer.from("kim@example.com:tok").toString("base64")}`;
+  check("Basic 이면 /v2/mcp 를 /v1/mcp 로", atlassianEndpoint("https://mcp.atlassian.com/v2/mcp", basic) === "https://mcp.atlassian.com/v1/mcp");
+  check("Basic 이면 /v1/mcp 는 그대로", atlassianEndpoint("https://mcp.atlassian.com/v1/mcp", basic) === "https://mcp.atlassian.com/v1/mcp");
+  check("Bearer(Atlassian 로그인 토큰)도 /v1/mcp 로", atlassianEndpoint("https://mcp.atlassian.com/v2/mcp", "Bearer abc") === "https://mcp.atlassian.com/v1/mcp");
+  check("키가 없으면 그대로", atlassianEndpoint("https://mcp.atlassian.com/v2/mcp", undefined) === "https://mcp.atlassian.com/v2/mcp");
+  check("다른 서버는 Basic 이어도 그대로", atlassianEndpoint("https://example.com/v2/mcp", basic) === "https://example.com/v2/mcp");
 }
 
 const created = await createServer({
@@ -114,7 +124,7 @@ await setServerStatus(id, true, "system");
   const server = (await listServers()).find((s) => s.id === id)!;
   const out = definitionsFor(server, tools as never, "bob");
   const offered = out.definitions.map((d) => d.name.split("__").pop()).sort();
-  check("고른 적이 없으면 권장 도구 10개가 모두 넘어간다", JSON.stringify(offered) === JSON.stringify([...ATLASSIAN_RECOMMENDED_TOOLS].sort()), JSON.stringify(offered));
+  check("고른 적이 없으면 서버에 있는 권장 도구 10개가 모두 넘어간다", JSON.stringify(offered) === JSON.stringify(ATLASSIAN_RECOMMENDED_TOOLS.filter((n) => names.includes(n)).sort()) && offered.length === 10, JSON.stringify(offered));
   check("쓰기 도구는 기본으로 넘기지 않는다", !offered.some((n) => /^(create|edit|update|transition|executeWrite|executeDestructive)/.test(n!)));
   check("화면에는 26개 모두 보이고 권장·선택 표시가 붙는다", out.choices.length === 26 && out.choices.filter((c) => c.recommended).length === 10 && out.choices.filter((c) => c.selected).length === 10);
 

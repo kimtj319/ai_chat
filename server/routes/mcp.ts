@@ -10,11 +10,13 @@ import {
   readOwnerPrefs,
   setAdoption,
   setCredential,
+  setOAuthSession,
   setHidden,
 } from "../mcp/ownerPrefs.js";
 import { summarize, summaryContext } from "../mcp/serverSummary.js";
 import { toolSummaries } from "../mcp/toolAdapter.js";
 import { atlassianCredential, isAtlassianMcpUrl } from "../mcp/atlassian.js";
+import { AtlassianOAuthError, finishAtlassianLogin, startAtlassianLogin } from "../mcp/atlassianOAuth.js";
 import {
   clampTimeoutMs,
   createServer,
@@ -106,7 +108,9 @@ mcpRouter.get("/mcp/servers", async (req, res, next) => {
     const summaries: McpServerSummary[] = [];
     for (const server of servers) {
       const state = snapshot(server.id);
-      if (server.status === "active" && state.stale) scheduleRefresh(server, prefs.credentials[server.id]);
+      if (server.status === "active" && state.stale) {
+        scheduleRefresh(server, prefs.oauth?.[server.id] ? await getCredential(req.ownerId, server.id) : prefs.credentials[server.id]);
+      }
       summaries.push(summarize(server, prefs, counts, totalAccounts, state.tools));
     }
     res.json({ servers: summaries, adopted: prefs.adopted, hidden: prefs.hidden });
@@ -442,6 +446,44 @@ mcpRouter.put("/mcp/servers/:id/credential", async (req, res, next) => {
     console.log(`[mcp] ${req.ownerId} ${hasCredential ? "set" : "cleared"} the credential for ${server.slug}`);
     res.json({ hasCredential });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/mcp/servers/:id/atlassian/login — start an Atlassian login for the
+ * calling owner; the answer is the consent page to open. Finish with the
+ * address the browser lands on (see server/mcp/atlassianOAuth.ts for why it is
+ * pasted back rather than redirected here).
+ */
+mcpRouter.post("/mcp/servers/:id/atlassian/login", async (req, res, next) => {
+  try {
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
+    if (!isAtlassianMcpUrl(server.url)) return fail(res, 400, "invalid_input", "Atlassian 커넥터가 아닙니다.");
+    const url = await startAtlassianLogin(req.ownerId, id);
+    res.json({ url });
+  } catch (err) {
+    if (err instanceof AtlassianOAuthError) return fail(res, err.status, "invalid_input", err.message);
+    next(err);
+  }
+});
+
+/** POST /api/mcp/servers/:id/atlassian/login/finish { url } — store the login as this owner's credential. */
+mcpRouter.post("/mcp/servers/:id/atlassian/login/finish", async (req, res, next) => {
+  try {
+    const found = await loadServerOr404(req, res);
+    if (!found) return;
+    const { id, server } = found;
+    if (!isAtlassianMcpUrl(server.url)) return fail(res, 400, "invalid_input", "Atlassian 커넥터가 아닙니다.");
+    const tokens = await finishAtlassianLogin(req.ownerId, id, (req.body ?? {}).url);
+    await setOAuthSession(req.ownerId, id, tokens);
+    invalidate(id);
+    console.log(`[mcp] ${req.ownerId} logged in to Atlassian for ${server.slug}`);
+    res.json({ hasCredential: true, atlassianAuth: "oauth" });
+  } catch (err) {
+    if (err instanceof AtlassianOAuthError) return fail(res, err.status, "invalid_input", err.message);
     next(err);
   }
 });

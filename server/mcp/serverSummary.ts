@@ -57,6 +57,7 @@ export function summarize(
     ...(server.authHeaderName ? { authHeaderName: server.authHeaderName } : {}),
     requiresCredential: server.authMode === "header",
     hasCredential: Boolean(prefs.credentials[server.id]),
+    atlassianAuth: !isAtlassianMcpUrl(server.url) || !prefs.credentials[server.id] ? null : prefs.oauth?.[server.id] ? "oauth" : "token",
     health: state.health,
     // The same adapter the prompt uses, so the list never advertises a tool the
     // model was not actually given (a dropped name, a schema over budget).

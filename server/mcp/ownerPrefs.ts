@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import { readJsonFile, writeJsonFileAtomic } from "../storage/atomic.js";
 import { isValidId, ownerMcpFile, ownersRoot } from "../storage/paths.js";
 import { withLock } from "../storage/mutex.js";
-import type { McpServerRecord, OwnerMcpPrefs } from "../types.js";
+import type { McpServerRecord, OwnerMcpPrefs, OwnerOAuthSession } from "../types.js";
+import { refreshAtlassianTokens, type AtlassianTokens } from "./atlassianOAuth.js";
 
 /**
  * One owner's MCP preferences at {DATA_DIR}/owners/{ownerId}/mcp.json, beside
@@ -50,7 +51,16 @@ function normalize(raw: unknown): OwnerMcpPrefs {
     }
   }
   const hidden = new Set([...strings(record.hidden), ...strings(record.optedOutBuiltins)]);
-  return { adopted: strings(record.adopted), hidden: [...hidden], credentials };
+  const oauth: Record<string, OwnerOAuthSession> = {};
+  if (record.oauth && typeof record.oauth === "object" && !Array.isArray(record.oauth)) {
+    for (const [key, value] of Object.entries(record.oauth)) {
+      const v = (value ?? {}) as Partial<OwnerOAuthSession>;
+      if (typeof v.clientId === "string" && typeof v.refreshToken === "string" && v.refreshToken && credentials[key]) {
+        oauth[key] = { clientId: v.clientId, refreshToken: v.refreshToken, expiresAt: typeof v.expiresAt === "number" ? v.expiresAt : null };
+      }
+    }
+  }
+  return { adopted: strings(record.adopted), hidden: [...hidden], credentials, ...(Object.keys(oauth).length ? { oauth } : {}) };
 }
 
 export async function readOwnerPrefs(ownerId: string): Promise<OwnerMcpPrefs> {
@@ -107,19 +117,76 @@ export async function setHidden(ownerId: string, serverId: string, hidden: boole
   });
 }
 
-/** null clears it. The value is written here and read nowhere but the outbound request. */
+function withoutOAuth(oauth: OwnerMcpPrefs["oauth"], serverId: string): Pick<OwnerMcpPrefs, "oauth"> {
+  if (!oauth || !(serverId in oauth)) return oauth ? { oauth } : {};
+  const rest = { ...oauth };
+  delete rest[serverId];
+  return Object.keys(rest).length ? { oauth: rest } : {};
+}
+
+/**
+ * null clears it. The value is written here and read nowhere but the outbound
+ * request. A typed-in key replaces an OAuth login for the same server (and
+ * clearing ends that login), so the two can never disagree.
+ */
 export async function setCredential(ownerId: string, serverId: string, credential: string | null): Promise<boolean> {
   const prefs = await mutate(ownerId, (current) => {
     const credentials = { ...current.credentials };
     if (credential === null || credential.length === 0) delete credentials[serverId];
     else credentials[serverId] = credential;
-    return { ...current, credentials };
+    const { oauth, ...rest } = current;
+    return { ...rest, credentials, ...withoutOAuth(oauth, serverId) };
   });
   return Boolean(prefs.credentials[serverId]);
 }
 
+/**
+ * Store an OAuth login: the access token goes where every credential goes (so
+ * every caller of getCredential just works), the refresh token beside it.
+ */
+export async function setOAuthSession(ownerId: string, serverId: string, tokens: AtlassianTokens): Promise<void> {
+  await mutate(ownerId, (current) => ({
+    ...current,
+    credentials: { ...current.credentials, [serverId]: `Bearer ${tokens.accessToken}` },
+    oauth: {
+      ...(current.oauth ?? {}),
+      [serverId]: { clientId: tokens.clientId, refreshToken: tokens.refreshToken, expiresAt: tokens.expiresAt },
+    },
+  }));
+}
+
+/** Renew this long before the access token runs out, so a turn never sends one that dies mid-call. */
+const OAUTH_REFRESH_MARGIN_MS = 2 * 60 * 1000;
+const refreshing = new Map<string, Promise<string | undefined>>();
+
+async function renewOAuth(ownerId: string, serverId: string, session: OwnerOAuthSession): Promise<string | undefined> {
+  try {
+    const tokens = await refreshAtlassianTokens(session.clientId, session.refreshToken);
+    await setOAuthSession(ownerId, serverId, tokens);
+    return `Bearer ${tokens.accessToken}`;
+  } catch (err) {
+    // Keep the old one: the call then fails with the server's own 401, which
+    // tells the person to log in again. Only the owner id is logged.
+    console.warn(`[mcp] ${ownerId}: OAuth refresh for ${serverId} failed:`, err instanceof Error ? err.message : err);
+    return (await readOwnerPrefs(ownerId)).credentials[serverId];
+  }
+}
+
 export async function getCredential(ownerId: string, serverId: string): Promise<string | undefined> {
-  return (await readOwnerPrefs(ownerId)).credentials[serverId];
+  const prefs = await readOwnerPrefs(ownerId);
+  const credential = prefs.credentials[serverId];
+  const session = prefs.oauth?.[serverId];
+  if (!credential || !session || (session.expiresAt !== null && session.expiresAt - Date.now() > OAUTH_REFRESH_MARGIN_MS)) {
+    return credential;
+  }
+  // One refresh per owner+server at a time: a rotated refresh token is single-use.
+  const key = `${ownerId}:${serverId}`;
+  let running = refreshing.get(key);
+  if (!running) {
+    running = renewOAuth(ownerId, serverId, session).finally(() => refreshing.delete(key));
+    refreshing.set(key, running);
+  }
+  return running;
 }
 
 /**
@@ -225,6 +292,7 @@ export async function forgetServerEverywhere(serverId: string): Promise<number> 
         adopted: prefs.adopted.filter((id) => id !== serverId),
         hidden: prefs.hidden.filter((id) => id !== serverId),
         credentials,
+        ...withoutOAuth(prefs.oauth, serverId),
       };
     });
     touched++;
@@ -242,7 +310,7 @@ export async function findDiscoveryCredential(server: McpServerRecord): Promise<
   const registrant = await getCredential(server.createdBy, server.id);
   if (registrant) return registrant;
   for (const ownerId of await ownerIdsWithPrefs()) {
-    const credential = (await readOwnerPrefs(ownerId)).credentials[server.id];
+    const credential = await getCredential(ownerId, server.id);
     if (credential) return credential;
   }
   return undefined;

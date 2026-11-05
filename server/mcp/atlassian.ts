@@ -20,8 +20,8 @@ export function isAtlassianMcpUrl(url: string): boolean {
 /**
  * Checked by default when nobody has chosen: the read side of Jira and
  * Confluence plus what it needs to run (discover → executeRead, the site id).
- * About 20KB of schema against 70KB for all 26; the write tools stay off until
- * someone ticks them.
+ * Names a server does not offer are simply absent. The write tools stay off
+ * until someone ticks them.
  */
 export const ATLASSIAN_RECOMMENDED_TOOLS: readonly string[] = [
   "atlassianUserInfo",
@@ -34,7 +34,30 @@ export const ATLASSIAN_RECOMMENDED_TOOLS: readonly string[] = [
   "search",
   "searchConfluence",
   "searchJiraIssuesUsingJql",
+  // The same read side under /v1/mcp names (API-token connections land there).
+  "fetch",
+  "getConfluencePage",
+  "getConfluenceSpaces",
+  "getPagesInConfluenceSpace",
+  "getVisibleJiraProjects",
+  "lookupJiraAccountId",
+  "searchConfluenceUsingCql",
 ];
+
+/**
+ * Where a request with this credential has to go: /v1/mcp for anything this
+ * app can hold. A Basic API-token header gets the same 401 "invalid_token" on
+ * /v2/mcp as no header at all, while /v1/mcp accepts it (measured 2026-11-05),
+ * and the login in atlassianOAuth.ts issues its token for the /v1/mcp resource.
+ * Without a credential the request goes where it was registered.
+ */
+export function atlassianEndpoint(url: string, credential: string | undefined): string {
+  if (!credential || !isAtlassianMcpUrl(url)) return url;
+  const parsed = new URL(url);
+  if (!/^\/v\d+\/mcp(\/|$)/.test(parsed.pathname)) return url;
+  parsed.pathname = "/v1/mcp";
+  return parsed.toString();
+}
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
