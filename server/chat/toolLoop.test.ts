@@ -412,9 +412,23 @@ async function runTurn(
   const { result, notices, events } = await runTurn(conversation);
   const contexts = events.filter((e) => e.type === "context") as Array<{ tokens: number; contextWindow: number | null }>;
   check(
-    "시나리오 C: 라운드마다 실제로 보내는 크기를 context 이벤트로 알린다(입력창 실시간 사용률)",
-    contexts.length === mainRoundCalls && contexts.every((c) => c.tokens > 0 && c.contextWindow === WINDOW),
-    `context ${contexts.length} / rounds ${mainRoundCalls}`,
+    "시나리오 C: 라운드마다 보내는 크기 + 압축마다 압축 직전 크기를 context 이벤트로 알린다(입력창 실시간 사용률)",
+    contexts.length === mainRoundCalls + compactionSummaryCalls && contexts.every((c) => c.tokens > 0 && c.contextWindow === WINDOW),
+    `context ${contexts.length} / rounds ${mainRoundCalls} + compactions ${compactionSummaryCalls}`,
+  );
+  // 압축 직전 이벤트는 압축 기준(70%)을 넘은 값이고, 바로 다음 이벤트(압축 뒤 첫 요청)는 그보다 작다.
+  const order = events.filter((e) => e.type === "context" || e.type === "compaction");
+  const preCompaction = order
+    .map((e, i) => ({ e, next: order[i + 1], after: order.slice(i + 1).find((x) => x.type === "context") }))
+    .filter(({ e, next }) => e.type === "context" && next?.type === "compaction") as Array<{
+    e: { tokens: number };
+    after?: { tokens: number };
+  }>;
+  check(
+    "시나리오 C: 압축하기 전에 압축을 일으킨 크기(기준 초과)를 먼저 보여 주고, 압축 뒤 값은 그보다 작다",
+    preCompaction.length === compactionSummaryCalls &&
+      preCompaction.every(({ e, after }) => e.tokens > WINDOW * config.contextCompactRatio && (!after || after.tokens < e.tokens)),
+    JSON.stringify(preCompaction.map(({ e, after }) => [e.tokens, after?.tokens])),
   );
 
   check(

@@ -395,6 +395,16 @@ export async function* runConversationTurn(
         preCount = before;
         const window = maxModelLen ?? before.maxModelLen;
         if (window !== null && before.tokens > window * config.contextCompactRatio) {
+          // The meter last showed the previous request, before this round's tool
+          // results arrived; show the size that triggered the compaction first, so
+          // it does not seem to fire at "under 60%" (2026-11-05: shown <60%, actual 72%).
+          yield {
+            type: "context",
+            tokens: before.tokens,
+            contextWindow: window,
+            summaryRatio: Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio),
+            toolStopRatio: config.contextToolStopRatio,
+          };
           const compacted = yield* withCompactionEvents(
             { ownerId, conversationId: conversation.id, kind: "research" },
             (onProgress) =>
