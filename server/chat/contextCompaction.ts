@@ -42,8 +42,15 @@ import type { VllmMessage } from "./historyBuilder.js";
  * than the 27B the numbers above were measured on, and in production it hit 2048 in
  * nearly every compaction (finish_reason=length, 3,300-5,500 chars), so every
  * report was discarded and every such turn ended with tools stopped.
+ *
+ * Raised to 8192 (2026-11-05): all 7 production compactions that day hit 4096,
+ * and once the report lists what was already looked up (so the turn stops
+ * repeating searches) 4096 cannot hold that and the facts of a big research
+ * turn. Measured on a 48-lookup, 160-fact corpus: DeepSeek V4.1 Flash 67-139
+ * facts at 4096 -> 154 at 8192 (finishing on its own at ~4.6k tokens, 9-10s),
+ * Qwen3.8 Flash-Next 56 -> 130 (21s). The report still replaces ~150k tokens.
  */
-const SUMMARY_MAX_TOKENS = 4096;
+const SUMMARY_MAX_TOKENS = 8192;
 /** Copying findings out of the context is transcription, not creative writing. */
 const SUMMARY_TEMPERATURE = 0.2;
 /**
@@ -78,15 +85,16 @@ const MAX_KEEP_GROUPS = 2;
  * verbatim, never reaching the later groups, and kept 3 of 18 planted facts. It
  * happened at an output budget of 1024 and of 4096 alike, so no budget buys it
  * back — the prompt has to forbid the row-copying, require every tool result to
- * be covered in order, and require sections 3 and 4 to be written (which is also
- * what isSubstantiveSummary() below checks for).
+ * be covered in order, and keep the short sections first so the facts, written
+ * last, are the only thing the cap can clip (isSubstantiveSummary() below checks
+ * that the facts section was reached).
  */
-const SUMMARY_INSTRUCTION = `지금까지 이 턴에서 도구로 수집한 내용을 "중간 조사 보고"로 정리하세요. 최종 답변은 아직 쓰지 말고, 아래 네 항목만 채우세요.
+const SUMMARY_INSTRUCTION = `지금까지 이 턴에서 도구로 수집한 내용을 "중간 조사 보고"로 정리하세요. 최종 답변은 아직 쓰지 말고, 아래 네 항목만 이 순서대로 채우세요.
 
 1. 원래 질문: 사용자가 물은 것을 한 줄로 다시 적으세요.
-2. 확인된 사실: 수집한 구체적 사실·수치·날짜·이름·인용문을 빠짐없이 나열하고, 각 항목 끝에 그 정보가 나온 출처 URL을 함께 적으세요.
-3. 이미 확인한 것: 어떤 도구로 무엇을 조회했고 무엇이 확인되었는지.
-4. 아직 확인이 필요한 것: 남은 질문, 실패했거나 불충분했던 조회.
+2. 이미 조회한 것: 도구 이름과 조회 대상(검색어·페이지 ID)만 한 줄에 하나씩, 결과 설명 없이 60자 이내로. 같은 도구로 비슷한 대상을 여러 번 조회했으면 한 줄로 묶으세요. 같은 조회를 다시 하지 않도록 빠짐없이 적으세요.
+3. 아직 확인이 필요한 것: 남은 질문, 실패했거나 불충분했던 조회를 몇 줄로 짧게.
+4. 확인된 사실: 수집한 구체적 사실·수치·날짜·이름·인용문을 빠짐없이 나열하고, 각 항목 끝에 그 정보가 나온 출처 URL을 함께 적으세요. 중요한 것부터 적으세요.
 
 제약:
 - 평가하거나 해석하지 말고, 미사여구를 붙이지 마세요. 수집한 내용만 옮기세요.
@@ -95,7 +103,7 @@ const SUMMARY_INSTRUCTION = `지금까지 이 턴에서 도구로 수집한 내�
 - 도구 결과에 없는 내용을 추측해서 채우지 마세요.
 - 로그 줄이나 표의 행을 원문 그대로 옮겨 적지 마세요. 반복되는 줄은 건너뛰고 그 안에서 새로 확인된 값만 뽑아 적으세요.
 - 도구 결과를 순서대로 하나도 빠뜨리지 말고 모두 다루세요. 첫 번째 결과에 오래 머물지 말고, 각 결과에서 새로 확인된 것만 적은 뒤 다음 결과로 넘어가세요.
-- 네 항목을 모두 작성하세요. 2번이 길어져도 3번과 4번을 반드시 적으세요.`;
+- 2번과 3번은 짧게 쓰고 4번으로 넘어가세요. 길이가 모자라면 4번의 뒤쪽이 잘리니, 4번은 중요한 사실부터 적으세요.`;
 
 /**
  * Marks the report as this turn's own working notes, not a finished answer, and
@@ -184,19 +192,21 @@ function trailingExchangeGroups(messages: VllmMessage[]): ExchangeGroup[] {
 }
 
 /**
- * A later section (3 or 4) has been started: its number at the start of a line,
- * with or without Markdown list/heading/emphasis markup in front of it…
+ * The facts section (last since 2026-11-05) has been started: its title at the
+ * start of a line, numbered or not, with or without Markdown list/heading/
+ * emphasis markup, and followed by a colon or a line break. Requiring the title
+ * keeps an indented "4. web_search …" inside section 2 or "확인된 사실 없음"
+ * written in section 3 from counting as the facts.
+ *
+ * Why the facts went last: they are the long, open-ended part. With them second,
+ * every one of the 7 compactions on 2026-11-05 hit the 4096-token cap inside
+ * them, so "what was already looked up" and "what is still missing" were never
+ * written — and the turn went on repeating searches (43-46 calls). Now the cap
+ * can only clip the tail of the facts, after the short navigation sections.
  */
-const SUMMARY_LATER_SECTION = /^[ \t]*(?:[-*>#]+[ \t]*)?(?:\*\*)?[ \t]*[34][ \t]*[.)]/m;
-/**
- * …or its title from SUMMARY_INSTRUCTION, for the reports that write the
- * headings without renumbering them. One measured report (finish_reason=stop,
- * 783 tokens, a complete four-part report) was thrown away by the numbered form
- * alone, and a false rejection costs more than a lenient one: it falls back to
- * the ladder, which shreds the same tool results into 600-char excerpts.
- */
-const SUMMARY_LATER_HEADING = /이미 확인한 것|확인이 필요한 것/;
-/** Below this a report that never left section 2 is a stub, not research. */
+const SUMMARY_FACTS_HEADING =
+  /^(?:[-*>#]+[ \t]*)?(?:\*\*)?[ \t]*(?:\d[ \t]*[.)][ \t]*)?(?:\*\*)?[ \t]*확인된 사실[ \t]*(?:\*\*)?[ \t]*[:：\n]/m;
+/** Below this a report that never reached the facts is a stub, not research. */
 const MIN_TRUNCATED_REPORT_CHARS = 400;
 /** Appended to a kept report that stopped early, so the model knows to re-check. */
 const TRUNCATED_NOTE =
@@ -223,7 +233,7 @@ const TRUNCATED_NOTE =
  * a report still inside section 2 at the cap is dwelling, not merely thorough.
  */
 function isSubstantiveSummary(summary: string): boolean {
-  return SUMMARY_LATER_SECTION.test(summary) || SUMMARY_LATER_HEADING.test(summary);
+  return SUMMARY_FACTS_HEADING.test(summary);
 }
 
 /**
@@ -349,8 +359,15 @@ export async function compactResearchContext(input: CompactionInput): Promise<Co
     }
     truncated = true;
     console.warn(
-      `[compact] keeping a report that stopped inside section 2 ` +
+      `[compact] keeping a report that never reached the facts section ` +
         `(finish_reason=${finishReason}, ${usage.completionTokens} completion tokens, ${summary.length} chars)`,
+    );
+  } else if (finishReason === "length") {
+    // Cut inside the facts, the last section: the navigation above is whole.
+    truncated = true;
+    console.warn(
+      `[compact] keeping a report cut inside its facts section ` +
+        `(${usage.completionTokens} completion tokens, ${summary.length} chars)`,
     );
   }
 

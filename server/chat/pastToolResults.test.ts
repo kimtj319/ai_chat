@@ -6,7 +6,7 @@ import path from "node:path";
 
 process.env.DATA_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "past-tool-results-test-"));
 
-const { fitPastTurnToolResults, PAST_TURN_TOOL_RESULT_CHARS } = await import("./pastToolResults.js");
+const { fitPastTurnToolResults, citedRefs, PAST_TURN_TOOL_RESULT_CHARS } = await import("./pastToolResults.js");
 const { buildHistoryMessages } = await import("./historyBuilder.js");
 
 let passed = 0;
@@ -67,13 +67,16 @@ const small = JSON.stringify({ result: 42 });
 }
 
 {
-  // 문서 검색을 30번 한 턴: ref 300개가 모두 남고, 결과마다 JSON 이 깨지지 않는다.
+  // 문서 검색을 30번 한 턴: 답변이 인용한 ref 는 모두 남고, 결과마다 JSON 이 깨지지 않고, 상한 안.
   let n = 0;
   const calls = Array.from({ length: 30 }, () =>
     JSON.stringify(JSON.stringify({ passages: Array.from({ length: 10 }, () => ({ ref: ++n, doc_id: `doc_y#${n}`, title: `문서 ${n}`, text: "바".repeat(1_500) })) })),
   );
-  const out = fitPastTurnToolResults(calls);
-  const refs = Array.from({ length: 300 }, (_, i) => `"ref":${i + 1},`).filter((r) => out.some((c) => c.includes(r))).length;
+  const answer = "요약입니다 [3] 그리고 [77], [150] 및 [299] 참고.";
+  const cited = citedRefs(answer);
+  check("답변의 [n] 을 인용 번호로 읽는다", [3, 77, 150, 299].every((r) => cited.has(r)) && cited.size === 4);
+  const out = fitPastTurnToolResults(calls, PAST_TURN_TOOL_RESULT_CHARS, cited);
+  const keptCited = [...cited].filter((r) => out.some((c) => c.includes(`"ref":${r},`))).length;
   const valid = out.filter((c) => {
     const body = c.includes("\n") ? c.slice(c.indexOf("\n") + 1) : c;
     try {
@@ -83,11 +86,46 @@ const small = JSON.stringify({ result: 42 });
       return false;
     }
   }).length;
-  check("문서 검색이 많아도 ref 300개가 모두 남는다", refs === 300, `${refs}/300`);
+  check("문서 검색이 많아도 답변이 인용한 ref 는 모두 남는다", keptCited === 4, `${keptCited}/4`);
   check("줄인 결과도 JSON 으로 읽힌다", valid === 30, `${valid}/30`);
-  const before = calls.reduce((s, c) => s + c.length, 0);
   const after = out.reduce((s, c) => s + c.length, 0);
-  check("뼈대만으로 상한을 넘더라도 크게 줄어든다", after < before / 4, `${before} → ${after}`);
+  check("짧은 값이 많아도 턴 전체가 상한 안(여유 10%)", after <= PAST_TURN_TOOL_RESULT_CHARS * 1.1, String(after));
+}
+
+{
+  // 운영 모양(2026-11-05): Confluence 페이지 목록처럼 짧은 값만 잔뜩인 결과를 46번 — 예전엔 225k자가 그대로 갔다.
+  const listing = (k: number) =>
+    JSON.stringify(
+      JSON.stringify({
+        results: Array.from({ length: 50 }, (_, j) => ({
+          id: `${900000 + k * 100 + j}`,
+          title: `페이지 ${k}-${j}`,
+          status: "current",
+          spaceId: "98765",
+          parentId: `${800000 + j}`,
+          authorId: "634d0a23fc0cc7a600ac13be",
+          createdAt: "2026-10-01T09:00:00.000Z",
+          version: { number: j, createdAt: "2026-10-02T09:00:00.000Z" },
+          _links: { webui: `/spaces/SOL/pages/${900000 + k * 100 + j}/page-${k}-${j}` },
+        })),
+      }),
+    );
+  const calls = Array.from({ length: 46 }, (_, k) => listing(k));
+  const before = calls.reduce((s, c) => s + c.length, 0);
+  const out = fitPastTurnToolResults(calls);
+  const after = out.reduce((s, c) => s + c.length, 0);
+  check("짧은 값 목록 46개도 턴 상한 안(여유 10%)", after <= PAST_TURN_TOOL_RESULT_CHARS * 1.1, `${before} → ${after}`);
+  check("결과마다 줄였다는 안내가 남는다", out.every((c) => c.includes("이전 턴")));
+  check("목록을 줄인 결과는 그렇다고 안내한다(짧은 값이 그대로라고 하지 않는다)", out.every((c) => c.includes("목록은 앞쪽 일부") || c.includes("생략(")), out[0]!.slice(0, 120));
+}
+
+{
+  // 인용한 단락은 자리가 있으면 본문 일부를 지킨다(번호·제목만 남지 않게).
+  const passages = Array.from({ length: 40 }, (_, i) => ({ ref: i + 1, title: `문서 ${i + 1}`, text: `본문${i + 1} ` + "가".repeat(3_000) }));
+  const one = JSON.stringify(JSON.stringify({ passages }));
+  const [out] = fitPastTurnToolResults([one], 8_000, citedRefs("핵심은 [37] 입니다"));
+  check("인용한 단락은 본문 앞부분이 남는다", out!.includes('"ref":37') && out!.includes("본문37 가가가"), out!.slice(0, 200));
+  check("그래도 상한 안", out!.length <= 8_000 * 1.05, String(out!.length));
 }
 
 {

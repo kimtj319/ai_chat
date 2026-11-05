@@ -171,7 +171,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
             {
               delta: {
                 content:
-                  "1. 원래 질문: 테스트 질문\n2. 확인된 사실: 없음\n3. 이미 확인한 것: 테스트 도구 호출\n4. 아직 확인이 필요한 것: 없음",
+                  "1. 원래 질문: 테스트 질문\n2. 이미 조회한 것: 테스트 도구 호출\n3. 아직 확인이 필요한 것: 없음\n4. 확인된 사실: 없음",
               },
               finish_reason: null,
             },

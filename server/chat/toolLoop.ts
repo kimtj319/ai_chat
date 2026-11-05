@@ -157,11 +157,10 @@ export async function* runConversationTurn(
   // the turn's tools are built): it depends on nothing computed in this function —
   // not the model, not the history, not the conversation's own tool list — and
   // it never touches the network itself (mcp/discovery.ts's own cache; see the
-  // comment where this is awaited). Awaiting it only where it is used meant a
-  // turn paid for it AFTER resolveModel and buildTurnHistory had already run
-  // one after another, even though all three could have overlapped. It never
-  // rejects (mcpToolsForOwner's own contract), so holding the promise this
-  // long adds no new failure mode.
+  // comment where this is awaited), so it overlaps resolveModel. It is awaited
+  // before buildTurnHistory, whose summary decision counts the same tool
+  // schemas. It never rejects (mcpToolsForOwner's own contract), so holding the
+  // promise this long adds no new failure mode.
   const mcpToolsPromise = mcpToolsForOwner(ownerId);
   // 그래도 아무도 기다리지 않는 채로 거절되는 일은 막아 둔다. 레지스트리 읽기는
   // 안에서 잡지만 그 뒤의 동기 코드(definitionsFor 등)까지 보장되지는 않고, 아래의
@@ -202,6 +201,18 @@ export async function* runConversationTurn(
     totalUsage.completionTokens += completion;
     totalUsage.totalTokens += usage.total_tokens ?? prompt + completion;
   };
+  // Awaited here rather than fetched here — it was kicked off above, before
+  // resolveModel, and has been running alongside it. On an ordinary turn this
+  // resolves immediately (mcp/discovery.ts's cache). It has to be in hand
+  // before buildTurnHistory: the summary decision counts the same tool schemas
+  // the tool-stop check counts (chat/historySummary.ts).
+  const mcpTools = await mcpToolsPromise;
+  // The turn's tool snapshot, taken once (chat/turnTools.ts).
+  const { turnTools, tools, maxToolCalls: maxToolCallsThisTurn, identicalLimit } = buildTurnTools(
+    conversation,
+    mcpTools.tools,
+    options.browserControl === true,
+  );
   const history = yield* withCompactionEvents(
     { ownerId, conversationId: conversation.id, kind: "history" },
     (onProgress) =>
@@ -214,6 +225,7 @@ export async function* runConversationTurn(
         signal,
         onProgress,
         onUsage: addUsage,
+        ...(tools ? { tools } : {}),
       }),
     (built) => Boolean(built.notice),
   );
@@ -239,20 +251,6 @@ export async function* runConversationTurn(
   // whole early conversation in one step.
   if (history.summaryMessage) protectedMessages.add(history.summaryMessage);
 
-  // Awaited here rather than fetched here — it was already kicked off above,
-  // before resolveModel and buildTurnHistory, and has been running alongside
-  // them since. On an ordinary turn this await resolves immediately because
-  // the promise settled minutes ago (mcp/discovery.ts's cache); the only turn
-  // that ever actually waits here is the very first one after a server was
-  // just added, which used to wait behind resolveModel and buildTurnHistory
-  // too and now waits behind whichever of the three is actually slowest.
-  const mcpTools = await mcpToolsPromise;
-  // The turn's tool snapshot, taken once (chat/turnTools.ts).
-  const { turnTools, tools, maxToolCalls: maxToolCallsThisTurn, identicalLimit } = buildTurnTools(
-    conversation,
-    mcpTools.tools,
-    options.browserControl === true,
-  );
 
   let content = "";
   let reasoning = "";

@@ -1,4 +1,4 @@
-import { streamChatCompletion, countPromptTokens, estimatePromptTokens, stripThinkBlocks, type ChatCompletionRequestBody, type VllmStreamChunk } from "../vllm/client.js";
+import { streamChatCompletion, countPromptTokens, estimatePromptTokens, stripThinkBlocks, type ChatCompletionRequestBody, type ChatToolDef, type VllmStreamChunk } from "../vllm/client.js";
 import { config } from "../config.js";
 import type { VllmEndpoint } from "../config.js";
 import { SAFETY_MARGIN_TOKENS } from "./contextBudget.js";
@@ -249,9 +249,10 @@ export function couldSummarise(conversation: Conversation): boolean {
  *    already stopped instead opens with room to spare, and calls tools like
  *    any other.
  *
- * The tool schemas are not counted here even when the caller measured without
- * them: they are ~500-900 tokens for a typical conversation, inside the
- * SAFETY_MARGIN_TOKENS this threshold already holds back.
+ * Callers pass the prompt WITH the turn's tool definitions — the same number
+ * the tool-stop check above compares. They used to be left out as "~500-900
+ * tokens", but with MCP connectors on they reached tens of thousands, and that
+ * gap opened turns with tools stopped and no summary (2026-11-05).
  */
 export function needsSummary(
   conversation: Conversation,
@@ -265,6 +266,13 @@ export function needsSummary(
   const desiredOutput = conversation.settings?.maxTokens ?? DEFAULT_SETTINGS.maxTokens;
   if (promptTokens + desiredOutput + SAFETY_MARGIN_TOKENS > contextWindow) return true;
   return promptTokens > contextWindow * Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio);
+}
+
+/** Whether the turn's tool schemas leave the history something to win by being folded. */
+function schemasLeaveRoom(input: TurnHistoryInput): boolean {
+  if (!input.tools?.length || input.contextWindow === null) return true;
+  const threshold = input.contextWindow * Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio);
+  return estimatePromptTokens([], input.tools) < threshold / 2;
 }
 
 /** The summary as the model sees it: one assistant message, ahead of the tail. */
@@ -399,6 +407,14 @@ export interface TurnHistoryInput {
   onProgress?: (fraction: number) => void;
   /** Token usage of every summary call this turn makes. */
   onUsage?: (usage: NonNullable<VllmStreamChunk["usage"]>) => void;
+  /**
+   * The tool definitions this turn will send. Counted into the decision because
+   * chat/contextBudget.ts counts them when it decides to stop tools: with ~30
+   * tools they are tens of thousands of characters, and measuring without them
+   * let a turn open with tools already stopped while this said "no summary yet"
+   * (production, 2026-11-05: history 189k + schemas crossed 0.8 x 262k).
+   */
+  tools?: ChatToolDef[];
 }
 
 export interface TurnHistory {
@@ -428,6 +444,13 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
   let messages = await buildHistoryMessages(conversation, ownerId, options);
   let summaryMessage = options?.prelude;
 
+  // The tool schemas count toward the decision (they are in the request the
+  // tool-stop check measures) — unless they alone take half the room the
+  // threshold leaves: then folding the history can never bring the prompt
+  // under it, and counting them would summarise on every turn for nothing
+  // (a small-window model with many connectors). That case stops tools, as before.
+  const tools = schemasLeaveRoom(input) ? input.tools : undefined;
+
   // The cheap half of the decision first: an ordinary conversation must not pay
   // a /tokenize round-trip per turn for a feature it will never reach.
   if (input.contextWindow === null || !couldSummarise(conversation)) return { messages, summaryMessage };
@@ -444,11 +467,11 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
   // learn "not yet" — often for many turns in a row before the window
   // actually filled. Skipping straight to "not yet" here costs nothing but a
   // string length and a loop over it.
-  if (!needsSummary(conversation, estimatePromptTokens(messages), input.contextWindow)) {
+  if (!needsSummary(conversation, estimatePromptTokens(messages, tools), input.contextWindow)) {
     return { messages, summaryMessage };
   }
 
-  const count = await countPromptTokens(input.endpoint, input.model, messages, undefined, input.signal).catch(
+  const count = await countPromptTokens(input.endpoint, input.model, messages, tools, input.signal).catch(
     // A tokenizer outage is not a reason to fail the turn: without a number
     // there is no decision to make, so carry on exactly as before.
     () => null,
@@ -491,7 +514,7 @@ export async function buildTurnHistory(input: TurnHistoryInput): Promise<TurnHis
     messages = await buildHistoryMessages(conversation, ownerId, options);
     summaryMessage = options?.prelude;
     if (i === modes.length - 1) break;
-    const after = await countPromptTokens(input.endpoint, input.model, messages, undefined, input.signal).catch(() => null);
+    const after = await countPromptTokens(input.endpoint, input.model, messages, tools, input.signal).catch(() => null);
     if (!after || !needsSummary(conversation, after.tokens, input.contextWindow)) break;
   }
   if (!summary) return { messages, summaryMessage };

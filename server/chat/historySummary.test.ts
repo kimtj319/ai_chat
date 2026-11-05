@@ -265,6 +265,65 @@ function longTextConversation(fillerCharsOnFirstMessage: number) {
   globalThis.fetch = originalFetch;
 }
 
+{
+  // 운영(2026-11-05): 기록만 재면 기준 아래인데, 같은 턴의 도구 정의(커넥터 30개)를 더하면
+  // 도구 중단 기준을 넘었다 — 도구는 첫 라운드에 멈추고 요약은 일어나지 않았다.
+  // 요약 판단은 도구 중단과 같은 수(도구 정의 포함)로 해야 한다.
+  const WINDOW = 400_000;
+  const originalFetch = globalThis.fetch;
+  let summaries = 0;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.endsWith("/tokenize")) {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      const tokens = Math.ceil((JSON.stringify(body.messages ?? []).length + JSON.stringify(body.tools ?? []).length) / 4);
+      return new Response(JSON.stringify({ count: tokens, max_model_len: null }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.endsWith("/chat/completions")) {
+      summaries++;
+      const text =
+        "data: " +
+        JSON.stringify({ choices: [{ delta: { content: "1. 대화 주제: 테스트\n2. 확인된 사실과 결정: 없음\n3. 요청과 답변: 없음\n4. 남은 것: 없음" }, finish_reason: "stop" }] }) +
+        "\n\ndata: [DONE]\n\n";
+      return new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+    throw new Error(`예상하지 못한 요청: ${url}`);
+  }) as typeof fetch;
+  // 기록만으로는 창의 ~70%(기준 80% 아래), 도구 정의를 더하면 ~85%.
+  const history70 = "x".repeat(Math.floor(WINDOW * 4 * 0.7));
+  const tools = Array.from({ length: 30 }, (_, i) => ({
+    type: "function" as const,
+    function: { name: `tool_${i}`, description: "d".repeat(Math.floor((WINDOW * 4 * 0.15) / 30)), parameters: { type: "object", properties: {} } },
+  }));
+  const mk = () => {
+    const messages = longEnoughConversation().messages;
+    (messages[0] as { content: string }).content = history70;
+    return longEnoughConversation({ id: "conv-tools", messages });
+  };
+  const without = await buildTurnHistory({ conversation: mk(), ownerId: "owner-1", model: "m", endpoint, contextWindow: WINDOW, signal: new AbortController().signal });
+  check("도구 정의를 모르면(예전) 기준 아래로 보아 요약하지 않는다", without.notice === undefined && summaries === 0, String(summaries));
+  const withTools = await buildTurnHistory({ conversation: mk(), ownerId: "owner-1", model: "m", endpoint, contextWindow: WINDOW, signal: new AbortController().signal, tools });
+  check("도구 정의까지 세면 도구가 멈추기 전에 요약한다", withTools.notice !== undefined && summaries > 0, `${summaries} ${withTools.notice}`);
+  // 검토 지적(2026-11-05): 도구 정의만으로 기준의 절반 이상이면 기록을 접어도 기준 아래로 못 내려간다 —
+  // 그때 도구 정의를 세면 매 턴 요약만 하고 소용이 없다. 예전처럼 도구 중단에 맡긴다.
+  const before = summaries;
+  const hugeTools = Array.from({ length: 30 }, (_, i) => ({
+    type: "function" as const,
+    function: { name: `big_${i}`, description: "d".repeat(Math.floor((WINDOW * 4 * 0.5) / 30)), parameters: { type: "object", properties: {} } },
+  }));
+  const mk30 = () => {
+    const messages = longEnoughConversation().messages;
+    (messages[0] as { content: string }).content = "x".repeat(Math.floor(WINDOW * 4 * 0.3));
+    return longEnoughConversation({ id: "conv-hugetools", messages });
+  };
+  const huge = await buildTurnHistory({ conversation: mk30(), ownerId: "owner-1", model: "m", endpoint, contextWindow: WINDOW, signal: new AbortController().signal, tools: hugeTools });
+  check("도구 정의만으로 기준의 절반을 넘으면 요약하지 않는다(소용없는 요약 반복 방지)", huge.notice === undefined && summaries === before, `${summaries - before}`);
+  globalThis.fetch = originalFetch;
+}
+
 console.log("");
 console.log(`${passed} passed, ${failures.length} failed`);
 if (failures.length) {

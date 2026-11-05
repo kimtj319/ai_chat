@@ -25,7 +25,7 @@ export interface ContextUsage {
   exact: boolean;
   /**
    * Whether the next question will summarise the earlier conversation first —
-   * decided by needsSummary itself, on the history without tool definitions,
+   * decided by needsSummary itself, on the history with the tool definitions,
    * exactly as the next turn decides it (chat/historySummary.ts).
    */
   willSummarize: boolean;
@@ -44,23 +44,17 @@ export async function contextUsage(conversation: Conversation, ownerId: string, 
   ]);
   const { tools } = buildTurnTools(conversation, mcp.tools, false);
   let tokens: number;
-  let historyTokens: number;
   let exact = false;
   let reported: number | null = null;
   try {
     const endpoint = await endpointForOwner(resolved.endpoint, ownerId);
-    const [withTools, historyOnly] = await Promise.all([
-      countPromptTokens(endpoint, resolved.model, messages, tools),
-      countPromptTokens(endpoint, resolved.model, messages),
-    ]);
+    const withTools = await countPromptTokens(endpoint, resolved.model, messages, tools);
     tokens = withTools.tokens;
-    historyTokens = historyOnly.tokens;
     exact = withTools.exact;
     reported = withTools.maxModelLen;
   } catch {
     // No personal key for a wise model: the meter still shows an estimate.
     tokens = estimatePromptTokens(messages, tools);
-    historyTokens = estimatePromptTokens(messages);
   }
   const contextWindow = resolved.maxModelLen ?? reported;
   return {
@@ -68,7 +62,7 @@ export async function contextUsage(conversation: Conversation, ownerId: string, 
     tokens,
     contextWindow,
     exact,
-    willSummarize: needsSummary(conversation, historyTokens, contextWindow),
+    willSummarize: needsSummary(conversation, tokens, contextWindow),
     summaryRatio: Math.min(config.contextToolStopRatio, config.contextHistorySummaryRatio),
     toolStopRatio: config.contextToolStopRatio,
   };

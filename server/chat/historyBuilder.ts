@@ -5,7 +5,7 @@ import { activeText, capActive, readProhibitions } from "../storage/prohibitions
 import { readAttachmentBytes } from "../storage/attachmentStore.js";
 import { IMAGE_TOKEN_CEILING } from "../attachments/sniff.js";
 import { STUB_PREVIEW_CHARS } from "../attachments/budget.js";
-import { fitPastTurnToolResults } from "./pastToolResults.js";
+import { citedRefs, fitPastTurnToolResults, PAST_TURN_TOOL_RESULT_CHARS } from "./pastToolResults.js";
 
 export interface VllmTextPart {
   type: "text";
@@ -137,7 +137,11 @@ async function messageToVllm(
     // (chat/pastToolResults.ts) — 제목·주소·번호는 남기고 본문을 줄인다.
     const sources = citationSources(message.toolResults);
     const results = (message.toolResults ?? []).map((tr) => toolResultMessage(tr, sources));
-    const fitted = fitPastTurnToolResults(results.map((m) => String(m.content)));
+    const fitted = fitPastTurnToolResults(
+      results.map((m) => String(m.content)),
+      PAST_TURN_TOOL_RESULT_CHARS,
+      citedRefs(message.content),
+    );
     results.forEach((m, i) => out.push(fitted[i] === m.content ? m : { ...m, content: fitted[i]! }));
     if (message.content.trim().length > 0) {
       out.push({ role: "assistant", content: message.content });
