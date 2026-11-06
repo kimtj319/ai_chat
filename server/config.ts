@@ -175,6 +175,12 @@ export const config = {
    */
   reasoningProfiles: (process.env.REASONING_PROFILES || "").trim(),
   /**
+   * 모델별 기본 temperature/top_p. "패턴=temperature/top_p" 를 쉼표로 잇는다 — 해석은
+   * chat/samplingProfiles.ts. 설정하지 않으면 DeepSeek 에 그 모델의 권장값(1.0/1.0)을
+   * 쓰고, 빈 값으로 두면 모든 모델이 앱 기본값을 쓴다.
+   */
+  samplingProfiles: (process.env.SAMPLING_PROFILES ?? "deepseek=1.0/1.0").trim(),
+  /**
    * 길이를 알려 주지 않는 모델(WiseLLoA 게이트웨이 등)의 컨텍스트 길이. "패턴=토큰수" 를
    * 쉼표로 잇는다 — 해석은 vllm/contextLengths.ts. 서버가 알려 준 길이가 늘 먼저다.
    */

@@ -132,7 +132,9 @@ function excerptReasoning(reasoning: string): string {
 export type WrapUpReason =
   | { kind: "deadline"; deadlineMs: number }
   | { kind: "answer-now" }
-  | { kind: "empty-answer" };
+  | { kind: "empty-answer" }
+  // The thinking fell into repeating itself (chat/repetitionGuard.ts) and was cut.
+  | { kind: "repetition" };
 
 function leadSentence(reason: WrapUpReason): string {
   if (reason.kind === "deadline") {
@@ -140,6 +142,9 @@ function leadSentence(reason: WrapUpReason): string {
   }
   if (reason.kind === "answer-now") {
     return "사용자가 '지금 답변하기'를 눌렀습니다. 더 생각하거나 도구를 호출하지 말고, 지금까지 진행한 추론과 조사만으로 최종 답변을 지금 작성하세요.";
+  }
+  if (reason.kind === "repetition") {
+    return "추론이 같은 내용을 되풀이하기 시작해 중단했습니다. 더 생각하지 말고, 지금까지 진행한 추론과 조사만으로 최종 답변을 지금 작성하세요. 같은 문장을 되풀이하지 마세요.";
   }
   return "추론은 끝났는데 사용자에게 보낼 답변 본문이 비어 있습니다. 더 생각하지 말고, 지금까지 진행한 추론만으로 최종 답변을 작성하세요.";
 }

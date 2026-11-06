@@ -313,6 +313,12 @@ export interface ModelCatalogEntry {
   reasoningFixed?: boolean;
   /** REASONING_PROFILES as applied to this model: "fixed" or "budget:N". */
   reasoningProfile?: string;
+  /**
+   * SAMPLING_PROFILES as applied to this model: what is sent instead of the
+   * app's temperature/top_p defaults while a conversation keeps them. Null or
+   * absent means the defaults go as they are.
+   */
+  samplingDefaults?: { temperature: number; topP: number } | null;
   maxModelLen: number;
   /**
    * Present once the server publishes its derived ceilings. Read through

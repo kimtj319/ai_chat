@@ -82,7 +82,15 @@ interface ChatCall {
 type MainRoundHandler = (
   call: ChatCall,
   roundIndex: number,
-) => { content?: string; toolCall?: { name: string; arguments: unknown }; toolCalls?: Array<{ name: string; arguments: unknown }> };
+) => {
+  content?: string;
+  /** 답 앞에 오는 생각(reasoning_content) 조각. */
+  reasoning?: string;
+  /** 기본 "stop". 반복에 빠진 모델은 끝 토큰 없이 "length" 로 끝난다. */
+  finishReason?: string;
+  toolCall?: { name: string; arguments: unknown };
+  toolCalls?: Array<{ name: string; arguments: unknown }>;
+};
 
 let mainRoundHandler: MainRoundHandler = () => ({ content: "ok" });
 /**
@@ -92,11 +100,14 @@ let mainRoundHandler: MainRoundHandler = () => ({ content: "ok" });
  */
 let hangNextMainRound: (() => void) | null = null;
 let mainRoundCalls = 0;
+/** 메인 라운드(마무리 호출 포함) 요청 본문과 그 요청의 신호 — 반복 감지 시나리오가 본다. */
+const mainRoundRequests: Array<{ body: Record<string, unknown>; signal: AbortSignal | undefined }> = [];
 let historySummaryCalls = 0;
 let compactionSummaryCalls = 0;
 
 function resetCallCounters(): void {
   mainRoundCalls = 0;
+  mainRoundRequests.length = 0;
   historySummaryCalls = 0;
   compactionSummaryCalls = 0;
 }
@@ -182,6 +193,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     }
     // 메인 라운드.
     const roundIndex = mainRoundCalls++;
+    mainRoundRequests.push({ body, signal: init?.signal ?? undefined });
     // 시나리오 D 전용: "지금 답변하기" 는 실제로 vLLM 에 나가 있는(아직 응답이
     // 안 온) 요청을 끊는 상황이라, 이 요청을 절대 스스로 끝내지 않고 신호가
     // 끊길 때만 거절한다. hook() 은 abort 리스너를 건 *다음* 에 불러서,
@@ -228,8 +240,12 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       ]);
     }
     return sseResponse([
-      { choices: [{ delta: { content: answer.content ?? "" }, finish_reason: null }] },
-      { choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } },
+      ...(answer.reasoning ? [{ choices: [{ delta: { reasoning_content: answer.reasoning }, finish_reason: null }] }] : []),
+      ...(answer.content ? [{ choices: [{ delta: { content: answer.content }, finish_reason: null }] }] : []),
+      {
+        choices: [{ delta: {}, finish_reason: answer.finishReason ?? "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 },
+      },
     ]);
   }
 
@@ -670,6 +686,79 @@ async function runTurn(
   check("시나리오 H: 마무리 답변이 시작된 뒤에 중지했다", stoppedDuringWrapUp);
   check("시나리오 H: 턴은 '취소됨' 으로 끝난다", result.error === "Cancelled by client.", JSON.stringify(result.error));
   check("시나리오 H: 화면에도 오류 이벤트가 간다", events.some((e) => e.type === "error"), JSON.stringify(events.map((e) => e.type)));
+}
+
+/* ============================================================== 시나리오 I */
+// 생각이 끝 토큰 없이 같은 문장을 되풀이한다(DeepSeek V4.1 Flash, 2026-11-05).
+// 그 요청을 끊고, 생각 없이 그때까지의 추론으로 답을 쓰게 한다. 모델 id 에
+// "deepseek" 가 있으니 기본값 대화는 모델 권장값(1.0/1.0)으로 나간다.
+{
+  resetCallCounters();
+  registeredModels.set("deepseek-test", 50_000);
+  const loop = "같은 생각을 다시 확인해 봅니다. ";
+  mainRoundHandler = (_call, roundIndex) =>
+    roundIndex === 0 ? { reasoning: `먼저 질문을 봅니다. ${loop.repeat(400)}`, finishReason: "length" } : { content: "정리된 답입니다." };
+
+  const { result, notices } = await runTurn(makeConversation({ model: "deepseek-test" }));
+  const [first, wrap] = mainRoundRequests;
+  check("시나리오 I: 반복된 요청은 끊긴다(신호가 abort 됨)", first?.signal?.aborted === true);
+  check("시나리오 I: 마무리 호출이 한 번 더 나간다", mainRoundCalls === 2, String(mainRoundCalls));
+  check(
+    "시나리오 I: 마무리 호출은 생각 없이, 반복 사유를 담아 나간다",
+    (wrap?.body.chat_template_kwargs as { enable_thinking?: boolean } | undefined)?.enable_thinking === false &&
+      JSON.stringify(wrap?.body.messages).includes("되풀이하기 시작해"),
+  );
+  check("시나리오 I: 답은 마무리 호출의 내용이다", result.content === "정리된 답입니다." && !result.error, `${result.error} / ${result.content}`);
+  check("시나리오 I: 저장되는 생각에는 반복이 한 벌만 남는다", result.reasoning.length < 20 + loop.length * 2, String(result.reasoning.length));
+  check("시나리오 I: 안내 문구가 남는다", notices.some((n) => n.includes("생각이 같은 내용을 되풀이")), JSON.stringify(notices));
+  check(
+    "시나리오 I: 기본값 대화는 DeepSeek 권장값 1.0/1.0 으로 나간다(본 라운드·마무리 모두)",
+    first?.body.temperature === 1 && first?.body.top_p === 1 && wrap?.body.temperature === 1 && wrap?.body.top_p === 1,
+    JSON.stringify([first?.body.temperature, first?.body.top_p, wrap?.body.temperature, wrap?.body.top_p]),
+  );
+}
+
+/* ============================================================== 시나리오 J */
+// 답이 같은 문장을 되풀이한다: 끊고, 반복은 한 벌만 남기고, 턴을 끝낸다.
+{
+  resetCallCounters();
+  registeredModels.set("model-j", 50_000);
+  const loop = "이 설정은 정렬 순서에 영향을 줍니다. ";
+  mainRoundHandler = () => ({ content: `답의 시작입니다. ${loop.repeat(400)}`, finishReason: "length" });
+
+  const { result, notices } = await runTurn(makeConversation({ model: "model-j" }));
+  check("시나리오 J: 반복된 요청은 끊긴다(신호가 abort 됨)", mainRoundRequests[0]?.signal?.aborted === true);
+  check("시나리오 J: 더 부르지 않는다", mainRoundCalls === 1, String(mainRoundCalls));
+  check(
+    "시나리오 J: 답은 시작 부분과 반복 한 벌만 남는다",
+    result.content.startsWith("답의 시작입니다. ") && result.content.length < 20 + loop.length * 2,
+    String(result.content.length),
+  );
+  check("시나리오 J: 오류가 아니라 안내로 끝난다", !result.error && notices.some((n) => n.includes("답변이 같은 내용을 되풀이")), JSON.stringify(notices));
+  check(
+    "시나리오 J: 프로필 없는 모델은 앱 기본값 그대로 나간다",
+    mainRoundRequests[0]?.body.temperature === DEFAULT_SETTINGS.temperature && mainRoundRequests[0]?.body.top_p === DEFAULT_SETTINGS.topP,
+  );
+}
+
+/* ============================================================== 시나리오 K */
+// 정상적인 긴 답(번호 목록)은 끊지 않는다. 사용자가 고른 샘플링 값은 DeepSeek 이어도 그대로 간다.
+{
+  resetCallCounters();
+  let list = "";
+  for (let i = 1; i <= 400; i++) list += `${i}. 항목 ${i} 의 설명입니다.\n`;
+  mainRoundHandler = () => ({ content: list });
+
+  const { result, notices } = await runTurn(
+    makeConversation({ model: "deepseek-test", settings: { ...DEFAULT_SETTINGS, temperature: 0.3 } }),
+  );
+  check("시나리오 K: 긴 목록은 그대로 저장된다", result.content === list, `${result.content.length} vs ${list.length}`);
+  check("시나리오 K: 안내 문구가 없다", notices.length === 0, JSON.stringify(notices));
+  check(
+    "시나리오 K: 사용자가 바꾼 값은 그대로 나간다",
+    mainRoundRequests[0]?.body.temperature === 0.3 && mainRoundRequests[0]?.body.top_p === DEFAULT_SETTINGS.topP,
+    JSON.stringify([mainRoundRequests[0]?.body.temperature, mainRoundRequests[0]?.body.top_p]),
+  );
 }
 
 console.log("");

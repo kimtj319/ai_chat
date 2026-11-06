@@ -87,6 +87,7 @@ VLLM_ENDPOINTS=OpenRouter|https://openrouter.ai/api/v1|sk-or-...|anthropic/claud
 |---|---|
 | `REASONING_PROFILES` | `패턴=fixed` 또는 `패턴=budget[:최소값]` 을 쉼표로 이은 것 |
 | `MODEL_CONTEXT_LENGTHS` | 길이를 알려 주지 않는 모델의 컨텍스트 길이, `패턴=토큰수` (기본 `wise-lloa-ultra=262144,wise-lloa-max=131072`) |
+| `SAMPLING_PROFILES` | 모델별 기본 temperature/top_p, `패턴=temperature/top_p` (기본 `deepseek=1.0/1.0`) |
 
 모델마다 추론 관련 필드를 대하는 태도가 다르다. 어떤 게이트웨이는 모르는
 필드에 400 을 내고, 어떤 모델은 받아들이고 무시한다. 그것은 **서빙하는 쪽
@@ -103,6 +104,17 @@ REASONING_PROFILES=some-model=fixed,other-model=budget:256
 비워 두면 모든 모델이 기본값(`budget:128`)을 쓴다. 알아볼 수 없는 항목은
 기동 로그에 남는다 — 오타 하나가 그 모델의 추론 방식을 바꾸는데 달리 알 길이
 없기 때문이다.
+
+대화의 temperature·top_p 기본값(0.7·0.8)은 Qwen 의 권장값이다. `SAMPLING_PROFILES` 에
+맞는 모델은 대화가 이 기본값 그대로일 때 그 모델의 값을 받는다 — DeepSeek V4 의 권장값은
+1.0·1.0 이다. 대화 설정에서 값을 바꾸면 바꾼 값이 그대로 간다. 빈 값으로 두면 모든 모델이
+앱 기본값을 받는다.
+
+모델이 끝 토큰을 내지 못하고 같은 글을 되풀이하면(DeepSeek V4.1 Flash, 2026-11-05)
+`server/chat/repetitionGuard.ts` 가 생각과 답을 따로 지켜보다 그 요청을 끊는다. 생각이
+반복되면 생각 없이 그때까지의 추론으로 답을 쓰게 하고, 답이 반복되면 반복을 한 벌만 남기고
+턴을 끝낸다. 반복 억제 페널티(`repetition_penalty`·`frequency_penalty`)는 그 서버에서 반복을
+못 막고 정상 답만 망가뜨려(실측) 쓰지 않는다.
 
 로그인한 계정은 누구나 서빙 엔드포인트를 등록할 수 있다. 등록한 서버의 모델은
 등록한 사람, 그와 같은 그룹 사람들, 공용 자원 계정(관리자·AI Product 팀)만 쓴다 —

@@ -49,6 +49,13 @@
   color: var(--on-surface);
 }
 
+.conv-settings-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
 /* 적용·되돌리기: 본문 아래에 붙어 있어 스크롤과 상관없이 닿는다. */
 .conv-settings-actions {
   flex-shrink: 0;

@@ -27,6 +27,8 @@ import { reasoningParamsFor } from "./reasoningProfiles.js";
 import { compactResearchContext, type CompactionResult } from "./contextCompaction.js";
 import { withCompactionEvents, type CompactionEvent } from "./compactionProgress.js";
 import { BudgetLeakGate } from "./budgetLeak.js";
+import { RepetitionGuard, type RepetitionTrip } from "./repetitionGuard.js";
+import { effectiveSampling } from "./samplingProfiles.js";
 import { isMissingKeyError } from "../tools/missingKey.js";
 import crypto from "node:crypto";
 import { runTool, truncateToolResult } from "../tools/runner.js";
@@ -94,6 +96,10 @@ export interface TurnOptions {
   browserControl?: boolean;
 }
 
+/** Shown under a turn that a RepetitionGuard cut (chat/repetitionGuard.ts). */
+const NOTICE_REASONING_REPEAT = "생각이 같은 내용을 되풀이해 멈추고, 그때까지의 추론으로 답변을 정리했습니다.";
+const NOTICE_ANSWER_REPEAT = "답변이 같은 내용을 되풀이해 생성을 멈췄습니다. 반복된 부분은 한 번만 남겼습니다.";
+
 /**
  * Sent as a trailing user message the moment a turn stops using tools, so the
  * next request writes the answer instead of announcing one.
@@ -152,7 +158,11 @@ export async function* runConversationTurn(
   // Why the round loop stopped early, if it did: "deadline" is the safety net,
   // "answer-now" is the person's own click. Neither is "Cancelled by client." —
   // both still want an answer, just from what the turn already has.
-  let stopKind: "deadline" | "answer-now" | null = null;
+  // "repetition" is the model looping in its thinking (chat/repetitionGuard.ts):
+  // the turn is cut there and answered the same way, without thinking.
+  // Asserted rather than annotated: "deadline" and "answer-now" are set inside
+  // endRoundOnAbort, a closure the compiler's narrowing does not follow.
+  let stopKind = null as "deadline" | "answer-now" | "repetition" | null;
   // Kicked off now rather than where it is actually used (further down, where
   // the turn's tools are built): it depends on nothing computed in this function —
   // not the model, not the history, not the conversation's own tool list — and
@@ -295,6 +305,17 @@ export async function* runConversationTurn(
   const seenNotices = new Set<string>();
   // TOOL_MAX_ROUNDS is an escape hatch only; 0 (the default) means unlimited.
   const maxRounds = config.toolMaxRounds > 0 ? config.toolMaxRounds : Number.POSITIVE_INFINITY;
+  // The model's own defaults while the conversation keeps the app's (chat/samplingProfiles.ts).
+  const sampling = effectiveSampling(conversation.settings, model);
+
+  // A loop caught by a RepetitionGuard: logged once, so the server says which
+  // channel looped — the turn itself only shows a notice.
+  const logRepetition = (channel: "reasoning" | "content" | "wrap-up", trip: RepetitionTrip, round: number): void => {
+    console.warn(
+      `[toolloop] repetition in ${channel}: period ${trip.period} x${trip.repeats.toFixed(1)}, ` +
+        `cut ${trip.drop} chars (conversation ${conversation.id}, model ${model}, round ${round})`,
+    );
+  };
 
   // How a round ends when the turn's signal fired. The safety net or an
   // "answer now" click stopping the model is not the user stopping it: the turn
@@ -446,7 +467,8 @@ export async function* runConversationTurn(
       }
     }
 
-    const { seed, temperature, topP, maxTokens, presencePenalty, frequencyPenalty } = conversation.settings;
+    const { seed, maxTokens, presencePenalty, frequencyPenalty } = conversation.settings;
+    const { temperature, topP } = sampling;
     // Measure the prompt against the real window before every request: the 400
     // that loses the whole turn is otherwise only discovered by hitting it.
     // Wrapped for the same reason the compaction step above is: this makes its
@@ -545,11 +567,25 @@ export async function* runConversationTurn(
     // reasoning (chat/budgetLeak.ts). Decided at the round's first content delta.
     let roundReasoning = "";
     let leakGate: BudgetLeakGate | null = null;
+    // A model that never emits its end token repeats until max_tokens. Each
+    // channel is watched on its own; a trip cuts the repeated tail down to one
+    // copy and stops THIS request through roundStop — the turn's own signal is
+    // left alone, so a loop is not mistaken for Stop.
+    const reasoningGuard = new RepetitionGuard();
+    const contentGuard = new RepetitionGuard();
+    const roundStop = new AbortController();
+    let repeated: "reasoning" | "content" | null = null;
+    const cutReasoning = (trip: RepetitionTrip): void => {
+      reasoning = reasoning.slice(0, reasoning.length - trip.drop);
+      roundReasoning = roundReasoning.slice(0, Math.max(0, roundReasoning.length - trip.drop));
+      logRepetition("reasoning", trip, round);
+      roundStop.abort();
+    };
 
     try {
       const ahead = modelQueueAhead(endpoint, body.model);
       if (ahead >= 0) yield { type: "queued", ahead };
-      const stream = await streamChatCompletion(body, signal, endpoint);
+      const stream = await streamChatCompletion(body, AbortSignal.any([signal, roundStop.signal]), endpoint);
       for await (const chunk of stream) {
         if (signal.aborted) throw new Error("aborted-by-user");
         const choice = chunk.choices?.[0];
@@ -561,6 +597,12 @@ export async function* runConversationTurn(
           reasoning += reasoningDelta;
           roundReasoning += reasoningDelta;
           yield { type: "reasoning", delta: reasoningDelta };
+          const trip = reasoningGuard.feed(reasoningDelta);
+          if (trip) {
+            cutReasoning(trip);
+            repeated = "reasoning";
+            break;
+          }
         }
         if (delta.content) {
           leakGate ??= new BudgetLeakGate({
@@ -572,11 +614,26 @@ export async function* runConversationTurn(
           if (routed.reasoning) {
             reasoning += routed.reasoning;
             yield { type: "reasoning", delta: routed.reasoning };
+            const trip = reasoningGuard.feed(routed.reasoning);
+            if (trip) {
+              cutReasoning(trip);
+              repeated = "reasoning";
+              break;
+            }
           }
           if (routed.content) {
             content += routed.content;
             roundContent += routed.content;
             yield { type: "content", delta: routed.content };
+            const trip = contentGuard.feed(routed.content);
+            if (trip) {
+              content = content.slice(0, content.length - trip.drop);
+              roundContent = roundContent.slice(0, Math.max(0, roundContent.length - trip.drop));
+              logRepetition("content", trip, round);
+              repeated = "content";
+              roundStop.abort();
+              break;
+            }
           }
         }
         if (Array.isArray(delta.tool_calls)) {
@@ -591,7 +648,8 @@ export async function* runConversationTurn(
         }
         if (choice.finish_reason) finishReason = choice.finish_reason;
       }
-      const rest = leakGate?.end();
+      // Whatever the gate still holds is the loop's own text: nothing to flush.
+      const rest = repeated ? undefined : leakGate?.end();
       if (rest?.reasoning) {
         reasoning += rest.reasoning;
         yield { type: "reasoning", delta: rest.reasoning };
@@ -617,6 +675,18 @@ export async function* runConversationTurn(
         continue;
       }
       throw err;
+    }
+    // A loop ends the turn whatever the model was about to do with tools: its
+    // half-written tool calls are dropped with the rest of the request. Looping
+    // in thought is answered from the thought so far, without thinking; looping
+    // in the answer keeps the answer as cut.
+    if (repeated === "reasoning") {
+      stopKind = "repetition";
+      break;
+    }
+    if (repeated === "content") {
+      yield* noticeEvent(NOTICE_ANSWER_REPEAT);
+      break;
     }
     // Counted only once the call has actually completed: a context-400 retry
     // above re-runs the round without having asked the model anything.
@@ -778,35 +848,56 @@ export async function* runConversationTurn(
 
   // The two wrap-up calls below differ only in their reason; what each does when
   // the call fails is deliberately different and stays at the call site.
-  const wrapUp = (reason: WrapUpReason) =>
-    wrapUpWithFallback(
+  // Streams the wrap-up into `content`, watched for the same loop as the
+  // rounds: a trip keeps one copy and stops that call through its own
+  // controller, so the Stop checks below still see only the person's Stop.
+  async function* wrapUp(reason: WrapUpReason): AsyncGenerator<ChatEvent, void, void> {
+    const guard = new RepetitionGuard();
+    const stop = new AbortController();
+    const stream = wrapUpWithFallback(
       {
         model,
         endpoint,
         reasoning,
-        temperature: conversation.settings.temperature,
-        topP: conversation.settings.topP,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
         reason,
-        clientSignal,
+        clientSignal: AbortSignal.any([clientSignal, stop.signal]),
         onUsage: addUsage,
       },
       messagesForWrapUp(workingMessages),
       baseMessages,
     );
+    for await (const delta of stream) {
+      content += delta;
+      yield { type: "content", delta };
+      const trip = guard.feed(delta);
+      if (trip) {
+        content = content.slice(0, content.length - trip.drop);
+        logRepetition("wrap-up", trip, 0);
+        stop.abort();
+        yield* noticeEvent(NOTICE_ANSWER_REPEAT);
+        return;
+      }
+    }
+  }
 
   if (stopKind) {
     const wrapUpReason: WrapUpReason =
-      stopKind === "deadline" ? { kind: "deadline", deadlineMs: NORMAL_MODE_SAFETY_TIMEOUT_MS } : { kind: "answer-now" };
+      stopKind === "deadline"
+        ? { kind: "deadline", deadlineMs: NORMAL_MODE_SAFETY_TIMEOUT_MS }
+        : stopKind === "repetition"
+          ? { kind: "repetition" }
+          : { kind: "answer-now" };
     yield* noticeEvent(
       stopKind === "deadline"
         ? `추론이 ${describeDeadline(NORMAL_MODE_SAFETY_TIMEOUT_MS)}를 넘어, 그때까지 모은 정보로 답변을 정리했습니다.`
-        : "'지금 답변하기' 요청에 따라, 그때까지 모은 정보로 답변을 정리했습니다.",
+        : stopKind === "repetition"
+          ? NOTICE_REASONING_REPEAT
+          : "'지금 답변하기' 요청에 따라, 그때까지 모은 정보로 답변을 정리했습니다.",
     );
     try {
-      for await (const delta of wrapUp(wrapUpReason)) {
-        content += delta;
-        yield { type: "content", delta };
-      }
+      yield* wrapUp(wrapUpReason);
       // The stream ends quietly, not with an AbortError, when Stop lands between
       // two chunks. Without this the half-written wrap-up was stored as a
       // finished answer with no error.
@@ -834,10 +925,7 @@ export async function* runConversationTurn(
   // to. The promotion below stays as the last resort if this produces nothing.
   if (!stopKind && !aborted && content.trim().length === 0 && reasoning.trim().length > 0) {
     try {
-      for await (const delta of wrapUp({ kind: "empty-answer" })) {
-        content += delta;
-        yield { type: "content", delta };
-      }
+      yield* wrapUp({ kind: "empty-answer" });
       // Same as above: a Stop between chunks ends the stream without an error.
       if (clientSignal.aborted) {
         aborted = true;

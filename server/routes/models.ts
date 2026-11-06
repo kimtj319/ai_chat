@@ -14,6 +14,7 @@ import { attachmentBudget } from "../attachments/budget.js";
 import { MAX_IMAGE_EDGE } from "../attachments/sniff.js";
 import { config } from "../config.js";
 import { reasoningIsFixed, reasoningProfileLabel } from "../chat/reasoningProfiles.js";
+import { samplingDefaultsFor } from "../chat/samplingProfiles.js";
 import { modelAccessFor } from "../vllm/access.js";
 import { modelOwnerOf, removeModelOwner, setModelOwner } from "../storage/modelOwners.js";
 import { clientAddress } from "./rateLimit.js";
@@ -68,6 +69,9 @@ modelsRouter.get("/models", async (req, res) => {
           reasoningFixed: reasoningIsFixed(e.id),
           // How REASONING_PROFILES treats this model, shown on the admin page.
           reasoningProfile: reasoningProfileLabel(e.id),
+          // SAMPLING_PROFILES as applied to this model: the temperature/top_p a
+          // conversation that keeps the app's defaults is actually sent, or null.
+          samplingDefaults: samplingDefaultsFor(e.id),
           maxModelLen: e.maxModelLen,
           attachments: {
             maxMessageTokens: budget.messageTokens,

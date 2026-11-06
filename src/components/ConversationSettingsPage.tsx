@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { getProhibitions } from "../api/client";
 import type { ConversationSettings } from "../api/types";
+import { DEFAULT_SETTINGS } from "../../server/settings";
+import { useModels } from "../hooks/useModels";
 import { DEFAULT_MAX_TOKENS, MAX_MAX_TOKENS, MIN_MAX_TOKENS } from "../state/defaults";
 import { setLeaveGuard } from "../state/leaveGuard";
 import { parseMaxTokens } from "../state/settingsInput";
@@ -61,6 +63,10 @@ function SettingsHeader({ onBack, subtitle }: { onBack: () => void; subtitle: st
 
 function SettingsBody({ conversation, onBack }: { conversation: ActiveConversation; onBack: () => void }) {
   const { updateSystemPrompt, updateSettings } = useStore();
+  // 이 모델이 앱 기본값 대신 받는 temperature/top_p(SAMPLING_PROFILES). 있으면 알려 준다 —
+  // 슬라이더에는 0.70·0.80 이 보이지만 실제로는 모델 권장값이 나가기 때문이다.
+  const { catalog, current } = useModels();
+  const modelDefaults = catalog.find((entry) => entry.id === (conversation.model || current))?.samplingDefaults ?? null;
   const [systemPrompt, setSystemPrompt] = useState(conversation.systemPrompt);
   const [sampling, setSampling] = useState<Sampling>(() => samplingOf(conversation.settings));
   // Max Tokens 는 칸에 적힌 글자 그대로 둔다. 숫자로 바로 바꾸면 칸을 비우는 순간 0 이 들어가고,
@@ -182,6 +188,12 @@ function SettingsBody({ conversation, onBack }: { conversation: ActiveConversati
           <h2 id="conv-settings-sampling" className="conv-settings-card-title">
             샘플링 파라미터
           </h2>
+          {modelDefaults && (
+            <p className="conv-settings-note">
+              이 모델은 Temperature·Top P 가 기본값({DEFAULT_SETTINGS.temperature.toFixed(2)}·{DEFAULT_SETTINGS.topP.toFixed(2)})이면
+              모델 권장값 {modelDefaults.temperature.toFixed(2)}·{modelDefaults.topP.toFixed(2)} 으로 보냅니다. 값을 바꾸면 바꾼 값을 그대로 씁니다.
+            </p>
+          )}
           <div className="param-grid">
             <div className="field">
               <label htmlFor="param-temperature">Temperature ({sampling.temperature.toFixed(2)})</label>
